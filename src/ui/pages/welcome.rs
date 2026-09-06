@@ -1,4 +1,4 @@
-use crate::platform;
+use crate::native;
 use crate::res;
 use day::prelude::*;
 
@@ -10,7 +10,7 @@ pub(crate) fn welcome_page() -> impl Piece {
             .frame(132.0, 132.0)
             .corner_radius(30.0)
             .id("welcome-mark"),
-        platform::header::render(
+        native::header::render(
             res::str::welcome_title().format(),
             "Liquid Glass UI",
         ),
@@ -20,9 +20,9 @@ pub(crate) fn welcome_page() -> impl Piece {
             .max_width(440.0)
             .id("welcome-body"),
         row((
-            platform::card::render("Items", "12", "doc.text"),
-            platform::card::render("Done", "8", "checkmark.circle"),
-            platform::card::render("Pending", "4", "clock"),
+            native::card::render("Items", "12", "doc.text"),
+            native::card::render("Done", "8", "checkmark.circle"),
+            native::card::render("Pending", "4", "clock"),
         ))
         .spacing(12.0),
         spacer(),

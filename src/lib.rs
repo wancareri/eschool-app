@@ -5,7 +5,7 @@ use day::prelude::*;
 pub mod app;
 pub mod core;
 pub mod model;
-pub mod platform;
+pub mod native;
 pub mod ui;
 pub mod util;
 
