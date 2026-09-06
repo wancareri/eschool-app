@@ -2,7 +2,6 @@ import SwiftUI
 
 // MARK: - Liquid Glass Header
 
-@available(iOS 26.0, macOS 26.0, *)
 public struct GlassHeaderView: View {
     let title: String
     let subtitle: String
@@ -12,24 +11,38 @@ public struct GlassHeaderView: View {
         self.subtitle = subtitle
     }
 
+    @ViewBuilder
     public var body: some View {
-        VStack(spacing: 12) {
-            Text(title)
-                .font(.largeTitle.bold())
-                .foregroundStyle(.primary)
-            Text(subtitle)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        if #available(iOS 26.0, macOS 26.0, *) {
+            VStack(spacing: 12) {
+                Text(title)
+                    .font(.largeTitle.bold())
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
+        } else {
+            VStack(spacing: 12) {
+                Text(title)
+                    .font(.largeTitle.bold())
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
     }
 }
 
 // MARK: - Liquid Glass Card
 
-@available(iOS 26.0, macOS 26.0, *)
 public struct GlassCardView: View {
     let title: String
     let value: String
@@ -41,26 +54,42 @@ public struct GlassCardView: View {
         self.icon = icon
     }
 
+    @ViewBuilder
     public var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundStyle(.blue)
-            Text(value)
-                .font(.title.bold())
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        if #available(iOS 26.0, macOS 26.0, *) {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(.blue)
+                Text(value)
+                    .font(.title.bold())
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        } else {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(.blue)
+                Text(value)
+                    .font(.title.bold())
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
     }
 }
 
 // MARK: - Liquid Glass Button
 
-@available(iOS 26.0, macOS 26.0, *)
 public struct GlassButtonView: View {
     let title: String
     let icon: String
@@ -70,22 +99,34 @@ public struct GlassButtonView: View {
         self.icon = icon
     }
 
+    @ViewBuilder
     public var body: some View {
-        HStack {
-            Image(systemName: icon)
-            Text(title)
+        if #available(iOS 26.0, macOS 26.0, *) {
+            HStack {
+                Image(systemName: icon)
+                Text(title)
+            }
+            .font(.headline)
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            HStack {
+                Image(systemName: icon)
+                Text(title)
+            }
+            .font(.headline)
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(.regularMaterial, in: Capsule())
         }
-        .font(.headline)
-        .foregroundStyle(.white)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .glassEffect(.regular.interactive(), in: .capsule)
     }
 }
 
 // MARK: - Liquid Glass Navigation Bar
 
-@available(iOS 26.0, macOS 26.0, *)
 public struct GlassNavBarView: View {
     let title: String
 
@@ -93,11 +134,20 @@ public struct GlassNavBarView: View {
         self.title = title
     }
 
+    @ViewBuilder
     public var body: some View {
-        Text(title)
-            .font(.headline)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .glassEffect(.regular, in: .rect(cornerRadius: 12))
+        if #available(iOS 26.0, macOS 26.0, *) {
+            Text(title)
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .glassEffect(.regular, in: .rect(cornerRadius: 12))
+        } else {
+            Text(title)
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        }
     }
 }
