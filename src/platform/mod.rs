@@ -12,19 +12,19 @@ mod macos;
 #[cfg(feature = "xaml")]
 mod windows;
 
-// Re-export active platform's glass functions directly
+// Re-export active platform's components directly
 #[cfg(feature = "uikit")]
-pub use ios::glass::*;
+pub use ios::*;
 
 #[cfg(feature = "appkit")]
-pub use macos::glass::*;
+pub use macos::*;
 
 #[cfg(feature = "mdc")]
-pub use android::glass::*;
+pub use android::*;
 
 #[cfg(feature = "xaml")]
-pub use windows::glass::*;
+pub use windows::*;
 
 // Fallback
 #[cfg(not(any(feature = "appkit", feature = "uikit", feature = "mdc", feature = "xaml")))]
-pub use common::glass::*;
+pub use common::*;

@@ -10,7 +10,7 @@ pub(crate) fn welcome_page() -> impl Piece {
             .frame(132.0, 132.0)
             .corner_radius(30.0)
             .id("welcome-mark"),
-        platform::header(
+        platform::header::render(
             res::str::welcome_title().format(),
             "Liquid Glass UI",
         ),
@@ -20,9 +20,9 @@ pub(crate) fn welcome_page() -> impl Piece {
             .max_width(440.0)
             .id("welcome-body"),
         row((
-            platform::card("Items", "12", "doc.text"),
-            platform::card("Done", "8", "checkmark.circle"),
-            platform::card("Pending", "4", "clock"),
+            platform::card::render("Items", "12", "doc.text"),
+            platform::card::render("Done", "8", "checkmark.circle"),
+            platform::card::render("Pending", "4", "clock"),
         ))
         .spacing(12.0),
         spacer(),
