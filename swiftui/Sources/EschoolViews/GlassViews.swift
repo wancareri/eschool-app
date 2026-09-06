@@ -23,7 +23,7 @@ public struct GlassHeaderView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
-        .glassEffect(.regular(.interactive), in: .rect(cornerRadius: 20))
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
     }
 }
 
@@ -79,7 +79,7 @@ public struct GlassButtonView: View {
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
-        .glassEffect(.regular(.interactive), in: .capsule)
+        .glassEffect(.regular.interactive(), in: .capsule)
     }
 }
 
