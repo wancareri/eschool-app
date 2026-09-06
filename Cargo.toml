@@ -37,11 +37,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [package.metadata.day.ios]
-swift-packages = [{ path = "swiftui", products = ["EschoolViews"] }]
+swift-packages = [{ path = "platform/swiftui", products = ["EschoolViews"] }]
 platform = "16.0"
 
 [package.metadata.day.macos]
-swift-packages = [{ path = "swiftui", products = ["EschoolViews"] }]
+swift-packages = [{ path = "platform/swiftui", products = ["EschoolViews"] }]
 platform = "13.0"
 
 [build-dependencies]
