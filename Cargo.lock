@@ -457,6 +457,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "day-piece-swiftui"
+version = "0.4.1"
+source = "git+https://github.com/daybrite/day.git#2b728054638f3abbfe1e2a9ab96a6727a21eb1f7"
+dependencies = [
+ "day-core",
+ "day-pieces",
+ "day-reactive",
+ "day-spec",
+ "linkme",
+]
+
+[[package]]
 name = "day-pieces"
 version = "0.4.1"
 source = "git+https://github.com/daybrite/day.git#2b728054638f3abbfe1e2a9ab96a6727a21eb1f7"
@@ -619,6 +631,7 @@ dependencies = [
  "day-piece-datetime",
  "day-piece-rating",
  "day-piece-settings",
+ "day-piece-swiftui",
  "serde",
  "serde_json",
 ]
