@@ -2,6 +2,7 @@ import SwiftUI
 
 // MARK: - Liquid Glass Header
 
+@available(iOS 26.0, macOS 26.0, *)
 public struct GlassHeaderView: View {
     let title: String
     let subtitle: String
@@ -22,12 +23,13 @@ public struct GlassHeaderView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
-        .glassEffect(.regular.interactive, in: .rect(cornerRadius: 20))
+        .glassEffect(.regular(.interactive), in: .rect(cornerRadius: 20))
     }
 }
 
 // MARK: - Liquid Glass Card
 
+@available(iOS 26.0, macOS 26.0, *)
 public struct GlassCardView: View {
     let title: String
     let value: String
@@ -58,6 +60,7 @@ public struct GlassCardView: View {
 
 // MARK: - Liquid Glass Button
 
+@available(iOS 26.0, macOS 26.0, *)
 public struct GlassButtonView: View {
     let title: String
     let icon: String
@@ -76,12 +79,13 @@ public struct GlassButtonView: View {
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
-        .glassEffect(.regular.interactive, in: .capsule)
+        .glassEffect(.regular(.interactive), in: .capsule)
     }
 }
 
 // MARK: - Liquid Glass Navigation Bar
 
+@available(iOS 26.0, macOS 26.0, *)
 public struct GlassNavBarView: View {
     let title: String
 
