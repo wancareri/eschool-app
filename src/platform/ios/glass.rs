@@ -7,7 +7,7 @@ pub fn header(title: impl Into<String>, subtitle: impl Into<String>) -> AnyPiece
             .id("glass-header")
             .any()
     } else {
-        super::common::header(title, subtitle)
+        super::super::common::glass::header(title, subtitle)
     }
 }
 
@@ -18,7 +18,7 @@ pub fn card(title: impl Into<String>, value: impl Into<String>, icon: impl Into<
             .id("glass-card")
             .any()
     } else {
-        super::common::card(title, value, icon)
+        super::super::common::glass::card(title, value, icon)
     }
 }
 
@@ -29,6 +29,6 @@ pub fn button(title: impl Into<String>, icon: impl Into<String>) -> AnyPiece {
             .id("glass-button")
             .any()
     } else {
-        super::common::button(title, icon)
+        super::super::common::glass::button(title, icon)
     }
 }
