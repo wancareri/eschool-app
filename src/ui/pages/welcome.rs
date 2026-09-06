@@ -1,4 +1,4 @@
-use crate::platform::glass;
+use crate::native::glass;
 use crate::res;
 use day::prelude::*;
 
