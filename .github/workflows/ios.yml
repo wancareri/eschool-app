@@ -40,5 +40,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: build/day/ios-uikit/*.ipa
+          path: build/day/dist/*.ipa
           retention-days: 7
