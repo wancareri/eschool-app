@@ -3,11 +3,6 @@
 //! This module exposes native SwiftUI views with iOS 26 Liquid Glass effects.
 //! On unsupported platforms, it provides fallback native controls.
 
-#[cfg(any(feature = "appkit", feature = "uikit"))]
-pub mod swiftui {
-    include!(concat!(env!("OUT_DIR"), "/day_swiftui.rs"));
-}
-
 use day::prelude::*;
 
 /// A Liquid Glass header with title and subtitle.

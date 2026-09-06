@@ -6,6 +6,10 @@ use day::prelude::*;
 
 mod model;
 mod pages;
+pub mod swiftui_glass;
+pub mod swiftui {
+    include!(concat!(env!("OUT_DIR"), "/day_swiftui.rs"));
+}
 use crate::model::Scene;
 use crate::pages::*;
 
