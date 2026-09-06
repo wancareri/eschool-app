@@ -1,0 +1,42 @@
+[package]
+name = "eschool-app"
+version = "0.1.0"
+edition = "2024"
+# Generates typed `res::` constants from `resource/` (see build.rs).
+build = "build.rs"
+
+[features]
+# `mock` keeps bare cargo and rust-analyzer compiling; `day build` overrides it with
+# `--no-default-features --features <backend>` (https://daybrite.dev/docs/project-structure).
+default = ["mock"]
+appkit = ["day/appkit"]
+gtk = ["day/gtk"]
+qt = ["day/qt"]
+uikit = ["day/uikit"]
+mdc = ["day/mdc"]
+xaml = ["day/xaml"]
+arkui = ["day/arkui"]
+dom = ["day/dom"]
+mock = ["day/mock"]
+
+# rlib for the desktop bin; the mobile pipeline requests staticlib/cdylib via `cargo rustc`.
+[lib]
+# A constant lib name: staged artifacts and the `dayapp::` import never move on a package rename.
+name = "dayapp"
+crate-type = ["rlib"]
+
+[dependencies]
+day = { git = "https://github.com/daybrite/day.git", features = ["model"] }
+day-piece-datetime = { git = "https://github.com/daybrite/day.git" }
+day-piece-settings = { git = "https://github.com/daybrite/day.git" }
+day-piece-rating = { git = "https://github.com/daybrite/day.git" }
+day-piece-colorpicker = { git = "https://github.com/daybrite/day.git" }
+# The item list persists as one JSON blob in `day::prefs` (src/model.rs).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+day-build = { git = "https://github.com/daybrite/day.git" }
+
+
+[workspace]
