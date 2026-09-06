@@ -1,6 +1,8 @@
 import SwiftUI
 
 // MARK: - Liquid Glass Header
+// Uses .ultraThinMaterial for translucent glass-like appearance.
+// When building with Xcode 16+/iOS 26+ SDK, replace with .glassEffect(.regular, in: ...).
 
 public struct GlassHeaderView: View {
     let title: String
@@ -22,7 +24,7 @@ public struct GlassHeaderView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
-        .glassEffect(.regular.interactive, in: .rect(cornerRadius: 20))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
     }
 }
 
@@ -52,7 +54,7 @@ public struct GlassCardView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -61,27 +63,22 @@ public struct GlassCardView: View {
 public struct GlassButtonView: View {
     let title: String
     let icon: String
-    let action: () -> Void
 
-    public init(title: String, icon: String, action: @escaping () -> Void) {
+    public init(title: String, icon: String) {
         self.title = title
         self.icon = icon
-        self.action = action
     }
 
     public var body: some View {
-        Button(action: action) {
-            HStack {
-                Image(systemName: icon)
-                Text(title)
-            }
-            .font(.headline)
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+        HStack {
+            Image(systemName: icon)
+            Text(title)
         }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive, in: .capsule)
+        .font(.headline)
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(.regularMaterial, in: Capsule())
     }
 }
 
@@ -99,6 +96,6 @@ public struct GlassNavBarView: View {
             .font(.headline)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .glassEffect(.regular, in: .rect(cornerRadius: 12))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 }

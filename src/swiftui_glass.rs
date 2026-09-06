@@ -62,21 +62,17 @@ pub fn glass_card(title: impl Into<String>, value: impl Into<String>, icon: impl
     .any()
 }
 
-/// A Liquid Glass button with icon and title.
-pub fn glass_button(title: impl Into<String>, icon: impl Into<String>, action: impl Fn() + 'static) -> AnyPiece {
+/// A Liquid Glass button with icon and title (display only — no action via SwiftUI bridge).
+pub fn glass_button(title: impl Into<String>, icon: impl Into<String>) -> AnyPiece {
     #[cfg(any(feature = "appkit", feature = "uikit"))]
     if day_piece_swiftui::support() == Support::Native {
-        return crate::swiftui::GlassButtonView(
-            title.into(),
-            icon.into(),
-            move || action(),
-        )
-        .frame(200.0, 48.0)
-        .id("glass-button")
-        .any();
+        return crate::swiftui::GlassButtonView(title.into(), icon.into())
+            .frame(200.0, 48.0)
+            .id("glass-button")
+            .any();
     }
 
     // Fallback for non-Apple platforms
     let title_str = title.into();
-    button(title_str).action(action).any()
+    button(title_str).any()
 }
