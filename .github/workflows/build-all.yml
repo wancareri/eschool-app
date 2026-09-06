@@ -1,0 +1,114 @@
+name: Build All Platforms
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-ios-${{ hashFiles('Cargo.lock') }}
+      - run: cargo install day-cli
+      - run: day pack -p ios-uikit --profile release --no-sign --verbose
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: build/day/dist/*.ipa
+          retention-days: 7
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-macos-${{ hashFiles('Cargo.lock') }}
+      - run: cargo install day-cli
+      - run: day pack -p macos-appkit --profile release --no-sign --verbose
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: build/day/dist/*.dmg
+          retention-days: 7
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-android-${{ hashFiles('Cargo.lock') }}
+      - run: cargo install day-cli
+      - run: day pack -p android-mdc --profile release --verbose
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: build/day/dist/*.apk
+          retention-days: 7
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-linux-${{ hashFiles('Cargo.lock') }}
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
+      - run: cargo install day-cli
+      - run: day pack -p linux-gtk --profile release --verbose
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: build/day/dist/*.AppImage
+          retention-days: 7
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-windows-${{ hashFiles('Cargo.lock') }}
+      - run: cargo install day-cli
+      - run: day pack -p windows-xaml --profile release --verbose
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: build/day/dist/*.msix
+          retention-days: 7
