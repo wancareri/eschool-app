@@ -54,7 +54,7 @@ pub(crate) fn detail_title(scene: Scene) -> String {
         .map(|id| scene.items.elem(id as u64).name().read())
         .unwrap_or_default();
     if name.is_empty() {
-        res::str::nav_navigate().format()
+        res::str::item_none().format()
     } else {
         name
     }

@@ -8,7 +8,9 @@
 app_title = Eschool App
 
 nav_welcome = Welcome
-nav_navigate = Navigate
+nav_diary = Diary
+nav_schedule = Schedule
+nav_teachers = Teachers
 nav_settings = Settings
 
 # The Welcome page. `welcome_body` is rendered as markdown, so the emphasis lives here rather
@@ -49,3 +51,9 @@ field_kind = Kind
 field_done = Done
 field_rating = Rating
 field_color = Color
+
+# E-schools specific
+diary_title = Diary
+schedule_title = Schedule
+teachers_title = Teachers
+settings_title = Settings
