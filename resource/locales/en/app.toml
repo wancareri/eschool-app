@@ -1,0 +1,73 @@
+[app]
+title = "Eschool App"
+
+[nav]
+diary = "Diary"
+schedule = "Schedule"
+teachers = "Teachers"
+settings = "Settings"
+
+[menu]
+file = "File"
+edit = "Edit"
+
+[cmd]
+add = "New Item"
+delete = "Delete"
+done = "Done"
+show_done = "Show Finished"
+sidebar = "Toggle Sidebar"
+
+[item]
+none = "Select an item"
+kind_note = "Note"
+kind_task = "Task"
+kind_idea = "Idea"
+
+[section]
+basics = "Basics"
+details = "Details"
+notes = "Notes"
+
+[field]
+name = "Name"
+name_hint = "Name this item…"
+count = "Count"
+date = "Date"
+kind = "Kind"
+done = "Done"
+rating = "Rating"
+color = "Color"
+
+[diary]
+title = "Diary"
+subtitle = "Lesson schedule"
+
+[schedule]
+title = "Schedule"
+subtitle = "Bell schedule"
+
+[teachers]
+title = "Teachers"
+subtitle = "Teacher list"
+
+[settings]
+title = "Settings"
+subtitle = "App settings"
+
+[auth]
+login = "Login"
+logout = "Logout"
+username = "Username"
+password = "Password"
+school = "School"
+login_button = "Sign In"
+login_error = "Login failed"
+login_success = "Welcome!"
+
+[common]
+loading = "Loading..."
+error = "Error"
+retry = "Retry"
+cancel = "Cancel"
+save = "Save"

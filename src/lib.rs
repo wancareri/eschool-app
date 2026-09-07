@@ -34,7 +34,6 @@ const LOCALE_KEY: &str = "app.locale";
 
 day::routes! {
     pub(crate) enum Section {
-        Welcome => "welcome",
         Diary => "diary",
         Schedule => "schedule",
         Teachers => "teachers",

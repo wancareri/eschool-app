@@ -1,0 +1,73 @@
+[app]
+title = "Eschool App"
+
+[nav]
+diary = "Дзённік"
+schedule = "Расклад"
+teachers = "Настаўнікі"
+settings = "Налады"
+
+[menu]
+file = "Файл"
+edit = "Правіць"
+
+[cmd]
+add = "Новы элемент"
+delete = "Выдаліць"
+done = "Гатова"
+show_done = "Паказаць завершаныя"
+sidebar = "Бакавая панэль"
+
+[item]
+none = "Выберыце элемент"
+kind_note = "Нататка"
+kind_task = "Задача"
+kind_idea = "Ідэя"
+
+[section]
+basics = "Асноўнае"
+details = "Дэталі"
+notes = "Нататкі"
+
+[field]
+name = "Назва"
+name_hint = "Увядзіце назву…"
+count = "Колькасць"
+date = "Дата"
+kind = "Тып"
+done = "Гатова"
+rating = "Ацэнка"
+color = "Колер"
+
+[diary]
+title = "Дзённік"
+subtitle = "Расклад урокаў"
+
+[schedule]
+title = "Расклад"
+subtitle = "Расклад званкоў"
+
+[teachers]
+title = "Настаўнікі"
+subtitle = "Спіс настаўнікаў"
+
+[settings]
+title = "Налады"
+subtitle = "Налады праграмы"
+
+[auth]
+login = "Уваход"
+logout = "Выхад"
+username = "Лагін"
+password = "Пароль"
+school = "Школа"
+login_button = "Увайсці"
+login_error = "Памылка ўваходу"
+login_success = "Сардэчна запрашаем!"
+
+[common]
+loading = "Загрузка..."
+error = "Памылка"
+retry = "Паўтарыць"
+cancel = "Адмена"
+save = "Захаваць"

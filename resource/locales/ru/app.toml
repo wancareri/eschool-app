@@ -1,0 +1,73 @@
+[app]
+title = "Eschool App"
+
+[nav]
+diary = "Дневник"
+schedule = "Расписание"
+teachers = "Учителя"
+settings = "Настройки"
+
+[menu]
+file = "Файл"
+edit = "Правка"
+
+[cmd]
+add = "Новый элемент"
+delete = "Удалить"
+done = "Готово"
+show_done = "Показать завершённые"
+sidebar = "Боковая панель"
+
+[item]
+none = "Выберите элемент"
+kind_note = "Заметка"
+kind_task = "Задача"
+kind_idea = "Идея"
+
+[section]
+basics = "Основное"
+details = "Детали"
+notes = "Заметки"
+
+[field]
+name = "Название"
+name_hint = "Введите название…"
+count = "Количество"
+date = "Дата"
+kind = "Тип"
+done = "Готово"
+rating = "Оценка"
+color = "Цвет"
+
+[diary]
+title = "Дневник"
+subtitle = "Расписание уроков"
+
+[schedule]
+title = "Расписание"
+subtitle = "Расписание звонков"
+
+[teachers]
+title = "Учителя"
+subtitle = "Список учителей"
+
+[settings]
+title = "Настройки"
+subtitle = "Настройки приложения"
+
+[auth]
+login = "Вход"
+logout = "Выход"
+username = "Логин"
+password = "Пароль"
+school = "Школа"
+login_button = "Войти"
+login_error = "Ошибка входа"
+login_success = "Добро пожаловать!"
+
+[common]
+loading = "Загрузка..."
+error = "Ошибка"
+retry = "Повторить"
+cancel = "Отмена"
+save = "Сохранить"

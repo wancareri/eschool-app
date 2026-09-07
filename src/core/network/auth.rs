@@ -6,7 +6,7 @@ use rand::Rng;
 use super::client::ApiClient;
 
 const CLIENT_ID: &str = "oauth_diary_echools";
-const REDIRECT_URI: &str = "https://diary.e-schools.by/api/v1/admin/auth/callback";
+const REDIRECT_URI: &str = "eschool-app://callback";
 const SCOPE: &str = "openid profile offline_access organization.write person.write person.write.all person.read persons.read dictionaries.read organization.read";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

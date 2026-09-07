@@ -1,3 +1,4 @@
+use crate::core::colors;
 use crate::model::Scene;
 use crate::res;
 use crate::Section;
@@ -60,7 +61,7 @@ pub(crate) fn build_nav(scene: Scene, primary: bool) -> AnyPiece {
         .title(res::str::app_title())
         .content_list(item_list_pane)
         .content_list_width(320.0)
-        .content_list_for(|s: &Section| matches!(s, Section::Welcome))
+        .content_list_for(|s: &Section| matches!(s, Section::Diary))
         .detail_visible(scene.detail_open)
         .detail_title(move || detail_title(scene))
         .sidebar_toggle(true)
@@ -80,33 +81,26 @@ pub(crate) fn build_nav(scene: Scene, primary: bool) -> AnyPiece {
             ]
         })
         .item_icon(
-            Section::Welcome,
-            res::str::nav_welcome(),
-            res::vectors::tab_welcome,
-            welcome_page,
-        )
-        .icon_tint(Color::hex(0xF59E0B))
-        .item_icon(
             Section::Diary,
             res::str::nav_diary(),
             res::vectors::tab_diary,
             diary_page,
         )
-        .icon_tint(Color::hex(0x3B82F6))
+        .icon_tint(colors::NAV_DIARY)
         .item_icon(
             Section::Schedule,
             res::str::nav_schedule(),
             res::vectors::tab_schedule,
             schedule_page,
         )
-        .icon_tint(Color::hex(0x10B981))
+        .icon_tint(colors::NAV_SCHEDULE)
         .item_icon(
             Section::Teachers,
             res::str::nav_teachers(),
             res::vectors::tab_teachers,
             teachers_page,
         )
-        .icon_tint(Color::hex(0xF59E0B))
+        .icon_tint(colors::NAV_TEACHERS)
         .items(
             move || {
                 if has_menu_bar() {
@@ -118,7 +112,7 @@ pub(crate) fn build_nav(scene: Scene, primary: bool) -> AnyPiece {
             |s: &Section| {
                 item(*s, res::str::nav_settings())
                     .icon(res::vectors::tab_settings)
-                    .icon_tint(Color::hex(0x10B981))
+                    .icon_tint(colors::NAV_SETTINGS)
             },
         )
         .destination(|_: &Section| settings_page())

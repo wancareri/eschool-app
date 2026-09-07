@@ -98,7 +98,7 @@ impl Ambient for Scene {
                     .map(|v| v != "0")
                     .unwrap_or(true),
             ),
-            section: Signal::new(Section::Welcome),
+            section: Signal::new(Section::Diary),
             selected: Signal::new(None),
             scroll_to: Signal::new(None),
             detail_open: Signal::new(false),
