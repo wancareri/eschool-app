@@ -12,10 +12,10 @@ mod macos;
 #[cfg(feature = "xaml")]
 mod windows;
 
-#[cfg(feature = "gtk4")]
+#[cfg(feature = "gtk")]
 mod linux;
 
-#[cfg(feature = "gtk4")]
+#[cfg(feature = "gtk")]
 mod bsd;
 
 // Re-export active platform's components directly
@@ -31,12 +31,12 @@ pub use android::*;
 #[cfg(feature = "xaml")]
 pub use windows::*;
 
-#[cfg(feature = "gtk4")]
+#[cfg(feature = "gtk")]
 pub use linux::*;
 
-#[cfg(all(target_os = "freebsd", feature = "gtk4"))]
+#[cfg(all(target_os = "freebsd", feature = "gtk"))]
 pub use bsd::*;
 
 // Fallback
-#[cfg(not(any(feature = "appkit", feature = "uikit", feature = "mdc", feature = "xaml", feature = "gtk4")))]
+#[cfg(not(any(feature = "appkit", feature = "uikit", feature = "mdc", feature = "xaml", feature = "gtk")))]
 pub use common::*;

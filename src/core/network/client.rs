@@ -3,7 +3,6 @@ use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 
 use super::auth::Token;
-use super::models::*;
 
 const BASE_URL: &str = "https://diary.e-schools.by";
 const OAUTH_URL: &str = "https://oauth.rios.unibel.by";
