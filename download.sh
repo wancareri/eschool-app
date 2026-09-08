@@ -63,7 +63,25 @@ download_artifact() {
             local url
             url=$(gh api "repos/$REPO/actions/runs/$run_id/artifacts" \
                 --jq ".artifacts[] | select(.name == \"$name\") | .archive_download_url" 2>/dev/null | head -1)
-            gh api "$url" > "$output" 2>/dev/null
+
+            # GitHub Artifacts API wraps everything in a zip — download to
+            # a temp file, extract the real artifact, then clean up.
+            local tmpzip
+            tmpzip=$(mktemp /tmp/artifact-XXXXXX.zip)
+            gh api "$url" > "$tmpzip" 2>/dev/null
+
+            local outdir
+            outdir=$(dirname "$output")
+            unzip -o -j "$tmpzip" -d "$outdir" >/dev/null 2>&1
+
+            # Find the extracted file and rename to the expected output name
+            local extracted
+            extracted=$(unzip -l "$tmpzip" 2>/dev/null | awk 'NR>3 && !/^-/ && NF>=4 {print $NF}' | grep -v '/$' | head -1)
+            if [[ -n "$extracted" && -f "$outdir/$(basename "$extracted")" ]]; then
+                mv "$outdir/$(basename "$extracted")" "$output" 2>/dev/null
+            fi
+
+            rm -f "$tmpzip"
             echo "  -> $output"
             return 0
         fi
