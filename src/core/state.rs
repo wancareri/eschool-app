@@ -147,12 +147,16 @@ impl ESchoolState {
         let school_period = year.as_ref().map(|y| y.uuid.clone());
 
         // 3 — classes (POST to discover the student's class)
+        // Try with a wide date range to cover the whole school year
         let today = day_piece_datetime::DayDate::today();
-        let date_str = format!("{:02}.{:02}.{:04}", today.day, today.month, today.year);
+        let start_of_year = format!("01.09.{:04}", today.year);
+        let end_of_year = format!("31.05.{:04}", today.year + 1);
+        let today_str = format!("{:02}.{:02}.{:04}", today.day, today.month, today.year);
+
         let class_body = serde_json::json!({
             "school_period": school_period,
-            "from": date_str,
-            "to": date_str,
+            "from": start_of_year,
+            "to": end_of_year,
         });
         let class_id = if let Ok(cbd) = api_post::<ClassesByDate>(
             &client,
@@ -168,14 +172,50 @@ impl ESchoolState {
                 day::prefs::set(CLASS_ID_KEY, &id);
                 id
             } else {
-                day::prefs::get(CLASS_ID_KEY).unwrap_or_default()
+                // Fallback: try GET endpoint
+                if let Ok(classes) = api_get::<Vec<Class>>(
+                    &client,
+                    &format!(
+                        "/api/v1/education/diary/schools/{}/students/{}/classes",
+                        user.school_id, user.profile_id
+                    ),
+                ) {
+                    if let Some(c) = classes.first() {
+                        let id = c.uuid.clone();
+                        self.class_label.set(format!("{}{}", c.level, c.label));
+                        day::prefs::set(CLASS_ID_KEY, &id);
+                        id
+                    } else {
+                        day::prefs::get(CLASS_ID_KEY).unwrap_or_default()
+                    }
+                } else {
+                    day::prefs::get(CLASS_ID_KEY).unwrap_or_default()
+                }
             }
         } else {
-            day::prefs::get(CLASS_ID_KEY).unwrap_or_default()
+            // POST failed, try GET as fallback
+            if let Ok(classes) = api_get::<Vec<Class>>(
+                &client,
+                &format!(
+                    "/api/v1/education/diary/schools/{}/students/{}/classes",
+                    user.school_id, user.profile_id
+                ),
+            ) {
+                if let Some(c) = classes.first() {
+                    let id = c.uuid.clone();
+                    self.class_label.set(format!("{}{}", c.level, c.label));
+                    day::prefs::set(CLASS_ID_KEY, &id);
+                    id
+                } else {
+                    day::prefs::get(CLASS_ID_KEY).unwrap_or_default()
+                }
+            } else {
+                day::prefs::get(CLASS_ID_KEY).unwrap_or_default()
+            }
         };
 
         if class_id.is_empty() {
-            self.error_msg.set("Class not found".into());
+            self.error_msg.set("Class not found — try opening diary.e-schools.by to sync".into());
             self.loading.set(false);
             return;
         }
@@ -280,11 +320,18 @@ fn api_get<T: serde::de::DeserializeOwned>(
     } else {
         format!("{BASE_URL}{path}")
     };
-    client
+    let resp = client
         .get(&url)
         .send()
-        .map_err(|e| format!("request failed: {e}"))?
-        .json::<T>()
+        .map_err(|e| format!("request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().unwrap_or_default();
+        return Err(format!("HTTP {status}: {body}"));
+    }
+
+    resp.json::<T>()
         .map_err(|e| format!("parse failed: {e}"))
 }
 
@@ -294,12 +341,19 @@ fn api_post<T: serde::de::DeserializeOwned>(
     body: &serde_json::Value,
 ) -> Result<T, String> {
     let url = format!("{BASE_URL}{path}");
-    client
+    let resp = client
         .post(&url)
         .json(body)
         .send()
-        .map_err(|e| format!("request failed: {e}"))?
-        .json::<T>()
+        .map_err(|e| format!("request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().unwrap_or_default();
+        return Err(format!("HTTP {status}: {body}"));
+    }
+
+    resp.json::<T>()
         .map_err(|e| format!("parse failed: {e}"))
 }
 

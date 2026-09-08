@@ -96,29 +96,29 @@ fn auth_form(state: ESchoolState) -> impl Piece {
                 .font(Font::Body)
                 .secondary()
                 .align(TextAlign::Center),
-            label("2. Откройте DevTools (F12) → Network")
+            label("2. Нажмите F12 → вкладка Network")
                 .font(Font::Body)
                 .secondary()
                 .align(TextAlign::Center),
-            label("3. Нажмите любую кнопку в дневнике")
+            label("3. Нажмите «Дневник» или «Расписание»")
                 .font(Font::Body)
                 .secondary()
                 .align(TextAlign::Center),
-            label("4. Найдите запрос к diary.e-schools.by")
+            label("4. Кликните на любой запрос к API")
                 .font(Font::Body)
                 .secondary()
                 .align(TextAlign::Center),
-            label("5. Скопируйте заголовок Authorization")
+            label("5. В Headers скопируйте Authorization")
                 .font(Font::Body)
                 .secondary()
                 .align(TextAlign::Center),
-            label("   (это JWT токен, длинная строка)")
+            label("(это JWT — длинная строка с точками)")
                 .font(Font::Caption)
                 .secondary()
                 .align(TextAlign::Center),
         ))
         .spacing(2.0)
-        .padding(Insets { top: 8.0, leading: 24.0, bottom: 8.0, trailing: 24.0 }),
+        .padding(Insets { top: 8.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
         // Token input
         text_field(token_input)
             .placeholder("Вставьте JWT токен…")
@@ -128,7 +128,7 @@ fn auth_form(state: ESchoolState) -> impl Piece {
             .action(move || {
                 let t = token_input.get_untracked();
                 if t.trim().is_empty() {
-                    error_local.set("Введите токен".into());
+                    error_local.set("Вставьте токен".into());
                     return;
                 }
                 error_local.set(String::new());
