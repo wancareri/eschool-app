@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="kayzer4/eschool-app"
+REPO="wancareri/eschool-app"
 DIST_DIR="dist"
 
 usage() {
