@@ -9,6 +9,7 @@ const REDIRECT_URI: &str = "https://diary.e-schools.by/api/v1/admin/auth/callbac
 const SCOPE: &str = "openid profile offline_access organization.write person.write person.write.all person.read persons.read dictionaries.read organization.read";
 const OAUTH_URL: &str = "https://oauth.rios.unibel.by";
 const BASE_URL: &str = "https://diary.e-schools.by";
+const USER_AGENT: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Token {
@@ -42,7 +43,6 @@ impl Auth {
         }
     }
 
-    /// Build the OAuth authorization URL for browser-based login.
     pub fn login_url(&self) -> String {
         let return_url = self.build_return_url();
         format!(
@@ -67,12 +67,13 @@ impl Auth {
         &self.code_verifier
     }
 
-    /// Login with username and password using blocking HTTP client.
+    /// Login with username and password.
     pub fn login_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
         // 1. GET login page to get CSRF token and session cookie
         let client = reqwest::blocking::Client::builder()
             .cookie_store(true)
             .redirect(reqwest::redirect::Policy::none())
+            .user_agent(USER_AGENT)
             .timeout(std::time::Duration::from_secs(15))
             .build()
             .map_err(|e| format!("Failed to create client: {e}"))?;
@@ -83,23 +84,24 @@ impl Auth {
             .send()
             .map_err(|e| format!("Failed to load login page: {e}"))?;
 
+        let status = login_page.status();
+        if !status.is_success() {
+            return Err(format!("Login page returned HTTP {status}"));
+        }
+
         let page_html = login_page
             .text()
             .map_err(|e| format!("Failed to read login page: {e}"))?;
 
-        // 2. Extract __RequestVerificationToken from HTML
+        // 2. Extract __RequestVerificationToken
+        // HTML pattern: <input name="__RequestVerificationToken" type="hidden" value="CfDJ8..." />
         let csrf_token = extract_csrf_token(&page_html)
             .ok_or_else(|| {
-                // Log part of the HTML for debugging
-                let snippet = if page_html.len() > 500 {
-                    &page_html[..500]
-                } else {
-                    &page_html
-                };
-                format!("Failed to extract CSRF token. Page starts with: {}", snippet)
+                let snippet: String = page_html.chars().take(300).collect();
+                format!("CSRF token not found. Page: {snippet}")
             })?;
 
-        // 3. POST credentials with exact form field names from the OAuth server
+        // 3. POST credentials
         let return_url = self.build_return_url();
 
         let params = [
@@ -115,14 +117,21 @@ impl Auth {
             .post(format!("{}/Account/Login", OAUTH_URL))
             .form(&params)
             .send()
-            .map_err(|e| format!("Login request failed: {e}"))?;
+            .map_err(|e| format!("Login POST failed: {e}"))?;
 
-        // 4. Follow redirect to get auth code
+        // 4. Check redirect
+        let status = response.status();
+        if !status.is_redirection() {
+            let body = response.text().unwrap_or_default();
+            let snippet: String = body.chars().take(300).collect();
+            return Err(format!("Expected redirect, got HTTP {status}. Body: {snippet}"));
+        }
+
         let callback_url = response
             .headers()
             .get("location")
             .and_then(|v| v.to_str().ok())
-            .ok_or("No redirect after login — check credentials")?;
+            .ok_or("No Location header in redirect")?;
 
         let full_callback_url = if callback_url.starts_with("http") {
             callback_url.to_string()
@@ -130,10 +139,11 @@ impl Auth {
             format!("{}{}", OAUTH_URL, callback_url)
         };
 
-        // 5. Follow redirect chain to diary.e-schools.by
+        // 5. Follow redirect chain to get auth code
         let client_no_redirect = reqwest::blocking::Client::builder()
             .cookie_store(true)
             .redirect(reqwest::redirect::Policy::none())
+            .user_agent(USER_AGENT)
             .timeout(std::time::Duration::from_secs(15))
             .build()
             .map_err(|e| format!("Failed to create client: {e}"))?;
@@ -147,8 +157,7 @@ impl Auth {
                 .send()
                 .map_err(|e| format!("Redirect request failed: {e}"))?;
 
-            let status = resp.status();
-            if status.is_redirection() {
+            if resp.status().is_redirection() {
                 let location = resp
                     .headers()
                     .get("location")
@@ -157,13 +166,11 @@ impl Auth {
 
                 current_url = resolve_url(&current_url, location);
 
-                // Check if this URL contains the auth code
                 if let Some(code) = extract_code_from_url(&current_url) {
                     auth_code = Some(code);
                     break;
                 }
             } else {
-                // Check response body for code
                 let body = resp.text().unwrap_or_default();
                 if let Some(code) = extract_code_from_url(&body) {
                     auth_code = Some(code);
@@ -173,10 +180,9 @@ impl Auth {
             }
         }
 
-        let code = auth_code.ok_or("Failed to get authorization code from redirect")?;
+        let code = auth_code.ok_or("No authorization code found in redirect chain")?;
 
-        // 6. Exchange authorization code for JWT tokens
-        // First, hit the callback URL on diary.e-schools.by
+        // 6. Exchange code for JWT via diary.e-schools.by
         let token_url = format!(
             "{}/api/v1/admin/auth/callback?code={}&state={}",
             BASE_URL, code, self.state
@@ -213,11 +219,11 @@ impl Auth {
             return Err("Failed to reach token endpoint".into());
         }
 
-        // 7. GET the token endpoint to receive JWT
+        // 7. GET JWT tokens
         let auth_resp = client_no_redirect
             .get(&token_url_final)
             .send()
-            .map_err(|e| format!("Final token request failed: {e}"))?;
+            .map_err(|e| format!("Token request failed: {e}"))?;
 
         let auth_data: AuthResponse = auth_resp
             .json()
@@ -231,7 +237,6 @@ impl Auth {
     }
 }
 
-/// Resolve a possibly-relative URL against a base URL.
 fn resolve_url(base: &str, relative: &str) -> String {
     if relative.starts_with("http") {
         relative.to_string()
@@ -252,36 +257,16 @@ fn resolve_url(base: &str, relative: &str) -> String {
     }
 }
 
-/// Extract __RequestVerificationToken from HTML form.
-/// Tries multiple patterns to handle different HTML structures.
+/// Extract __RequestVerificationToken from ASP.NET Core HTML form.
+/// Actual HTML: <input name="__RequestVerificationToken" type="hidden" value="CfDJ8..." />
 fn extract_csrf_token(html: &str) -> Option<String> {
-    // Pattern 1: name="__RequestVerificationToken" value="..."
-    let patterns = [
-        r#"name="__RequestVerificationToken"\s+value="([^"]+)""#,
-        r#"value="([^"]+)"\s+name="__RequestVerificationToken""#,
-        r#"__RequestVerificationToken[^"]*"[^"]*value="([^"]+)""#,
-        r#"data-val="__RequestVerificationToken"[^>]+value="([^"]+)""#,
-    ];
-
-    for pattern in &patterns {
-        if let Ok(re) = Regex::new(pattern) {
-            if let Some(caps) = re.captures(html) {
-                return Some(caps.get(1)?.as_str().to_string());
-            }
-        }
-    }
-
-    // Pattern 2: Look for any input with name containing "VerificationToken"
-    if let Ok(re) = Regex::new(r#"name="([^"]*[Vv]erification[^"]*)"\s+value="([^"]+)""#) {
-        if let Some(caps) = re.captures(html) {
-            return Some(caps.get(2)?.as_str().to_string());
-        }
-    }
-
-    None
+    // The exact pattern from the OAuth server:
+    // <input name="__RequestVerificationToken" type="hidden" value="CfDJ8..." />
+    let re = Regex::new(r#"name="__RequestVerificationToken"[^>]*value="([^"]+)""#).ok()?;
+    let caps = re.captures(html)?;
+    Some(caps.get(1)?.as_str().to_string())
 }
 
-/// Extract authorization code from URL query parameter.
 fn extract_code_from_url(url: &str) -> Option<String> {
     let re = Regex::new(r"[?&]code=([^&]+)").ok()?;
     let caps = re.captures(url)?;
