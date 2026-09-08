@@ -35,12 +35,13 @@ day-piece-swiftui = { git = "https://github.com/daybrite/day.git" }
 # The item list persists as one JSON blob in `day::prefs` (src/model.rs).
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "blocking", "cookies"] }
 urlencoding = "2"
 base64 = "0.22"
 sha2 = "0.10"
 rand = "0.8"
 toml = "0.8"
+regex = "1"
 
 [package.metadata.day.ios]
 swift-packages = [{ path = "platform/swiftui", products = ["EschoolViews"] }]

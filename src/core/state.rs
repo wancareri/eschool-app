@@ -92,6 +92,28 @@ impl ESchoolState {
         self.load_all_sync();
     }
 
+    /// Login with username and password via OAuth.
+    pub(crate) fn login_with_password(self, username: &str, password: &str) {
+        use crate::core::network::auth::Auth;
+        self.loading.set(true);
+        self.error_msg.set(String::new());
+
+        let auth = Auth::new();
+        match auth.login_blocking(username, password) {
+            Ok(token) => {
+                day::prefs::set(TOKEN_KEY, &token.access_token);
+                day::prefs::set(REFRESH_KEY, &token.refresh_token);
+                self.is_authenticated.set(true);
+                self.loading.set(false);
+                self.load_all_sync();
+            }
+            Err(e) => {
+                self.error_msg.set(format!("Ошибка входа: {e}"));
+                self.loading.set(false);
+            }
+        }
+    }
+
     /// Wipe auth state and cached data.
     pub(crate) fn logout(self) {
         for key in [TOKEN_KEY, REFRESH_KEY, SCHOOL_ID_KEY, PROFILE_ID_KEY,

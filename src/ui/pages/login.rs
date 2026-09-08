@@ -53,7 +53,7 @@ fn profile_view(state: ESchoolState) -> impl Piece {
         ),
         when(
             move || state.loading.get(),
-            || label("Обновление данных…")
+            || label("Загрузка данных…")
                 .font(Font::Caption)
                 .secondary()
                 .align(TextAlign::Center),
@@ -79,68 +79,56 @@ fn profile_view(state: ESchoolState) -> impl Piece {
 // ── auth form (not logged in) ────────────────────────────────────────────
 
 fn auth_form(state: ESchoolState) -> impl Piece {
-    let token_input = Signal::new(String::new());
+    let username = Signal::new(String::new());
+    let password = Signal::new(String::new());
     let error_local = Signal::new(String::new());
+    let logging_in = Signal::new(false);
 
     column((
         spacer(),
         label("Вход в электронный дневник")
             .font(Font::Title2)
             .align(TextAlign::Center),
-        // Instructions
-        column((
-            label("Как получить токен:")
-                .font(Font::Headline)
-                .align(TextAlign::Center),
-            label("1. Откройте diary.e-schools.by и войдите")
-                .font(Font::Body)
-                .secondary()
-                .align(TextAlign::Center),
-            label("2. Нажмите F12 → вкладка Network")
-                .font(Font::Body)
-                .secondary()
-                .align(TextAlign::Center),
-            label("3. Нажмите «Дневник» или «Расписание»")
-                .font(Font::Body)
-                .secondary()
-                .align(TextAlign::Center),
-            label("4. Кликните на любой запрос к API")
-                .font(Font::Body)
-                .secondary()
-                .align(TextAlign::Center),
-            label("5. В Headers скопируйте Authorization")
-                .font(Font::Body)
-                .secondary()
-                .align(TextAlign::Center),
-            label("(это JWT — длинная строка с точками)")
-                .font(Font::Caption)
-                .secondary()
-                .align(TextAlign::Center),
-        ))
-        .spacing(2.0)
-        .padding(Insets { top: 8.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
-        // Token input
-        text_field(token_input)
-            .placeholder("Вставьте JWT токен…")
-            .id("token-field"),
+        label("ИЯ РИОС — сервер аутентификации")
+            .font(Font::Subheadline)
+            .secondary()
+            .align(TextAlign::Center),
+        // Username field
+        text_field(username)
+            .placeholder("Имя пользователя")
+            .id("username-field"),
+        // Password field
+        text_field(password)
+            .placeholder("Пароль")
+            .id("password-field"),
         // Login button
-        button("Войти")
-            .action(move || {
-                let t = token_input.get_untracked();
-                if t.trim().is_empty() {
-                    error_local.set("Вставьте токен".into());
-                    return;
-                }
-                error_local.set(String::new());
-                state.save_token(t.trim(), "");
-            })
-            .id("login-btn"),
+        button(move || {
+            if logging_in.get() { "Вход…" } else { "Войти" }
+        })
+        .action(move || {
+            let u = username.get_untracked();
+            let p = password.get_untracked();
+            if u.trim().is_empty() {
+                error_local.set("Введите имя пользователя".into());
+                return;
+            }
+            if p.is_empty() {
+                error_local.set("Введите пароль".into());
+                return;
+            }
+            error_local.set(String::new());
+            logging_in.set(true);
+            state.login_with_password(&u, &p);
+            logging_in.set(false);
+        })
+        .id("login-btn"),
         // Error display
         when(
             move || {
                 let local_err = error_local.get();
                 let state_err = state.error_msg.get();
-                !local_err.is_empty() || !state_err.is_empty()
+                let is_loading = state.loading.get();
+                (!local_err.is_empty() || !state_err.is_empty()) && !is_loading
             },
             move || {
                 let local_err = error_local.get();
@@ -151,6 +139,14 @@ fn auth_form(state: ESchoolState) -> impl Piece {
                     .color(colors::ERROR)
                     .align(TextAlign::Center)
             }
+        ),
+        // Loading indicator
+        when(
+            move || state.loading.get(),
+            || label("Выполняется вход…")
+                .font(Font::Caption)
+                .secondary()
+                .align(TextAlign::Center),
         ),
         spacer(),
     ))
