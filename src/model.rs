@@ -91,6 +91,11 @@ impl Ambient for Scene {
         let saved = day::prefs::get(STORE_KEY)
             .and_then(|s| serde_json::from_str::<Vec<Item>>(&s).ok())
             .filter(|v| !v.is_empty());
+        // Start on Login tab if no auth token is stored
+        let has_token = day::prefs::get("auth.token")
+            .map(|t| !t.is_empty())
+            .unwrap_or(false);
+        let initial_section = if has_token { Section::Diary } else { Section::Login };
         Scene {
             items: Store::new(Keyed::new(saved.unwrap_or_else(seed))),
             show_done: Signal::new(
@@ -98,7 +103,7 @@ impl Ambient for Scene {
                     .map(|v| v != "0")
                     .unwrap_or(true),
             ),
-            section: Signal::new(Section::Diary),
+            section: Signal::new(initial_section),
             selected: Signal::new(None),
             scroll_to: Signal::new(None),
             detail_open: Signal::new(false),

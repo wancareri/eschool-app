@@ -11,6 +11,7 @@ nav_diary = Diary
 nav_schedule = Schedule
 nav_teachers = Teachers
 nav_settings = Settings
+nav_login = Account
 
 # Menus
 menu_file = File

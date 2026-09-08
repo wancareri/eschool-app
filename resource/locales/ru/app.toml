@@ -6,6 +6,7 @@ diary = "Дневник"
 schedule = "Расписание"
 teachers = "Учителя"
 settings = "Настройки"
+login = "Аккаунт"
 
 [menu]
 file = "Файл"

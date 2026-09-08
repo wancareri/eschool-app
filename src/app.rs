@@ -1,4 +1,5 @@
 use crate::core::colors;
+use crate::core::state::ESchoolState;
 use crate::model::Scene;
 use crate::res;
 use crate::Section;
@@ -42,51 +43,69 @@ pub(crate) fn menus() -> Vec<MenuEntry> {
     ]
 }
 
-/// Build the navigation selector — four school tabs + optional settings.
+/// Build the navigation selector — login + four school tabs + optional settings.
 pub(crate) fn build_nav(scene: Scene, primary: bool) -> AnyPiece {
+    let state = ESchoolState::ambient();
+    let is_auth = state.is_authenticated.get();
+
     let sel = selector(scene.section)
         .title(res::str::app_title())
         .sidebar_toggle(true)
+        // Login/Account tab — always first
         .item_icon(
-            Section::Diary,
-            res::str::nav_diary(),
-            res::vectors::tab_diary,
-            diary_page,
+            Section::Login,
+            res::str::nav_login(),
+            res::vectors::tab_login,
+            login_page,
         )
-        .icon_tint(colors::NAV_DIARY)
-        .item_icon(
-            Section::Schedule,
-            res::str::nav_schedule(),
-            res::vectors::tab_schedule,
-            schedule_page,
-        )
-        .icon_tint(colors::NAV_SCHEDULE)
-        .item_icon(
-            Section::Teachers,
-            res::str::nav_teachers(),
-            res::vectors::tab_teachers,
-            teachers_page,
-        )
-        .icon_tint(colors::NAV_TEACHERS)
-        .items(
-            move || {
-                if has_menu_bar() {
-                    Vec::new()
-                } else {
-                    vec![Section::Settings]
-                }
-            },
-            |s: &Section| {
-                item(*s, res::str::nav_settings())
-                    .icon(res::vectors::tab_settings)
-                    .icon_tint(colors::NAV_SETTINGS)
-            },
-        )
-        .destination(|_: &Section| settings_page())
-        .id("nav");
-    if primary {
-        sel.restore("app.section").any()
+        .icon_tint(if is_auth { colors::SUCCESS } else { colors::PRIMARY });
+
+    // School tabs — only when authenticated
+    let sel = if is_auth {
+        sel.item_icon(
+                Section::Diary,
+                res::str::nav_diary(),
+                res::vectors::tab_diary,
+                diary_page,
+            )
+            .icon_tint(colors::NAV_DIARY)
+            .item_icon(
+                Section::Schedule,
+                res::str::nav_schedule(),
+                res::vectors::tab_schedule,
+                schedule_page,
+            )
+            .icon_tint(colors::NAV_SCHEDULE)
+            .item_icon(
+                Section::Teachers,
+                res::str::nav_teachers(),
+                res::vectors::tab_teachers,
+                teachers_page,
+            )
+            .icon_tint(colors::NAV_TEACHERS)
     } else {
-        sel.local().any()
+        sel
+    };
+
+    let sel = sel.items(
+        move || {
+            if has_menu_bar() {
+                Vec::new()
+            } else {
+                vec![Section::Settings]
+            }
+        },
+        |s: &Section| {
+            item(*s, res::str::nav_settings())
+                .icon(res::vectors::tab_settings)
+                .icon_tint(colors::NAV_SETTINGS)
+        },
+    )
+    .destination(|_: &Section| settings_page());
+
+    if primary {
+        sel.id("nav").restore("app.section").any()
+    } else {
+        sel.id("nav").local().any()
     }
 }

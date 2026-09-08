@@ -80,16 +80,30 @@ fn profile_view(state: ESchoolState) -> impl Piece {
 
 fn auth_form(state: ESchoolState) -> impl Piece {
     let token_input = Signal::new(String::new());
+    let error_local = Signal::new(String::new());
 
     column((
         spacer(),
         label("Вход в электронный дневник")
             .font(Font::Title2)
             .align(TextAlign::Center),
-        label("Введите токен авторизации, полученный на diary.e-schools.by")
-            .font(Font::Body)
-            .secondary()
-            .align(TextAlign::Center),
+        // Instructions
+        column((
+            label("1. Откройте diary.e-schools.by в браузере")
+                .font(Font::Body)
+                .align(TextAlign::Center),
+            label("2. Войдите в аккаунт ученика")
+                .font(Font::Body)
+                .align(TextAlign::Center),
+            label("3. Откройте DevTools (F12) → Application → Cookies")
+                .font(Font::Body)
+                .align(TextAlign::Center),
+            label("4. Скопируйте значение cookie «token»")
+                .font(Font::Body)
+                .align(TextAlign::Center),
+        ))
+        .spacing(4.0)
+        .padding(Insets { top: 8.0, leading: 32.0, bottom: 8.0, trailing: 32.0 }),
         // Token input
         text_field(token_input)
             .placeholder("Вставьте токен…")
@@ -98,17 +112,30 @@ fn auth_form(state: ESchoolState) -> impl Piece {
         button("Войти")
             .action(move || {
                 let t = token_input.get_untracked();
-                if !t.is_empty() {
-                    state.save_token(&t, "");
+                if t.trim().is_empty() {
+                    error_local.set("Введите токен".into());
+                    return;
                 }
+                error_local.set(String::new());
+                state.save_token(t.trim(), "");
             })
             .id("login-btn"),
+        // Error display
         when(
-            move || !state.error_msg.get().is_empty(),
-            move || label(move || state.error_msg.get())
-                .font(Font::Caption)
-                .color(colors::ERROR)
-                .align(TextAlign::Center),
+            move || {
+                let local_err = error_local.get();
+                let state_err = state.error_msg.get();
+                !local_err.is_empty() || !state_err.is_empty()
+            },
+            move || {
+                let local_err = error_local.get();
+                let state_err = state.error_msg.get();
+                let msg = if !local_err.is_empty() { local_err } else { state_err };
+                label(msg)
+                    .font(Font::Caption)
+                    .color(colors::ERROR)
+                    .align(TextAlign::Center)
+            }
         ),
         spacer(),
     ))

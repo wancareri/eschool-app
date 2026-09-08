@@ -6,6 +6,7 @@ diary = "Дзённік"
 schedule = "Расклад"
 teachers = "Настаўнікі"
 settings = "Налады"
+login = "Уліковы запіс"
 
 [menu]
 file = "Файл"
