@@ -219,15 +219,24 @@ impl Auth {
         let profile_id = profile_data["profile_id"]
             .as_str()
             .ok_or("No profile_id in data_for_login response")?;
+        let schools = profile_data["schools"]
+            .as_array()
+            .ok_or("No schools in data_for_login response")?;
+        let school_id = schools.first()
+            .and_then(|s| s.get("id"))
+            .and_then(|id| id.as_str())
+            .ok_or("No school_id in data_for_login response")?;
         let kinds = profile_data["kinds"]
             .as_array()
             .ok_or("No kinds in data_for_login response")?;
         let kind = kinds.first()
             .and_then(|k| k.as_str())
-            .unwrap_or("STUDENT");
+            .unwrap_or("student")
+            .to_lowercase();
 
-        // 7. Build token string: profile_id:client_id:kind (base64 encoded)
-        let token_raw = format!("{}:{}:{}", profile_id, CLIENT_ID, kind);
+        // 7. Build token string: profile_id:school_id:kind (base64 encoded)
+        //    Matches the web SPA: btoa(profile_id + ":" + school_id + ":" + kind)
+        let token_raw = format!("{}:{}:{}", profile_id, school_id, kind);
         let token_b64 = BASE64.encode(token_raw.as_bytes());
 
         let login_url = format!("{}/api/v1/auth/login?token={}", BASE_URL, token_b64);
