@@ -69,15 +69,24 @@ impl Auth {
 
     /// Login with username and password.
     pub fn login_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
-        // 1. GET login page to get CSRF token and session cookie
+        // Single client for entire flow — cookies must be preserved
         let client = reqwest::blocking::Client::builder()
             .cookie_store(true)
             .redirect(reqwest::redirect::Policy::none())
             .user_agent(USER_AGENT)
             .timeout(std::time::Duration::from_secs(15))
+            .danger_accept_invalid_certs(true)
             .build()
             .map_err(|e| format!("Failed to create client: {e}"))?;
 
+        // 0. Hit diary login/student to establish session context
+        let init_resp = client
+            .get(format!("{}/api/v1/admin/auth/login/student", BASE_URL))
+            .send()
+            .map_err(|e| format!("Failed to init login: {e}"))?;
+        let _init_status = init_resp.status(); // 302 expected, ignore errors
+
+        // 1. GET OAuth login page
         let login_url = self.login_url();
         let login_page = client
             .get(&login_url)
@@ -94,7 +103,6 @@ impl Auth {
             .map_err(|e| format!("Failed to read login page: {e}"))?;
 
         // 2. Extract __RequestVerificationToken
-        // HTML pattern: <input name="__RequestVerificationToken" type="hidden" value="CfDJ8..." />
         let csrf_token = extract_csrf_token(&page_html)
             .ok_or_else(|| {
                 let snippet: String = page_html.chars().take(300).collect();
@@ -110,7 +118,7 @@ impl Auth {
             ("Input.Password", password),
             ("Input.Button", "login"),
             ("__RequestVerificationToken", csrf_token.as_str()),
-            ("Input.RememberLogin", "true"),
+            ("Input.RememberLogin", "false"),
         ];
 
         let response = client
@@ -139,24 +147,14 @@ impl Auth {
             format!("{}{}", OAUTH_URL, callback_url)
         };
 
-        // 5. Follow redirect chain from OAuth to diary.e-schools.by callback
-        //    The full callback URL contains all required params (scope, session_state, iss, etc.)
-        let client_no_redirect = reqwest::blocking::Client::builder()
-            .cookie_store(true)
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent(USER_AGENT)
-            .timeout(std::time::Duration::from_secs(15))
-            .build()
-            .map_err(|e| format!("Failed to create client: {e}"))?;
-
+        // 5. Follow redirect chain from OAuth to diary callback
         let mut current_url = full_callback_url;
         let mut preauth_url = None;
 
-        // Follow redirects until we hit diary.e-schools.by callback which returns a redirect
-        // with the preauth token
-        for _ in 0..10 {
-            let resp = client_no_redirect
+        for _step in 0..15 {
+            let resp = client
                 .get(&current_url)
+                .header("Referer", format!("{}/", OAUTH_URL))
                 .send()
                 .map_err(|e| format!("Redirect request failed: {e}"))?;
 
@@ -169,15 +167,21 @@ impl Auth {
 
                 current_url = resolve_url(&current_url, location);
 
-                // diary.e-schools.by callback redirects to /#/preauthorized?data=<uuid>
-                // or to a data_for_login endpoint
+                if current_url.contains("login/error") {
+                    // Extract error message from base64 data param
+                    let error_msg = extract_uuid_from_url(&current_url)
+                        .and_then(|data| base64::engine::general_purpose::STANDARD.decode(format!("{}==", data.replace('/', "/").replace('-', "+")).as_bytes()).ok())
+                        .and_then(|bytes| String::from_utf8(bytes).ok())
+                        .unwrap_or_else(|| "Unknown error".to_string());
+                    return Err(format!("Login failed: {error_msg}"));
+                }
+
                 if current_url.contains("data_for_login") || current_url.contains("preauthorized") {
                     preauth_url = Some(current_url.clone());
                     break;
                 }
             } else {
                 let body = resp.text().unwrap_or_default();
-                // Maybe the response itself contains the token endpoint
                 if let Some(url) = find_data_for_login_url(&body) {
                     preauth_url = Some(url);
                     break;
@@ -200,7 +204,7 @@ impl Auth {
         };
 
         // 6. Get profile data from data_for_login
-        let data_resp = client_no_redirect
+        let data_resp = client
             .get(&data_url)
             .send()
             .map_err(|e| format!("data_for_login request failed: {e}"))?;
@@ -209,7 +213,6 @@ impl Auth {
             .text()
             .map_err(|e| format!("Failed to read data_for_login response: {e}"))?;
 
-        // Extract profile_id and kinds from response
         let profile_data: serde_json::Value = serde_json::from_str(&data_body)
             .map_err(|e| format!("Failed to parse data_for_login JSON: {e}"))?;
 
@@ -224,14 +227,13 @@ impl Auth {
             .unwrap_or("STUDENT");
 
         // 7. Build token string: profile_id:client_id:kind (base64 encoded)
-        let client_id = "oauth_diary_echools";
-        let token_raw = format!("{}:{}:{}", profile_id, client_id, kind);
+        let token_raw = format!("{}:{}:{}", profile_id, CLIENT_ID, kind);
         let token_b64 = BASE64.encode(token_raw.as_bytes());
 
         let login_url = format!("{}/api/v1/auth/login?token={}", BASE_URL, token_b64);
 
         // 8. Get JWT tokens
-        let auth_resp = client_no_redirect
+        let auth_resp = client
             .get(&login_url)
             .send()
             .map_err(|e| format!("Token request failed: {e}"))?;
