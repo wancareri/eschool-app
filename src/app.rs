@@ -26,9 +26,6 @@ pub(crate) fn menus() -> Vec<MenuEntry> {
             res::str::menu_file().format(),
             vec![
                 menu_role(MenuRole::NewWindow),
-                menu_item(res::str::cmd_add().format())
-                    .shortcut(Shortcut::new("n").shift())
-                    .action(front(|scene| scene.new_item())),
                 menu_separator(),
                 menu_role(MenuRole::CloseWindow),
             ],
@@ -36,16 +33,6 @@ pub(crate) fn menus() -> Vec<MenuEntry> {
         sub_menu(
             res::str::menu_edit().format(),
             vec![
-                menu_item(res::str::cmd_delete().format())
-                    .shortcut(Shortcut::new("Delete"))
-                    .action(front(|scene| scene.delete_selected())),
-                menu_item(res::str::cmd_done().format())
-                    .shortcut(Shortcut::new("d"))
-                    .action(front(|scene| scene.done_selected())),
-                menu_item(res::str::cmd_show_done().format())
-                    .shortcut(Shortcut::new("h"))
-                    .action(front(|scene| scene.show_done.update(|v| *v = !*v))),
-                menu_separator(),
                 menu_role(MenuRole::Cut),
                 menu_role(MenuRole::Copy),
                 menu_role(MenuRole::Paste),
@@ -55,31 +42,11 @@ pub(crate) fn menus() -> Vec<MenuEntry> {
     ]
 }
 
-/// Build the navigation selector, already restored or local.
+/// Build the navigation selector — four school tabs + optional settings.
 pub(crate) fn build_nav(scene: Scene, primary: bool) -> AnyPiece {
     let sel = selector(scene.section)
         .title(res::str::app_title())
-        .content_list(item_list_pane)
-        .content_list_width(320.0)
-        .content_list_for(|s: &Section| matches!(s, Section::Diary))
-        .detail_visible(scene.detail_open)
-        .detail_title(move || detail_title(scene))
         .sidebar_toggle(true)
-        .toolbar(move || {
-            vec![
-                toolbar_toggle("tb-show-done", res::str::cmd_show_done(), scene.show_done)
-                    .icon(Symbol::Filter)
-                    .tooltip(res::str::cmd_show_done()),
-                toolbar_button("tb-done", res::str::cmd_done())
-                    .icon(Symbol::Check)
-                    .tooltip(res::str::cmd_done())
-                    .action(move || scene.done_selected()),
-                toolbar_button("tb-add", res::str::cmd_add())
-                    .icon(Symbol::Add)
-                    .tooltip(res::str::cmd_add())
-                    .action(move || scene.new_item()),
-            ]
-        })
         .item_icon(
             Section::Diary,
             res::str::nav_diary(),

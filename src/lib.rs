@@ -13,6 +13,7 @@ pub mod swiftui {
     include!(concat!(env!("OUT_DIR"), "/day_swiftui.rs"));
 }
 
+use crate::core::state::ESchoolState;
 use crate::model::Scene;
 
 day::day_start!(options: window(), root);
@@ -51,16 +52,15 @@ pub fn root() -> impl Piece {
 }
 
 fn window_shell(primary: bool) -> impl Piece {
-    Scene::scoped(move |scene| {
-        if primary {
-            scene.persist();
-        }
-        day::window_title(
-            move || match scene.selected.get().and_then(|id| scene.find(id)) {
-                Some(item) if !item.name.is_empty() => item.name,
-                _ => res::str::app_title().format(),
-            },
-        );
-        app::build_nav(scene, primary)
+    // ESchoolState is scoped OUTSIDE Scene so every page can reach the shared
+    // school data without passing it through Scene (which holds template state).
+    ESchoolState::scoped(move |_state| {
+        Scene::scoped(move |scene| {
+            if primary {
+                scene.persist();
+            }
+            day::window_title(move || res::str::app_title().format());
+            app::build_nav(scene, primary)
+        })
     })
 }
