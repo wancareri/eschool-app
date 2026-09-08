@@ -139,7 +139,8 @@ impl Auth {
             format!("{}{}", OAUTH_URL, callback_url)
         };
 
-        // 5. Follow redirect chain to get auth code
+        // 5. Follow redirect chain from OAuth to diary.e-schools.by callback
+        //    The full callback URL contains all required params (scope, session_state, iss, etc.)
         let client_no_redirect = reqwest::blocking::Client::builder()
             .cookie_store(true)
             .redirect(reqwest::redirect::Policy::none())
@@ -149,8 +150,10 @@ impl Auth {
             .map_err(|e| format!("Failed to create client: {e}"))?;
 
         let mut current_url = full_callback_url;
-        let mut auth_code = None;
+        let mut preauth_url = None;
 
+        // Follow redirects until we hit diary.e-schools.by callback which returns a redirect
+        // with the preauth token
         for _ in 0..10 {
             let resp = client_no_redirect
                 .get(&current_url)
@@ -166,62 +169,70 @@ impl Auth {
 
                 current_url = resolve_url(&current_url, location);
 
-                if let Some(code) = extract_code_from_url(&current_url) {
-                    auth_code = Some(code);
+                // diary.e-schools.by callback redirects to /#/preauthorized?data=<uuid>
+                // or to a data_for_login endpoint
+                if current_url.contains("data_for_login") || current_url.contains("preauthorized") {
+                    preauth_url = Some(current_url.clone());
                     break;
                 }
             } else {
                 let body = resp.text().unwrap_or_default();
-                if let Some(code) = extract_code_from_url(&body) {
-                    auth_code = Some(code);
+                // Maybe the response itself contains the token endpoint
+                if let Some(url) = find_data_for_login_url(&body) {
+                    preauth_url = Some(url);
                     break;
                 }
                 break;
             }
         }
 
-        let code = auth_code.ok_or("No authorization code found in redirect chain")?;
-
-        // 6. Exchange code for JWT via diary.e-schools.by
-        let token_url = format!(
-            "{}/api/v1/admin/auth/callback?code={}&state={}",
-            BASE_URL, code, self.state
-        );
-
-        let mut current = token_url;
-        let mut token_url_final = String::new();
-
-        for _ in 0..10 {
-            let resp = client_no_redirect
-                .get(&current)
-                .send()
-                .map_err(|e| format!("Token redirect failed: {e}"))?;
-
-            if resp.status().is_redirection() {
-                let location = resp
-                    .headers()
-                    .get("location")
-                    .and_then(|v| v.to_str().ok())
-                    .ok_or("Redirect without Location")?;
-
-                current = resolve_url(&current, location);
-
-                if current.contains("/api/v1/auth/login") {
-                    token_url_final = current;
-                    break;
-                }
+        // If we hit a preauthorized page, extract the uuid and call data_for_login
+        let data_url = if let Some(url) = preauth_url {
+            if url.contains("data_for_login") {
+                url
+            } else if let Some(uuid) = extract_uuid_from_url(&url) {
+                format!("{}/api/v1/admin/auth/data_for_login/{}", BASE_URL, uuid)
             } else {
-                break;
+                return Err(format!("Preauthorized URL has no UUID: {}", url).into());
             }
-        }
+        } else {
+            return Err("No preauthorized redirect received from callback".into());
+        };
 
-        if token_url_final.is_empty() {
-            return Err("Failed to reach token endpoint".into());
-        }
+        // 6. Get profile data from data_for_login
+        let data_resp = client_no_redirect
+            .get(&data_url)
+            .send()
+            .map_err(|e| format!("data_for_login request failed: {e}"))?;
 
-        // 7. GET JWT tokens
+        let data_body = data_resp
+            .text()
+            .map_err(|e| format!("Failed to read data_for_login response: {e}"))?;
+
+        // Extract profile_id and kinds from response
+        let profile_data: serde_json::Value = serde_json::from_str(&data_body)
+            .map_err(|e| format!("Failed to parse data_for_login JSON: {e}"))?;
+
+        let profile_id = profile_data["profile_id"]
+            .as_str()
+            .ok_or("No profile_id in data_for_login response")?;
+        let kinds = profile_data["kinds"]
+            .as_array()
+            .ok_or("No kinds in data_for_login response")?;
+        let kind = kinds.first()
+            .and_then(|k| k.as_str())
+            .unwrap_or("STUDENT");
+
+        // 7. Build token string: profile_id:client_id:kind (base64 encoded)
+        let client_id = "oauth_diary_echools";
+        let token_raw = format!("{}:{}:{}", profile_id, client_id, kind);
+        let token_b64 = BASE64.encode(token_raw.as_bytes());
+
+        let login_url = format!("{}/api/v1/auth/login?token={}", BASE_URL, token_b64);
+
+        // 8. Get JWT tokens
         let auth_resp = client_no_redirect
-            .get(&token_url_final)
+            .get(&login_url)
             .send()
             .map_err(|e| format!("Token request failed: {e}"))?;
 
@@ -271,6 +282,19 @@ fn extract_code_from_url(url: &str) -> Option<String> {
     let re = Regex::new(r"[?&]code=([^&]+)").ok()?;
     let caps = re.captures(url)?;
     Some(urlencoding::decode(caps.get(1)?.as_str()).ok()?.into_owned())
+}
+
+fn find_data_for_login_url(body: &str) -> Option<String> {
+    let re = Regex::new(r#"/api/v1/admin/auth/data_for_login/([a-f0-9-]+)"#).ok()?;
+    let caps = re.captures(body)?;
+    let uuid = caps.get(1)?.as_str();
+    Some(format!("{}/api/v1/admin/auth/data_for_login/{}", BASE_URL, uuid))
+}
+
+fn extract_uuid_from_url(url: &str) -> Option<String> {
+    let re = Regex::new(r"[?&]data=([a-f0-9-]+)").ok()?;
+    let caps = re.captures(url)?;
+    Some(caps.get(1)?.as_str().to_string())
 }
 
 fn generate_code_verifier() -> String {
