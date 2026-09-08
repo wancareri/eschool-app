@@ -35,9 +35,10 @@ impl ApiClient {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         
         if let Some(token) = &self.token {
+            // e-schools.by uses raw JWT without "Bearer" prefix
             headers.insert(
                 AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {}", token.access_token))
+                HeaderValue::from_str(&token.access_token)
                     .expect("Invalid token"),
             );
         }

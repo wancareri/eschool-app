@@ -260,7 +260,8 @@ fn build_client(token: &str) -> reqwest::blocking::Client {
     use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    if let Ok(v) = HeaderValue::from_str(&format!("Bearer {token}")) {
+    // e-schools.by uses raw JWT without "Bearer" prefix
+    if let Ok(v) = HeaderValue::from_str(token) {
         headers.insert(AUTHORIZATION, v);
     }
     reqwest::blocking::Client::builder()

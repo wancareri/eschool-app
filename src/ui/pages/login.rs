@@ -89,24 +89,39 @@ fn auth_form(state: ESchoolState) -> impl Piece {
             .align(TextAlign::Center),
         // Instructions
         column((
-            label("1. Откройте diary.e-schools.by в браузере")
-                .font(Font::Body)
+            label("Как получить токен:")
+                .font(Font::Headline)
                 .align(TextAlign::Center),
-            label("2. Войдите в аккаунт ученика")
+            label("1. Откройте diary.e-schools.by и войдите")
                 .font(Font::Body)
+                .secondary()
                 .align(TextAlign::Center),
-            label("3. Откройте DevTools (F12) → Application → Cookies")
+            label("2. Откройте DevTools (F12) → Network")
                 .font(Font::Body)
+                .secondary()
                 .align(TextAlign::Center),
-            label("4. Скопируйте значение cookie «token»")
+            label("3. Нажмите любую кнопку в дневнике")
                 .font(Font::Body)
+                .secondary()
+                .align(TextAlign::Center),
+            label("4. Найдите запрос к diary.e-schools.by")
+                .font(Font::Body)
+                .secondary()
+                .align(TextAlign::Center),
+            label("5. Скопируйте заголовок Authorization")
+                .font(Font::Body)
+                .secondary()
+                .align(TextAlign::Center),
+            label("   (это JWT токен, длинная строка)")
+                .font(Font::Caption)
+                .secondary()
                 .align(TextAlign::Center),
         ))
-        .spacing(4.0)
-        .padding(Insets { top: 8.0, leading: 32.0, bottom: 8.0, trailing: 32.0 }),
+        .spacing(2.0)
+        .padding(Insets { top: 8.0, leading: 24.0, bottom: 8.0, trailing: 24.0 }),
         // Token input
         text_field(token_input)
-            .placeholder("Вставьте токен…")
+            .placeholder("Вставьте JWT токен…")
             .id("token-field"),
         // Login button
         button("Войти")
@@ -139,7 +154,7 @@ fn auth_form(state: ESchoolState) -> impl Piece {
         ),
         spacer(),
     ))
-    .spacing(16.0)
+    .spacing(12.0)
     .align(HAlign::Center)
     .grow()
 }
