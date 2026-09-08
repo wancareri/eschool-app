@@ -44,18 +44,22 @@ impl Auth {
 
     /// Build the OAuth authorization URL for browser-based login.
     pub fn login_url(&self) -> String {
-        let return_url = format!(
-            "/connect/authorize/callback?client_id={}&response_type=code&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256&state={}",
-            CLIENT_ID,
-            urlencoding::encode(REDIRECT_URI),
-            urlencoding::encode(SCOPE),
-            &self.code_challenge,
-            &self.state,
-        );
+        let return_url = self.build_return_url();
         format!(
             "{}/Account/Login?ReturnUrl={}",
             OAUTH_URL,
             urlencoding::encode(&return_url),
+        )
+    }
+
+    fn build_return_url(&self) -> String {
+        format!(
+            "/connect/authorize/callback?client_id={}&response_type=code&state={}&authentication=client_secret_post&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256",
+            CLIENT_ID,
+            &self.state,
+            urlencoding::encode(REDIRECT_URI),
+            urlencoding::encode(SCOPE),
+            &self.code_challenge,
         )
     }
 
@@ -64,7 +68,6 @@ impl Auth {
     }
 
     /// Login with username and password using blocking HTTP client.
-    /// Returns JWT tokens on success.
     pub fn login_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
         // 1. GET login page to get CSRF token and session cookie
         let client = reqwest::blocking::Client::builder()
@@ -86,24 +89,25 @@ impl Auth {
 
         // 2. Extract __RequestVerificationToken from HTML
         let csrf_token = extract_csrf_token(&page_html)
-            .ok_or("Failed to extract CSRF token from login page")?;
+            .ok_or_else(|| {
+                // Log part of the HTML for debugging
+                let snippet = if page_html.len() > 500 {
+                    &page_html[..500]
+                } else {
+                    &page_html
+                };
+                format!("Failed to extract CSRF token. Page starts with: {}", snippet)
+            })?;
 
-        // 3. POST credentials
-        let return_url = format!(
-            "/connect/authorize/callback?client_id={}&response_type=code&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256&state={}",
-            CLIENT_ID,
-            urlencoding::encode(REDIRECT_URI),
-            urlencoding::encode(SCOPE),
-            &self.code_challenge,
-            &self.state,
-        );
+        // 3. POST credentials with exact form field names from the OAuth server
+        let return_url = self.build_return_url();
 
         let params = [
+            ("Input.ReturnUrl", return_url.as_str()),
             ("Input.Username", username),
             ("Input.Password", password),
-            ("Input.ReturnUrl", &return_url),
             ("Input.Button", "login"),
-            ("__RequestVerificationToken", &csrf_token),
+            ("__RequestVerificationToken", csrf_token.as_str()),
             ("Input.RememberLogin", "true"),
         ];
 
@@ -114,22 +118,19 @@ impl Auth {
             .map_err(|e| format!("Login request failed: {e}"))?;
 
         // 4. Follow redirect to get auth code
-        // The POST returns 302 with Location header pointing to callback URL
         let callback_url = response
             .headers()
             .get("location")
             .and_then(|v| v.to_str().ok())
             .ok_or("No redirect after login — check credentials")?;
 
-        // The callback URL might be relative or absolute
         let full_callback_url = if callback_url.starts_with("http") {
             callback_url.to_string()
         } else {
             format!("{}{}", OAUTH_URL, callback_url)
         };
 
-        // 5. Follow the callback redirect chain to diary.e-schools.by
-        // Disable automatic redirect to capture each step
+        // 5. Follow redirect chain to diary.e-schools.by
         let client_no_redirect = reqwest::blocking::Client::builder()
             .cookie_store(true)
             .redirect(reqwest::redirect::Policy::none())
@@ -154,27 +155,12 @@ impl Auth {
                     .and_then(|v| v.to_str().ok())
                     .ok_or("Redirect without Location header")?;
 
-                current_url = if location.starts_with("http") {
-                    location.to_string()
-                } else if location.starts_with('/') {
-                    // Extract base URL from current_url
-                    let base = current_url
-                        .split("://")
-                        .nth(1)
-                        .and_then(|s| s.find('/'))
-                        .map(|i| &current_url[..current_url.find("://").unwrap() + 3 + i])
-                        .unwrap_or(&current_url);
-                    format!("{}{}", base, location)
-                } else {
-                    format!("{}/{}", current_url.trim_end_matches('/'), location)
-                };
+                current_url = resolve_url(&current_url, location);
 
-                // Check if this is the callback URL with a code
-                if current_url.contains("code=") {
-                    if let Some(code) = extract_code_from_url(&current_url) {
-                        auth_code = Some(code);
-                        break;
-                    }
+                // Check if this URL contains the auth code
+                if let Some(code) = extract_code_from_url(&current_url) {
+                    auth_code = Some(code);
+                    break;
                 }
             } else {
                 // Check response body for code
@@ -189,25 +175,15 @@ impl Auth {
 
         let code = auth_code.ok_or("Failed to get authorization code from redirect")?;
 
-        // 6. Exchange authorization code for tokens via diary.e-schools.by
-        // The callback redirects to: /api/v1/auth/login?token=<base64>
-        // But we need to construct the base64 token ourselves
-        // Actually, let's just follow the redirect chain and get the final JWT
-
-        // First, hit the callback URL with the code
+        // 6. Exchange authorization code for JWT tokens
+        // First, hit the callback URL on diary.e-schools.by
         let token_url = format!(
             "{}/api/v1/admin/auth/callback?code={}&state={}",
             BASE_URL, code, self.state
         );
 
-        let resp = client_no_redirect
-            .get(&token_url)
-            .send()
-            .map_err(|e| format!("Token exchange failed: {e}"))?;
-
-        // Follow redirects to get to /api/v1/auth/login?token=...
-        let mut token_url_final = String::new();
         let mut current = token_url;
+        let mut token_url_final = String::new();
 
         for _ in 0..10 {
             let resp = client_no_redirect
@@ -222,19 +198,7 @@ impl Auth {
                     .and_then(|v| v.to_str().ok())
                     .ok_or("Redirect without Location")?;
 
-                current = if location.starts_with("http") {
-                    location.to_string()
-                } else if location.starts_with('/') {
-                    let base = current
-                        .split("://")
-                        .nth(1)
-                        .and_then(|s| s.find('/'))
-                        .map(|i| &current[..current.find("://").unwrap() + 3 + i])
-                        .unwrap_or(&current);
-                    format!("{}{}", base, location)
-                } else {
-                    format!("{}/{}", current.trim_end_matches('/'), location)
-                };
+                current = resolve_url(&current, location);
 
                 if current.contains("/api/v1/auth/login") {
                     token_url_final = current;
@@ -267,18 +231,61 @@ impl Auth {
     }
 }
 
+/// Resolve a possibly-relative URL against a base URL.
+fn resolve_url(base: &str, relative: &str) -> String {
+    if relative.starts_with("http") {
+        relative.to_string()
+    } else if relative.starts_with('/') {
+        let scheme_end = base.find("://").unwrap_or(0) + 3;
+        let base_host_end = base[scheme_end..]
+            .find('/')
+            .map(|i| scheme_end + i)
+            .unwrap_or(base.len());
+        format!("{}{}", &base[..base_host_end], relative)
+    } else {
+        let base_path = if let Some(pos) = base.rfind('/') {
+            &base[..=pos]
+        } else {
+            base
+        };
+        format!("{}{}", base_path, relative)
+    }
+}
+
 /// Extract __RequestVerificationToken from HTML form.
+/// Tries multiple patterns to handle different HTML structures.
 fn extract_csrf_token(html: &str) -> Option<String> {
-    let re = Regex::new(r#"name="__RequestVerificationToken"\s+value="([^"]+)""#).ok()?;
-    let caps = re.captures(html)?;
-    Some(caps.get(1)?.as_str().to_string())
+    // Pattern 1: name="__RequestVerificationToken" value="..."
+    let patterns = [
+        r#"name="__RequestVerificationToken"\s+value="([^"]+)""#,
+        r#"value="([^"]+)"\s+name="__RequestVerificationToken""#,
+        r#"__RequestVerificationToken[^"]*"[^"]*value="([^"]+)""#,
+        r#"data-val="__RequestVerificationToken"[^>]+value="([^"]+)""#,
+    ];
+
+    for pattern in &patterns {
+        if let Ok(re) = Regex::new(pattern) {
+            if let Some(caps) = re.captures(html) {
+                return Some(caps.get(1)?.as_str().to_string());
+            }
+        }
+    }
+
+    // Pattern 2: Look for any input with name containing "VerificationToken"
+    if let Ok(re) = Regex::new(r#"name="([^"]*[Vv]erification[^"]*)"\s+value="([^"]+)""#) {
+        if let Some(caps) = re.captures(html) {
+            return Some(caps.get(2)?.as_str().to_string());
+        }
+    }
+
+    None
 }
 
 /// Extract authorization code from URL query parameter.
 fn extract_code_from_url(url: &str) -> Option<String> {
     let re = Regex::new(r"[?&]code=([^&]+)").ok()?;
     let caps = re.captures(url)?;
-    Some(urlencoding::decode(&caps.get(1)?.as_str().to_string()).ok()?.into_owned())
+    Some(urlencoding::decode(caps.get(1)?.as_str()).ok()?.into_owned())
 }
 
 fn generate_code_verifier() -> String {
