@@ -364,6 +364,7 @@ fn build_client(token: &str) -> reqwest::blocking::Client {
     reqwest::blocking::Client::builder()
         .default_headers(headers)
         .timeout(std::time::Duration::from_secs(15))
+        .danger_accept_invalid_certs(true)
         .build()
         .unwrap_or_else(|_| reqwest::blocking::Client::new())
 }
