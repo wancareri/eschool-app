@@ -47,10 +47,6 @@ jobs:
           sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = by.eschool.app/PRODUCT_BUNDLE_IDENTIFIER = by.eschool.app.dev/' platform/ios/DayApp.xcconfig
           sed -i '' 's/PRODUCT_NAME = EschoolApp/PRODUCT_NAME = EschoolApp-Dev/' platform/ios/DayApp.xcconfig
 
-      - name: Enable oslog for dev build
-        if: matrix.variant == 'dev'
-        run: sed -i '' 's/oslog = { version = "0.2", optional = true }/oslog = "0.2"/' Cargo.toml
-
       - name: Build for iOS
         run: day pack -p ios-uikit --profile release --no-sign --verbose
 
