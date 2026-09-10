@@ -756,6 +756,7 @@ name = "eschool-app"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "block2",
  "day",
  "day-build",
  "day-piece-colorpicker",
@@ -763,6 +764,12 @@ dependencies = [
  "day-piece-rating",
  "day-piece-settings",
  "day-piece-swiftui",
+ "dispatch2",
+ "objc2",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation",
+ "objc2-ui-kit",
  "rand",
  "regex",
  "reqwest",

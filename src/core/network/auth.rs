@@ -8,7 +8,7 @@ const CLIENT_ID: &str = "oauth_diary_echools";
 const REDIRECT_URI: &str = "https://diary.e-schools.by/api/v1/admin/auth/callback";
 const SCOPE: &str = "openid profile offline_access organization.write person.write person.write.all person.read persons.read dictionaries.read organization.read";
 const OAUTH_URL: &str = "https://oauth.rios.unibel.by";
-const BASE_URL: &str = "https://diary.e-schools.by";
+pub(crate) const BASE_URL: &str = "https://diary.e-schools.by";
 const USER_AGENT: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,7 +19,7 @@ pub struct Token {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AuthResponse {
+pub(crate) struct AuthResponse {
     pub auth_token: String,
     pub refresh_token: String,
 }
