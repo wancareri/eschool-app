@@ -52,7 +52,7 @@ impl Auth {
         )
     }
 
-    fn build_return_url(&self) -> String {
+    pub(crate) fn build_return_url(&self) -> String {
         format!(
             "/connect/authorize/callback?client_id={}&response_type=code&state={}&authentication=client_secret_post&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256",
             CLIENT_ID,
