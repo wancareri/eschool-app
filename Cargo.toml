@@ -18,7 +18,7 @@ xaml = ["day/xaml"]
 arkui = ["day/arkui"]
 dom = ["day/dom"]
 mock = ["day/mock"]
-dev = ["oslog"]
+dev = []
 
 # rlib for the desktop bin; the mobile pipeline requests staticlib/cdylib via `cargo rustc`.
 [lib]

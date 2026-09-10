@@ -44,14 +44,14 @@ day::routes! {
 }
 
 pub fn root() -> impl Piece {
-    #[cfg(all(target_os = "ios", feature = "dev"))]
+    #[cfg(all(target_os = "ios", feature = "oslog"))]
     {
         use oslog::OsLogger;
         use log::LevelFilter;
         let _ = OsLogger::new("by.eschool.app")
             .level_filter(LevelFilter::Debug)
             .init();
-        info!("[init] oslog logger initialized (dev build)");
+        info!("[init] oslog logger initialized");
     }
     info!("Eschool App starting");
     day_piece_settings::apply_startup(THEME_KEY, LOCALE_KEY);
