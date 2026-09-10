@@ -123,20 +123,29 @@ impl ESchoolState {
         self.loading.set(true);
         self.error_msg.set(String::new());
 
-        let auth = Auth::new();
-        match oauth_web::login_with_web_view(&auth, username, password) {
-            Ok(token) => {
-                day::prefs::set(TOKEN_KEY, &token.access_token);
-                day::prefs::set(REFRESH_KEY, &token.refresh_token);
-                self.is_authenticated.set(true);
-                self.loading.set(false);
-                self.load_all_sync();
-            }
-            Err(e) => {
-                self.error_msg.set(format!("Ошибка входа: {e}"));
-                self.loading.set(false);
-            }
-        }
+        let username = username.to_owned();
+        let password = password.to_owned();
+
+        std::thread::spawn(move || {
+            let auth = Auth::new();
+            let result = oauth_web::login_with_web_view(&auth, &username, &password);
+
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                match result {
+                    Ok(token) => {
+                        day::prefs::set(TOKEN_KEY, &token.access_token);
+                        day::prefs::set(REFRESH_KEY, &token.refresh_token);
+                        self.is_authenticated.set(true);
+                        self.loading.set(false);
+                        self.load_all_sync();
+                    }
+                    Err(e) => {
+                        self.error_msg.set(format!("Ошибка входа: {e}"));
+                        self.loading.set(false);
+                    }
+                }
+            });
+        });
     }
 
     /// Wipe auth state and cached data.
