@@ -10,6 +10,9 @@ on:
 jobs:
   build:
     runs-on: macos-15
+    strategy:
+      matrix:
+        variant: [dev, release]
     steps:
       - uses: actions/checkout@v4
 
@@ -30,7 +33,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ matrix.variant }}
 
       - name: Install day-cli
         run: cargo install day-cli
@@ -38,12 +41,29 @@ jobs:
       - name: Check environment
         run: day doctor
 
-      - name: Build for iOS
+      - name: Set dev bundle ID
+        if: matrix.variant == 'dev'
+        run: |
+          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = by.eschool.app/PRODUCT_BUNDLE_IDENTIFIER = by.eschool.app.dev/' platform/ios/DayApp.xcconfig
+          sed -i '' 's/PRODUCT_NAME = EschoolApp/PRODUCT_NAME = EschoolApp-Dev/' platform/ios/DayApp.xcconfig
+
+      - name: Build dev features
+        if: matrix.variant == 'dev'
+        run: |
+          sed -i '' 's/^dev = \["oslog"\]/dev = ["oslog"]/' Cargo.toml
+          echo 'DEV_FEATURES=--features dev' >> $GITHUB_ENV
+
+      - name: Build for iOS (dev)
+        if: matrix.variant == 'dev'
+        run: day pack -p ios-uikit --profile release --no-sign --verbose -- --features dev
+
+      - name: Build for iOS (release)
+        if: matrix.variant == 'release'
         run: day pack -p ios-uikit --profile release --no-sign --verbose
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ios-ipa
+          name: ios-ipa-${{ matrix.variant }}
           path: build/day/dist/*.ipa
           retention-days: 7

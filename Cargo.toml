@@ -18,6 +18,7 @@ xaml = ["day/xaml"]
 arkui = ["day/arkui"]
 dom = ["day/dom"]
 mock = ["day/mock"]
+dev = ["oslog"]
 
 # rlib for the desktop bin; the mobile pipeline requests staticlib/cdylib via `cargo rustc`.
 [lib]
@@ -54,6 +55,7 @@ objc2-ui-kit = { version = "0.3", features = [
     "UIApplication", "UIView", "UIWindow", "UIScreen", "UIViewController",
     "UINavigationController", "UIKitCore", "block2",
 ] }
+oslog = { version = "0.2", optional = true }
 
 [package.metadata.day.ios]
 swift-packages = [{ path = "platform/swiftui", products = ["EschoolViews"] }]

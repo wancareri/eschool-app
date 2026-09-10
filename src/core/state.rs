@@ -120,6 +120,7 @@ impl ESchoolState {
     pub(crate) fn login_with_password(self, username: &str, password: &str) {
         use crate::core::network::auth::Auth;
         use crate::core::network::oauth_web;
+        log::info!("[State] login_with_password called for user: {}", username);
         self.loading.set(true);
         self.error_msg.set(String::new());
 
@@ -127,20 +128,27 @@ impl ESchoolState {
         let password = password.to_owned();
 
         std::thread::spawn(move || {
+            log::info!("[State] Background thread started");
             let auth = Auth::new();
+            log::info!("[State] Calling login_with_web_view...");
             let result = oauth_web::login_with_web_view(&auth, &username, &password);
+            log::info!("[State] login_with_web_view returned: {:?}", result.as_ref().map(|_| "Ok(Token)").unwrap_or_else(|e| e.as_str()));
 
             dispatch2::DispatchQueue::main().exec_async(move || {
                 let state = Self::ambient();
                 match result {
                     Ok(token) => {
+                        log::info!("[State] Login OK, storing token");
                         day::prefs::set(TOKEN_KEY, &token.access_token);
                         day::prefs::set(REFRESH_KEY, &token.refresh_token);
                         state.is_authenticated.set(true);
                         state.loading.set(false);
+                        log::info!("[State] Calling load_all_sync...");
                         state.load_all_sync();
+                        log::info!("[State] load_all_sync completed");
                     }
                     Err(e) => {
+                        log::error!("[State] Login failed: {}", e);
                         state.error_msg.set(format!("Ошибка входа: {e}"));
                         state.loading.set(false);
                     }
@@ -170,9 +178,13 @@ impl ESchoolState {
     /// Load ALL school data synchronously. This blocks the UI briefly but
     /// avoids the `Signal: !Send` constraint entirely.
     fn load_all_sync(self) {
+        log::info!("[State] load_all_sync starting");
         let token = match day::prefs::get(TOKEN_KEY) {
             Some(t) if !t.is_empty() => t,
-            _ => return,
+            _ => {
+                log::warn!("[State] load_all_sync: no token found");
+                return;
+            }
         };
 
         self.loading.set(true);
@@ -181,9 +193,14 @@ impl ESchoolState {
         let client = build_client(&token);
 
         // 1 — user info
+        log::info!("[State] Fetching /api/v1/admin/auth/me...");
         let user = match api_get::<UserInfo>(&client, "/api/v1/admin/auth/me") {
-            Ok(u) => u,
+            Ok(u) => {
+                log::info!("[State] Got user: {} ({})", u.full_name, u.school_name);
+                u
+            }
             Err(e) => {
+                log::error!("[State] /auth/me failed: {}", e);
                 self.error_msg.set(format!("Auth error: {e}"));
                 self.loading.set(false);
                 return;
