@@ -115,7 +115,7 @@ impl ESchoolState {
         }
     }
 
-    /// Login with username and password via OAuth (iOS — uses WKWebView).
+    /// Login with username and password via OAuth (iOS — uses hidden WKWebView).
     #[cfg(target_os = "ios")]
     pub(crate) fn login_with_password(self, username: &str, password: &str) {
         use crate::core::network::auth::Auth;
@@ -131,17 +131,18 @@ impl ESchoolState {
             let result = oauth_web::login_with_web_view(&auth, &username, &password);
 
             dispatch2::DispatchQueue::main().exec_async(move || {
+                let state = Self::ambient();
                 match result {
                     Ok(token) => {
                         day::prefs::set(TOKEN_KEY, &token.access_token);
                         day::prefs::set(REFRESH_KEY, &token.refresh_token);
-                        self.is_authenticated.set(true);
-                        self.loading.set(false);
-                        self.load_all_sync();
+                        state.is_authenticated.set(true);
+                        state.loading.set(false);
+                        state.load_all_sync();
                     }
                     Err(e) => {
-                        self.error_msg.set(format!("Ошибка входа: {e}"));
-                        self.loading.set(false);
+                        state.error_msg.set(format!("Ошибка входа: {e}"));
+                        state.loading.set(false);
                     }
                 }
             });
