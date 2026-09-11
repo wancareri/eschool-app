@@ -1,34 +1,66 @@
-//! Raw FFI wrapper for NSLog — the only way to get output into `idevicesyslog`.
+//! Logging that actually shows up on iOS device.
+//!
+//! - `os_log` → system log (`idevicesyslog` / Console.app)
+//! - File fallback → /tmp/eschool.log
 
 #[cfg(target_os = "ios")]
-mod ffi {
-    use objc2::runtime::AnyObject;
-    use objc2::msg_send;
+mod ios_log {
+    use std::ffi::CString;
+
+    type OsLogT = *const std::ffi::c_void;
 
     unsafe extern "C" {
-        // NSLog is in Foundation; on Apple platforms the linker resolves via shared cache.
-        // We pass "%@" format + one NSString arg to avoid format-string injection.
-        #[link_name = "\x01_NSLog"]
-        fn _NSLog(fmt: *const AnyObject, arg: *const AnyObject);
+        #[link_name = "_os_log_create"]
+        fn os_log_create(subsystem: *const i8, category: *const i8) -> OsLogT;
+
+        #[link_name = "_os_log_impl"]
+        fn os_log_impl(
+            log: OsLogT,
+            r#type: u8,
+            dso: *const std::ffi::c_void,
+            format: *const i8,
+            ...
+        );
     }
 
-    pub fn nslog(msg: &str) {
-        use objc2::sel;
+    static mut LOG_HANDLE: OsLogT = std::ptr::null();
+
+    fn ensure_log() -> OsLogT {
         unsafe {
-            let cls = objc2::runtime::Class::get(c"NSString").unwrap();
-            // NSString(stringWithUTF8String:) → autoreleased NSString*
-            let fmt_ns: *mut AnyObject = msg_send![cls, stringWithUTF8String: b"%@\0".as_ptr()];
-            let msg_ns: *mut AnyObject = msg_send![cls, stringWithUTF8String: msg.as_ptr()];
-            _NSLog(fmt_ns, msg_ns);
+            if LOG_HANDLE.is_null() {
+                let sub = CString::new("by.eschool.app").unwrap();
+                let cat = CString::new("ESCHOOL").unwrap();
+                LOG_HANDLE = os_log_create(sub.as_ptr(), cat.as_ptr());
+            }
+            LOG_HANDLE
         }
+    }
+
+    pub fn log(msg: &str) {
+        let handle = ensure_log();
+        let Ok(c_msg) = CString::new(msg) else { return };
+        unsafe {
+            os_log_impl(handle, 0, std::ptr::null(), c_msg.as_ptr());
+        }
+        // File fallback
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/eschool.log")
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "{}", msg)
+            });
     }
 }
 
 #[cfg(not(target_os = "ios"))]
-mod ffi {
-    pub fn nslog(msg: &str) {
+mod ios_log {
+    pub fn log(msg: &str) {
         eprintln!("{msg}");
     }
 }
 
-pub use ffi::nslog;
+pub fn nslog(msg: &str) {
+    ios_log::log(&format!("ESCHOOL: {msg}"));
+}
