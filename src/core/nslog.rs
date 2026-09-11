@@ -1,60 +1,46 @@
-//! Device logging via os_log (shows in idevicesyslog).
-//! Uses dlsym to avoid static linking — no framework linking needed.
+//! Device logging via os_log → system log (idevicesyslog).
 
 #[cfg(target_os = "ios")]
 mod inner {
-    use std::ffi::CString;
     use std::sync::Once;
 
     type LogFn = unsafe extern "C" fn(*const std::ffi::c_void, u8, *const std::ffi::c_void, *const i8, ...);
     type CreateFn = unsafe extern "C" fn(*const i8, *const i8) -> *const std::ffi::c_void;
 
-    struct LogState {
-        handle: std::cell::UnsafeCell<*const std::ffi::c_void>,
-        log_fn: std::cell::UnsafeCell<Option<LogFn>>,
-    }
+    struct SyncPtr(std::cell::UnsafeCell<*const std::ffi::c_void>);
+    unsafe impl Send for SyncPtr {}
+    unsafe impl Sync for SyncPtr {}
 
-    unsafe impl Send for LogState {}
-    unsafe impl Sync for LogState {}
+    struct SyncOptFn(std::cell::UnsafeCell<Option<LogFn>>);
+    unsafe impl Send for SyncOptFn {}
+    unsafe impl Sync for SyncOptFn {}
 
-    static STATE: LogState = LogState {
-        handle: std::cell::UnsafeCell::new(std::ptr::null()),
-        log_fn: std::cell::UnsafeCell::new(None),
-    };
+    static HANDLE: SyncPtr = SyncPtr(std::cell::UnsafeCell::new(std::ptr::null()));
+    static LOG_FN: SyncOptFn = SyncOptFn(std::cell::UnsafeCell::new(None));
     static INIT: Once = Once::new();
 
     fn ensure() {
         INIT.call_once(|| {
             unsafe {
-                let lib = libc::dlopen(
-                    b"libSystem.B.dylib\0".as_ptr().cast(),
-                    libc::RTLD_LAZY,
-                );
+                let lib = libc::dlopen(b"libSystem.B.dylib\0".as_ptr().cast(), libc::RTLD_LAZY);
                 if lib.is_null() { return; }
-
-                let create_sym = libc::dlsym(lib, b"os_log_create\0".as_ptr().cast());
-                let log_sym = libc::dlsym(lib, b"os_log_impl\0".as_ptr().cast());
-
-                if create_sym.is_null() || log_sym.is_null() { return; }
-
-                let create_fn: CreateFn = std::mem::transmute(create_sym);
-                let log_fn: LogFn = std::mem::transmute(log_sym);
-
-                let sub = CString::new("by.eschool.app").unwrap();
-                let cat = CString::new("ESCHOOL").unwrap();
-                *STATE.handle.get() = create_fn(sub.as_ptr(), cat.as_ptr());
-                *STATE.log_fn.get() = Some(log_fn);
+                let cs = libc::dlsym(lib, b"os_log_create\0".as_ptr().cast());
+                let lf = libc::dlsym(lib, b"os_log_impl\0".as_ptr().cast());
+                if cs.is_null() || lf.is_null() { return; }
+                let create_fn: CreateFn = std::mem::transmute(cs);
+                let log_fn: LogFn = std::mem::transmute(lf);
+                *HANDLE.0.get() = create_fn(b"by.eschool.app\0".as_ptr().cast(), b"ESCHOOL\0".as_ptr().cast());
+                *LOG_FN.0.get() = Some(log_fn);
             }
         });
     }
 
     pub fn log(msg: &str) {
         ensure();
-        let tagged = format!("ESCHOOL: {msg}");
-        let Ok(c_msg) = CString::new(tagged.as_str()) else { return };
+        let tagged = format!("{msg}\0");
         unsafe {
-            if let Some(f) = *STATE.log_fn.get() {
-                f(*STATE.handle.get(), 0, std::ptr::null(), c_msg.as_ptr());
+            if let Some(f) = *LOG_FN.0.get() {
+                f(*HANDLE.0.get(), 0, std::ptr::null(), tagged.as_ptr() as *const i8);
             }
         }
     }
@@ -63,10 +49,10 @@ mod inner {
 #[cfg(not(target_os = "ios"))]
 mod inner {
     pub fn log(msg: &str) {
-        eprintln!("ESCHOOL: {msg}");
+        eprintln!("{msg}");
     }
 }
 
 pub fn nslog(msg: &str) {
-    inner::log(msg);
+    inner::log(&format!("ESCHOOL: {msg}"));
 }
