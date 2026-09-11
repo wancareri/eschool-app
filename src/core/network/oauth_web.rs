@@ -22,6 +22,7 @@ mod ios_impl {
     use regex::Regex;
 
     use super::super::auth::{Auth, Token, AuthResponse, BASE_URL};
+    use crate::core::nslog;
 
     const OAUTH_URL: &str = "https://oauth.rios.unibel.by";
     const USER_AGENT: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
@@ -62,11 +63,11 @@ mod ios_impl {
                     .map(|s| s.to_string())
                     .unwrap_or_default();
 
-                eprintln!("[HiddenWV] didFinish: {}", &url_str[..url_str.len().min(200)]);
+                nslog::nslog(&format!("[HiddenWV] didFinish: {}", &url_str[..url_str.len().min(200)]));
                 log::info!("[HiddenWV] didFinish: {}", &url_str[..url_str.len().min(200)]);
 
                 if let Some(uuid) = extract_uuid_from_url(&url_str) {
-                    eprintln!("[HiddenWV] Found UUID: {}", uuid);
+                    nslog::nslog(&format!("[HiddenWV] Found UUID: {}", uuid));
                     log::info!("[HiddenWV] Found UUID: {}", uuid);
                     self.signal(CallbackResult::Ok(uuid));
                     self.cleanup(web_view);
@@ -101,7 +102,7 @@ mod ios_impl {
                         ns_err.to_string()
                     }
                 };
-                eprintln!("[HiddenWV] Navigation failed: {}", msg);
+                nslog::nslog(&format!("[HiddenWV] Navigation failed: {}", msg));
                 log::error!("[HiddenWV] Navigation failed: {}", msg);
                 self.signal(CallbackResult::Err(format!("WebView error: {msg}")));
                 self.cleanup(web_view);
@@ -192,7 +193,7 @@ mod ios_impl {
     // ── Step 1: Programmatic HTTP to get auth code ────────────────────────
 
     fn get_auth_code(auth: &Auth, username: &str, password: &str) -> Result<String, String> {
-        eprintln!("[OAuth] get_auth_code: creating client");
+        nslog::nslog("[OAuth] get_auth_code: creating client");
         let client = reqwest::blocking::Client::builder()
             .cookie_store(true)
             .redirect(reqwest::redirect::Policy::none())
@@ -206,7 +207,7 @@ mod ios_impl {
         let _ = client
             .get(format!("{}/api/v1/admin/auth/login/student", BASE_URL))
             .send();
-        eprintln!("[OAuth] Session init done");
+        nslog::nslog("[OAuth] Session init done");
 
         // Get login page
         let login_url = auth.login_url();
@@ -214,7 +215,7 @@ mod ios_impl {
             .get(&login_url)
             .send()
             .map_err(|e| format!("Failed to load login page: {e}"))?;
-        eprintln!("[OAuth] Login page loaded");
+        nslog::nslog("[OAuth] Login page loaded");
 
         if !login_page.status().is_success() {
             return Err(format!("Login page HTTP {}", login_page.status()));
@@ -241,7 +242,7 @@ mod ios_impl {
             .send()
             .map_err(|e| format!("Login POST failed: {e}"))?;
 
-        eprintln!("[OAuth] Login POST status: {}", resp.status());
+        nslog::nslog(&format!("[OAuth] Login POST status: {}", resp.status()));
 
         if !resp.status().is_redirection() {
             return Err(format!("Expected redirect, got HTTP {}", resp.status()));
@@ -301,7 +302,7 @@ mod ios_impl {
     // ── Step 3: Token exchange (after UUID extracted) ─────────────────────
 
     fn complete_login(uuid: &str) -> Result<Token, String> {
-        eprintln!("[OAuth] complete_login: uuid={}", uuid);
+        nslog::nslog(&format!("[OAuth] complete_login: uuid={}", uuid));
         let client = reqwest::blocking::Client::builder()
             .cookie_store(true)
             .redirect(reqwest::redirect::Policy::none())
@@ -355,10 +356,10 @@ mod ios_impl {
         use std::time::Duration;
 
         // Step 1: Get auth code via programmatic HTTP
-        eprintln!("[OAuth] Step 1: Getting auth code via HTTP...");
+        nslog::nslog("[OAuth] Step 1: Getting auth code via HTTP...");
         log::info!("[OAuth] Step 1: Getting auth code via HTTP...");
         let callback_url = get_auth_code(auth, username, password)?;
-        eprintln!("[OAuth] Got callback URL, opening hidden WKWebView...");
+        nslog::nslog("[OAuth] Got callback URL, opening hidden WKWebView...");
         log::info!("[OAuth] Got callback URL, opening hidden WKWebView...");
 
         // Step 2: Hidden WKWebView for the callback (bypasses TLS fingerprint)
@@ -366,7 +367,7 @@ mod ios_impl {
         let shared_clone = shared.clone();
 
         dispatch2::DispatchQueue::main().exec_async(move || {
-            eprintln!("[OAuth] dispatch2: on main thread");
+            nslog::nslog("[OAuth] dispatch2: on main thread");
             let mtm = MainThreadMarker::new().expect("must be on main thread");
 
             // Create config
@@ -443,7 +444,7 @@ mod ios_impl {
             // Navigate to callback URL
             if let Some(ns_url) = NSURL::URLWithString(&NSString::from_str(&callback_url)) {
                 let request = NSURLRequest::requestWithURL(&ns_url);
-                eprintln!("[OAuth] Loading request in hidden WKWebView");
+                nslog::nslog("[OAuth] Loading request in hidden WKWebView");
                 unsafe { let _: () = msg_send![&*web_view, loadRequest:&*request]; };
             }
 

@@ -44,7 +44,7 @@ day::routes! {
 }
 
 pub fn root() -> impl Piece {
-    eprintln!("[init] Eschool App starting");
+    crate::core::nslog::nslog("[init] Eschool App starting");
     day_piece_settings::apply_startup(THEME_KEY, LOCALE_KEY);
     day::register_preferences(ui::pages::settings_body);
     day::register_new_window(|| window_shell(false));
