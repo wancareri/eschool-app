@@ -757,6 +757,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "block2",
+ "cc",
  "day",
  "day-build",
  "day-piece-colorpicker",
