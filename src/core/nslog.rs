@@ -1,26 +1,23 @@
-//! Device logging — writes to ~/Documents/eschool.log
-//! Read via: ssh root@<iphone> cat /var/mobile/Containers/Data/Application/<UUID>/Documents/eschool.log
+//! Device logging via NSLog bridge → idevicesyslog.
+//!
+//! The Objective-C bridge (platform/ios/nslog_bridge.m) calls
+//! NSLog(@"%{public}s", msg) — the `%{public}s` is critical, without it
+//! iOS redacts the message to a space in idevicesyslog.
 
+#[cfg(target_os = "ios")]
+unsafe extern "C" {
+    fn eschool_nslog(msg: *const i8);
+}
+
+#[cfg(target_os = "ios")]
 pub fn nslog(msg: &str) {
-    let tagged = format!("ESCHOOL: {msg}\n");
-
-    // Try HOME/Documents first (standard iOS sandbox)
-    if let Ok(home) = std::env::var("HOME") {
-        let path = format!("{home}/Documents/eschool.log");
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-            use std::io::Write;
-            let _ = f.write_all(tagged.as_bytes());
-            return;
-        }
+    let tagged = format!("ESCHOOL: {msg}\0");
+    unsafe {
+        eschool_nslog(tagged.as_ptr() as *const i8);
     }
+}
 
-    // Fallback: /var/tmp
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("/var/tmp/eschool.log")
-    {
-        use std::io::Write;
-        let _ = f.write_all(tagged.as_bytes());
-    }
+#[cfg(not(target_os = "ios"))]
+pub fn nslog(msg: &str) {
+    eprintln!("ESCHOOL: {msg}");
 }
