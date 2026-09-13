@@ -43,15 +43,6 @@ pub(crate) fn menus() -> Vec<MenuEntry> {
     ]
 }
 
-/// Nav item keys for the reactive sidebar.
-#[derive(Clone, PartialEq, Eq, Debug)]
-enum NavEntry {
-    Diary,
-    Schedule,
-    Teachers,
-    Settings,
-}
-
 /// Build the navigation selector — fully reactive to auth state.
 ///
 /// When **not** authenticated: full-screen login page, no tab bar.
@@ -72,38 +63,34 @@ pub(crate) fn build_nav(scene: Scene, primary: bool) -> AnyPiece {
                 let sel = selector(scene.section)
                     .title(res::str::app_title())
                     .sidebar_toggle(true)
-                    .items(
-                        || vec![NavEntry::Diary, NavEntry::Schedule, NavEntry::Teachers, NavEntry::Settings],
-                        |entry: &NavEntry| match entry {
-                            NavEntry::Diary => {
-                                item(Section::Diary, res::str::nav_diary())
-                                    .icon(res::vectors::tab_diary)
-                                    .icon_tint(colors::NAV_DIARY)
-                            }
-                            NavEntry::Schedule => {
-                                item(Section::Schedule, res::str::nav_schedule())
-                                    .icon(res::vectors::tab_schedule)
-                                    .icon_tint(colors::NAV_SCHEDULE)
-                            }
-                            NavEntry::Teachers => {
-                                item(Section::Teachers, res::str::nav_teachers())
-                                    .icon(res::vectors::tab_teachers)
-                                    .icon_tint(colors::NAV_TEACHERS)
-                            }
-                            NavEntry::Settings => {
-                                item(Section::Settings, res::str::nav_settings())
-                                    .icon(res::vectors::tab_settings)
-                                    .icon_tint(colors::NAV_SETTINGS)
-                            }
-                        },
+                    .item_icon(
+                        Section::Diary,
+                        res::str::nav_diary(),
+                        res::vectors::tab_diary,
+                        diary_page,
                     )
-                    .destination(|section: &Section| match section {
-                        Section::Login => login_page().any(),
-                        Section::Diary => diary_page().any(),
-                        Section::Schedule => schedule_page().any(),
-                        Section::Teachers => teachers_page().any(),
-                        Section::Settings => settings_page().any(),
-                    });
+                    .icon_tint(colors::NAV_DIARY)
+                    .item_icon(
+                        Section::Schedule,
+                        res::str::nav_schedule(),
+                        res::vectors::tab_schedule,
+                        schedule_page,
+                    )
+                    .icon_tint(colors::NAV_SCHEDULE)
+                    .item_icon(
+                        Section::Teachers,
+                        res::str::nav_teachers(),
+                        res::vectors::tab_teachers,
+                        teachers_page,
+                    )
+                    .icon_tint(colors::NAV_TEACHERS)
+                    .item_icon(
+                        Section::Settings,
+                        res::str::nav_settings(),
+                        res::vectors::tab_settings,
+                        settings_page,
+                    )
+                    .icon_tint(colors::NAV_SETTINGS);
 
                 if primary {
                     sel.id("nav").restore("app.section").any()
