@@ -36,7 +36,7 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ matrix.variant }}
 
       - name: Install day-cli
-        run: cargo install day-cli
+        run: cargo install day-cli --git https://github.com/wancareri/day.git
 
       - name: Check environment
         run: day doctor

@@ -60,7 +60,7 @@ pub(crate) fn build_nav(scene: Scene, primary: bool) -> AnyPiece {
         when(
             move || state.is_authenticated.get(),
             move || {
-                let sel = selector(scene.section)
+                let sel = nav(scene.section)
                     .title(res::str::app_title())
                     .sidebar_toggle(true)
                     .item_icon(
