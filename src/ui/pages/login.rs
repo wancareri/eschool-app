@@ -100,6 +100,7 @@ fn auth_form(state: ESchoolState) -> impl Piece {
         // Password field
         text_field(password)
             .placeholder("Пароль")
+            .secure()
             .id("password-field"),
         // Login button
         button(move || {
