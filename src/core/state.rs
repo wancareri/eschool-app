@@ -117,7 +117,7 @@ impl ESchoolState {
         }
     }
 
-    /// Login with username and password via OAuth (iOS — uses hidden WKWebView).
+    /// Login with username and password via OAuth (iOS — pure HTTP, sync).
     #[cfg(target_os = "ios")]
     pub(crate) fn login_with_password(self, username: &str, password: &str) {
         use crate::core::network::auth::Auth;
@@ -127,45 +127,28 @@ impl ESchoolState {
         self.loading.set(true);
         self.error_msg.set(String::new());
 
-        let username = username.to_owned();
-        let password = password.to_owned();
+        let auth = Auth::new();
+        nslog::nslog("[State] Calling login_with_web_view...");
+        let result = oauth_web::login_with_web_view(&auth, username, password);
+        nslog::nslog(&format!("[State] login_with_web_view returned: {:?}", result.as_ref().map(|_| "Ok(Token)").unwrap_or_else(|e| e.as_str())));
 
-        std::thread::spawn(move || {
-            nslog::nslog("[State] Background thread started");
-            let auth = Auth::new();
-            nslog::nslog("[State] Calling login_with_web_view...");
-            let result = oauth_web::login_with_web_view(&auth, &username, &password);
-            nslog::nslog(&format!("[State] login_with_web_view returned: {:?}", result.as_ref().map(|_| "Ok(Token)").unwrap_or_else(|e| e.as_str())));
-
-            dispatch2::DispatchQueue::main().exec_async(move || {
-                nslog::nslog("[State] dispatch: on main thread");
-                nslog::nslog("[State] dispatch: calling ambient...");
-                let state = Self::ambient();
-                nslog::nslog("[State] dispatch: ambient OK");
-                match result {
-                    Ok(token) => {
-                        nslog::nslog("[State] dispatch: Ok branch");
-                        let at = token.access_token.len();
-                        let rt = token.refresh_token.len();
-                        nslog::nslog(&format!("[State] dispatch: token lengths at={} rt={}", at, rt));
-                        nslog::nslog("[State] dispatch: storing token in prefs...");
-                        day::prefs::set(TOKEN_KEY, &token.access_token);
-                        nslog::nslog("[State] dispatch: prefs set, setting signals...");
-                        state.is_authenticated.set(true);
-                        nslog::nslog("[State] dispatch: is_authenticated set");
-                        state.loading.set(false);
-                        nslog::nslog("[State] dispatch: loading set, calling load_all_sync...");
-                        state.load_all_sync();
-                        nslog::nslog("[State] dispatch: load_all_sync done");
-                    }
-                    Err(e) => {
-                        nslog::nslog(&format!("[State] dispatch: Err branch: {}", e));
-                        state.error_msg.set(format!("Ошибка входа: {e}"));
-                        state.loading.set(false);
-                    }
-                }
-            });
-        });
+        match result {
+            Ok(token) => {
+                nslog::nslog("[State] Login OK, storing token");
+                day::prefs::set(TOKEN_KEY, &token.access_token);
+                day::prefs::set(REFRESH_KEY, &token.refresh_token);
+                self.is_authenticated.set(true);
+                self.loading.set(false);
+                nslog::nslog("[State] Calling load_all_sync...");
+                self.load_all_sync();
+                nslog::nslog("[State] load_all_sync completed");
+            }
+            Err(e) => {
+                nslog::nslog(&format!("[State] Login failed: {}", e));
+                self.error_msg.set(format!("Ошибка входа: {e}"));
+                self.loading.set(false);
+            }
+        }
     }
 
     /// Wipe auth state and cached data.
