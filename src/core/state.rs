@@ -138,21 +138,28 @@ impl ESchoolState {
             nslog::nslog(&format!("[State] login_with_web_view returned: {:?}", result.as_ref().map(|_| "Ok(Token)").unwrap_or_else(|e| e.as_str())));
 
             dispatch2::DispatchQueue::main().exec_async(move || {
-                nslog::nslog("[State] Back on main thread");
+                nslog::nslog("[State] dispatch: on main thread");
+                nslog::nslog("[State] dispatch: calling ambient...");
                 let state = Self::ambient();
+                nslog::nslog("[State] dispatch: ambient OK");
                 match result {
                     Ok(token) => {
-                        nslog::nslog("[State] Login OK, storing token");
+                        nslog::nslog("[State] dispatch: Ok branch");
+                        let at = token.access_token.len();
+                        let rt = token.refresh_token.len();
+                        nslog::nslog(&format!("[State] dispatch: token lengths at={} rt={}", at, rt));
+                        nslog::nslog("[State] dispatch: storing token in prefs...");
                         day::prefs::set(TOKEN_KEY, &token.access_token);
-                        day::prefs::set(REFRESH_KEY, &token.refresh_token);
+                        nslog::nslog("[State] dispatch: prefs set, setting signals...");
                         state.is_authenticated.set(true);
+                        nslog::nslog("[State] dispatch: is_authenticated set");
                         state.loading.set(false);
-                        nslog::nslog("[State] Calling load_all_sync...");
+                        nslog::nslog("[State] dispatch: loading set, calling load_all_sync...");
                         state.load_all_sync();
-                        nslog::nslog("[State] load_all_sync completed");
+                        nslog::nslog("[State] dispatch: load_all_sync done");
                     }
                     Err(e) => {
-                        nslog::nslog(&format!("[State] Login failed: {}", e));
+                        nslog::nslog(&format!("[State] dispatch: Err branch: {}", e));
                         state.error_msg.set(format!("Ошибка входа: {e}"));
                         state.loading.set(false);
                     }
