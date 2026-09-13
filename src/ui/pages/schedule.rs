@@ -9,7 +9,7 @@ use day::prelude::*;
 pub(crate) fn schedule_page() -> impl Piece {
     let state = ESchoolState::ambient();
 
-    column((
+    scroll(column((
         native::header::render(
             res::str::schedule_title().format(),
             "Расписание звонков",
@@ -36,6 +36,7 @@ pub(crate) fn schedule_page() -> impl Piece {
         ),
     ))
     .spacing(12.0)
+    .grow())
     .grow()
 }
 

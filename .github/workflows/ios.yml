@@ -47,7 +47,10 @@ jobs:
           sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = by.eschool.app/PRODUCT_BUNDLE_IDENTIFIER = by.eschool.app.dev/' platform/ios/DayApp.xcconfig
           sed -i '' 's/PRODUCT_NAME = EschoolApp/PRODUCT_NAME = EschoolApp-Dev/' platform/ios/DayApp.xcconfig
 
-      - name: Build for iOS
+      - name: Stage resources (vectors)
+        run: day build -p ios-uikit --profile release
+
+      - name: Pack IPA
         run: day pack -p ios-uikit --profile release --no-sign --verbose
 
       - name: Upload IPA
