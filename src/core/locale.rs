@@ -20,31 +20,23 @@ pub(crate) fn system_locale() -> &'static str {
 #[cfg(target_os = "ios")]
 fn ios_preferred_locale() -> &'static str {
     use objc2::runtime::AnyClass;
-    use objc2::sel;
     use objc2::msg_send;
     use objc2_foundation::NSString;
 
     unsafe {
-        let cls = AnyClass::get("NSLocale").expect("NSLocale class");
-        let langs: *mut objc2_foundation::NSArray<NSString> =
+        let cls = AnyClass::get(c"NSLocale").expect("NSLocale class");
+        let langs: objc2_foundation::NSArray<NSString> =
             msg_send![cls, preferredLanguages];
-        if langs.is_null() {
+        if langs.count() == 0 {
             return "en";
         }
-        let arr = &*langs;
-        if arr.count() == 0 {
-            return "en";
-        }
-        if let Some(first) = arr.objectAtIndex(0) {
-            let rust_str = first.to_string();
-            let code = rust_str.split('-').next().unwrap_or("en");
-            match code {
-                "ru" => "ru",
-                "be" => "be",
-                _ => "en",
-            }
-        } else {
-            "en"
+        let first = langs.objectAtIndex(0);
+        let rust_str = first.to_string();
+        let code = rust_str.split('-').next().unwrap_or("en");
+        match code {
+            "ru" => "ru",
+            "be" => "be",
+            _ => "en",
         }
     }
 }
