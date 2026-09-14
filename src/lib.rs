@@ -23,7 +23,8 @@ pub fn window() -> day::WindowOptions {
     day::WindowOptions {
         locales: Some((res::locales::DEFAULT, res::locales::CATALOG)),
         title_fn: Some(|| res::str::app_title().format()),
-        size: day::prelude::Size::new(960.0, 640.0),
+        size: day::prelude::Size::new(400.0, 720.0),
+        min_size: Some(day::prelude::Size::new(320.0, 480.0)),
         ..Default::default()
     }
 }
@@ -58,7 +59,6 @@ pub fn root() -> impl Piece {
     day_piece_settings::apply_startup(THEME_KEY, LOCALE_KEY);
     day::register_preferences(ui::pages::settings_body);
     day::register_new_window(|| window_shell(false));
-    app_menu(app::menus());
     window_shell(true)
 }
 

@@ -25,20 +25,14 @@ pub(crate) struct AuthResponse {
 }
 
 pub struct Auth {
-    code_verifier: String,
-    code_challenge: String,
     state: String,
 }
 
 impl Auth {
     pub fn new() -> Self {
-        let code_verifier = generate_code_verifier();
-        let code_challenge = generate_code_challenge(&code_verifier);
         let state = "schools".to_string();
 
         Self {
-            code_verifier,
-            code_challenge,
             state,
         }
     }
@@ -54,17 +48,12 @@ impl Auth {
 
     pub(crate) fn build_return_url(&self) -> String {
         format!(
-            "/connect/authorize/callback?client_id={}&response_type=code&state={}&authentication=client_secret_post&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256",
+            "/connect/authorize/callback?client_id={}&response_type=code&state={}&authentication=client_secret_post&redirect_uri={}&scope={}",
             CLIENT_ID,
             &self.state,
             urlencoding::encode(REDIRECT_URI),
             urlencoding::encode(SCOPE),
-            &self.code_challenge,
         )
-    }
-
-    pub fn code_verifier(&self) -> &str {
-        &self.code_verifier
     }
 
     /// Login with username and password.

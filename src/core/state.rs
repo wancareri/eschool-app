@@ -94,7 +94,7 @@ impl ESchoolState {
         self.load_all_sync();
     }
 
-    /// Login with username and password via OAuth.
+    /// Login with username and password via OAuth (desktop — blocking, matches iOS flow).
     #[cfg(not(target_os = "ios"))]
     pub(crate) fn login_with_password(self, username: &str, password: &str) {
         use crate::core::network::auth::Auth;

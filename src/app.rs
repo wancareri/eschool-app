@@ -6,43 +6,6 @@ use crate::Section;
 use crate::ui::pages::*;
 use day::prelude::*;
 
-/// Whether this platform has a menu bar.
-pub(crate) fn has_menu_bar() -> bool {
-    capability(Cap::AppMenu) != Support::Unsupported
-}
-
-/// Run a command on the window that currently has FOCUS.
-pub(crate) fn front(f: impl Fn(Scene) + 'static) -> impl Fn() + 'static {
-    move || {
-        if let Some(scene) = Scene::focused() {
-            f(scene)
-        }
-    }
-}
-
-/// The desktop menu bar.
-pub(crate) fn menus() -> Vec<MenuEntry> {
-    vec![
-        sub_menu(
-            res::str::menu_file().format(),
-            vec![
-                menu_role(MenuRole::NewWindow),
-                menu_separator(),
-                menu_role(MenuRole::CloseWindow),
-            ],
-        ),
-        sub_menu(
-            res::str::menu_edit().format(),
-            vec![
-                menu_role(MenuRole::Cut),
-                menu_role(MenuRole::Copy),
-                menu_role(MenuRole::Paste),
-                menu_role(MenuRole::SelectAll),
-            ],
-        ),
-    ]
-}
-
 /// Build the navigation selector — fully reactive to auth state.
 ///
 /// When **not** authenticated: full-screen login page, no tab bar.
