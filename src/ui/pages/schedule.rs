@@ -10,10 +10,14 @@ pub(crate) fn schedule_page() -> impl Piece {
     let state = ESchoolState::ambient();
 
     scroll(column((
-        native::header::render(
-            res::str::schedule_title().format(),
-            "Расписание звонков",
-        ),
+        column((
+            label(move || res::str::schedule_title().format())
+                .font(Font::LargeTitle),
+            label("Расписание звонков")
+                .font(Font::Subheadline),
+        ))
+        .spacing(4.0)
+        .padding(16.0),
         // ── not logged in ──
         when(
             move || !state.is_authenticated.get(),

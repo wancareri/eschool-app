@@ -17,10 +17,14 @@ pub(crate) fn settings_page() -> impl Piece {
     let state = ESchoolState::ambient();
 
     column((
-        native::header::render(
-            res::str::settings_title().format(),
-            "Настройки приложения",
-        ),
+        column((
+            label(move || res::str::settings_title().format())
+                .font(Font::LargeTitle),
+            label("Настройки приложения")
+                .font(Font::Subheadline),
+        ))
+        .spacing(4.0)
+        .padding(16.0),
         // ── profile info ────────────────────────────────────────────────
         when(
             move || state.is_authenticated.get(),

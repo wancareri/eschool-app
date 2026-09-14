@@ -9,10 +9,14 @@ pub(crate) fn login_page() -> impl Piece {
     let state = ESchoolState::ambient();
 
     column((
-        native::header::render(
-            res::str::app_title().format(),
-            "Авторизация",
-        ),
+        column((
+            label(move || res::str::app_title().format())
+                .font(Font::LargeTitle),
+            label("Авторизация")
+                .font(Font::Subheadline),
+        ))
+        .spacing(4.0)
+        .padding(16.0),
         // ── logged in — show profile ──
         when(
             move || state.is_authenticated.get(),

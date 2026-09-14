@@ -10,10 +10,14 @@ pub(crate) fn diary_page() -> impl Piece {
     let state = ESchoolState::ambient();
 
     scroll(column((
-        native::header::render(
-            res::str::diary_title().format(),
-            "Расписание уроков",
-        ),
+        column((
+            label(move || res::str::diary_title().format())
+                .font(Font::LargeTitle),
+            label("Расписание уроков")
+                .font(Font::Subheadline),
+        ))
+        .spacing(4.0)
+        .padding(16.0),
         // Current week label
         label(move || {
             let w = state.current_week.get();

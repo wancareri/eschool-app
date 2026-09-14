@@ -10,10 +10,14 @@ pub(crate) fn teachers_page() -> impl Piece {
     let state = ESchoolState::ambient();
 
     scroll(column((
-        native::header::render(
-            res::str::teachers_title().format(),
-            "Список учителей",
-        ),
+        column((
+            label(move || res::str::teachers_title().format())
+                .font(Font::LargeTitle),
+            label("Список учителей")
+                .font(Font::Subheadline),
+        ))
+        .spacing(4.0)
+        .padding(16.0),
         // ── not logged in ──
         when(
             move || !state.is_authenticated.get(),
