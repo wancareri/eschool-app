@@ -16,7 +16,7 @@ fn ios_preferred_locale() -> &'static str {
     use std::ffi::{CStr, c_void};
 
     #[link(name = "objc", kind = "dylib")]
-    extern "C" {
+    unsafe extern "C" {
         fn objc_getClass(name: *const std::ffi::c_char) -> *const c_void;
         fn sel_registerName(name: *const std::ffi::c_char) -> *const c_void;
         fn objc_msgSend() -> *const c_void;
