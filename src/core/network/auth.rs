@@ -279,6 +279,40 @@ fn resolve_url(base: &str, relative: &str) -> String {
     }
 }
 
+/// Refresh an expired access token using the stored refresh token.
+/// Returns (new_access_token, new_refresh_token) on success.
+pub(crate) fn refresh_access_token(
+    refresh_token: &str,
+) -> Result<(String, String), String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .danger_accept_invalid_certs(true)
+        .build()
+        .map_err(|e| format!("Failed to create client: {e}"))?;
+
+    let resp = client
+        .post(format!("{}/connect/token", OAUTH_URL))
+        .form(&[
+            ("client_id", CLIENT_ID),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token),
+        ])
+        .send()
+        .map_err(|e| format!("Refresh request failed: {e}"))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().unwrap_or_default();
+        return Err(format!("Refresh failed (HTTP {status}): {body}"));
+    }
+
+    let data: AuthResponse = resp
+        .json()
+        .map_err(|e| format!("Failed to parse refresh response: {e}"))?;
+
+    Ok((data.auth_token, data.refresh_token))
+}
+
 /// Extract __RequestVerificationToken from ASP.NET Core HTML form.
 /// Actual HTML: <input name="__RequestVerificationToken" type="hidden" value="CfDJ8..." />
 fn extract_csrf_token(html: &str) -> Option<String> {

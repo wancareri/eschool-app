@@ -45,6 +45,16 @@ day::routes! {
 
 pub fn root() -> impl Piece {
     crate::core::nslog::nslog("[init] Eschool App starting");
+    // On first launch, detect the system language and save it so the
+    // language picker defaults to the device locale rather than English.
+    let has_locale = day::prefs::get(LOCALE_KEY)
+        .map(|v| !v.is_empty())
+        .unwrap_or(false);
+    if !has_locale {
+        let sys = crate::core::locale::system_locale();
+        day::prefs::set(LOCALE_KEY, sys);
+        crate::core::nslog::nslog(&format!("[init] First launch — system locale: {sys}"));
+    }
     day_piece_settings::apply_startup(THEME_KEY, LOCALE_KEY);
     day::register_preferences(ui::pages::settings_body);
     day::register_new_window(|| window_shell(false));

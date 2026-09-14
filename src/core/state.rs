@@ -167,6 +167,26 @@ impl ESchoolState {
         self.subjects_teachers.set(Vec::new());
     }
 
+    /// Try to refresh the access token using the stored refresh token.
+    /// Returns the new access token on success, or None if refresh fails.
+    fn try_refresh_token(self) -> Option<String> {
+        let refresh = day::prefs::get(REFRESH_KEY).filter(|r| !r.is_empty())?;
+        nslog::nslog("[State] Attempting token refresh...");
+
+        match crate::core::network::auth::refresh_access_token(&refresh) {
+            Ok((new_access, new_refresh)) => {
+                nslog::nslog("[State] Token refresh OK, storing new tokens");
+                day::prefs::set(TOKEN_KEY, &new_access);
+                day::prefs::set(REFRESH_KEY, &new_refresh);
+                Some(new_access)
+            }
+            Err(e) => {
+                nslog::nslog(&format!("[State] Token refresh failed: {}", e));
+                None
+            }
+        }
+    }
+
     // ── data loading (synchronous — runs on the main thread) ────────────
 
     /// Load ALL school data synchronously. This blocks the UI briefly but
@@ -184,14 +204,38 @@ impl ESchoolState {
         self.loading.set(true);
         self.error_msg.set(String::new());
 
-        let client = build_client(&token);
+        let mut client = build_client(&token);
 
-        // 1 — user info
+        // 1 — user info (with auto-refresh on 401)
         nslog::nslog("[State] Fetching /api/v1/admin/auth/me...");
         let user = match api_get::<UserInfo>(&client, "/api/v1/admin/auth/me") {
             Ok(u) => {
                 nslog::nslog(&format!("[State] Got user: {} ({})", u.full_name, u.school_name));
                 u
+            }
+            Err(e) if e.starts_with("HTTP 401") => {
+                nslog::nslog("[State] /auth/me returned 401, attempting token refresh...");
+                if let Some(refreshed) = self.try_refresh_token() {
+                    client = build_client(&refreshed);
+                    match api_get::<UserInfo>(&client, "/api/v1/admin/auth/me") {
+                        Ok(u) => {
+                            nslog::nslog(&format!("[State] Got user after refresh: {} ({})", u.full_name, u.school_name));
+                            u
+                        }
+                        Err(e) => {
+                            nslog::nslog(&format!("[State] /auth/me failed even after refresh: {}", e));
+                            self.error_msg.set(format!("Auth error: {e}"));
+                            self.loading.set(false);
+                            return;
+                        }
+                    }
+                } else {
+                    nslog::nslog("[State] Token refresh failed, logging out");
+                    self.error_msg.set("Сессия истекла. Войдите снова.".into());
+                    self.loading.set(false);
+                    self.logout();
+                    return;
+                }
             }
             Err(e) => {
                 nslog::nslog(&format!("[State] /auth/me failed: {}", e));
