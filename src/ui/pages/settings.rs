@@ -23,35 +23,42 @@ pub(crate) fn settings_page() -> impl Piece {
         ))
         .spacing(6.0)
         .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
+
         when(
             move || state.is_authenticated.get(),
             move || {
-                column((
-                    label(move || state.full_name.get())
-                        .font(Font::Title3),
-                    label(move || state.school_name.get())
-                        .font(Font::Body).secondary(),
-                    when(
-                        move || !state.class_label.get().is_empty(),
-                        move || label(move || format!("Класс: {}", state.class_label.get()))
-                            .font(Font::Body).secondary(),
-                    ),
+                form((
+                    section(
+                        (
+                            label(move || state.full_name.get())
+                                .font(Font::Title3),
+                            label(move || state.school_name.get())
+                                .font(Font::Body).secondary(),
+                            when(
+                                move || !state.class_label.get().is_empty(),
+                                move || label(move || format!("Класс: {}", state.class_label.get()))
+                                    .font(Font::Body).secondary(),
+                            ),
+                        )
+                    ).title("Профиль"),
                 ))
-                .spacing(4.0)
-                .align(HAlign::Leading)
-                .padding(Insets { top: 8.0, leading: 20.0, bottom: 16.0, trailing: 20.0 })
+                .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
             },
         ),
+
         settings_body(),
+
         when(
             move || state.is_authenticated.get(),
-            move || column((
-                spacer(),
-                button("Выйти из аккаунта")
-                    .action(move || state.logout())
-                    .id("logout-btn"),
-                spacer(),
-            )).grow(),
+            move || {
+                form((
+                    section(
+                        (button("Выйти из аккаунта")
+                            .action(move || state.logout()),)
+                    ).title("Аккаунт"),
+                ))
+                .padding(Insets { top: 16.0, leading: 0.0, bottom: 20.0, trailing: 0.0 })
+            },
         ),
     ))
     .spacing(0.0)

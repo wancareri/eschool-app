@@ -30,8 +30,7 @@ pub(crate) fn schedule_page() -> impl Piece {
             move || state.is_authenticated.get() && state.schedule_loading.get(),
             || column((
                 spacer(),
-                label("Загрузка расписания…")
-                    .font(Font::Body).secondary().align(TextAlign::Center),
+                spinner(),
                 spacer(),
             )).grow(),
         ),
@@ -80,6 +79,7 @@ fn bell_section(state: ESchoolState) -> impl Piece {
         ),
     ))
     .spacing(0.0)
+    .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
 fn bell_row(state: ESchoolState, number: u32) -> impl Piece {
@@ -98,15 +98,23 @@ fn bell_row(state: ESchoolState, number: u32) -> impl Piece {
             .unwrap_or_default()
     };
     row((
-        label(number.to_string())
-            .font(Font::Caption)
+        label(format!("{}", number))
+            .font(Font::Title3)
             .color(colors::PRIMARY)
             .align(TextAlign::Center),
-        label(move || format!("{} — {}", start(), end()))
-            .font(Font::Body),
+        column((
+            label(format!("{} урок", number))
+                .font(Font::Body),
+            label(move || format!("{} — {}", start(), end()))
+                .font(Font::Caption)
+                .secondary(),
+        ))
+        .spacing(2.0)
+        .align(HAlign::Leading)
+        .grow(),
     ))
-    .spacing(16.0)
-    .padding(Insets { top: 8.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
+    .spacing(12.0)
+    .padding(Insets { top: 8.0, leading: 16.0, bottom: 8.0, trailing: 20.0 })
 }
 
 // ── timetable ────────────────────────────────────────────────────────────
@@ -124,14 +132,14 @@ fn timetable_section(state: ESchoolState) -> impl Piece {
             ),
             move |slot| {
                 let dow = slot.key();
-                timetable_day_row(state, dow).any()
+                timetable_day_card(state, dow).any()
             },
         ),
     ))
     .spacing(0.0)
 }
 
-fn timetable_day_row(state: ESchoolState, dow: u32) -> impl Piece {
+fn timetable_day_card(state: ESchoolState, dow: u32) -> impl Piece {
     column((
         label(state::weekday_name(dow))
             .font(Font::Headline)
