@@ -8,7 +8,6 @@ pub(crate) fn diary_page() -> impl Piece {
     let state = ESchoolState::ambient();
 
     scroll(column((
-        // ── Header ──────────────────────────────────────────────────
         column((
             label(move || res::str::diary_title().format())
                 .font(Font::LargeTitle),
@@ -22,19 +21,21 @@ pub(crate) fn diary_page() -> impl Piece {
         .spacing(6.0)
         .padding(Insets { top: 16.0, leading: 20.0, bottom: 4.0, trailing: 20.0 }),
 
-        // ── Week navigator ──────────────────────────────────────────
         when(
             move || state.is_authenticated.get(),
             move || week_navigator(state),
         ),
 
-        // ── Today summary card ─────────────────────────────────────
         when(
             move || state.is_authenticated.get() && !state.lessons_loading.get(),
-            move || today_summary_card(state),
+            move || week_summary_card(state),
         ),
 
-        // ── States ──────────────────────────────────────────────────
+        when(
+            move || state.is_authenticated.get() && !state.lessons_loading.get(),
+            move || quarter_stats_card(state),
+        ),
+
         when(
             move || !state.is_authenticated.get(),
             || column((
@@ -48,8 +49,7 @@ pub(crate) fn diary_page() -> impl Piece {
             move || state.is_authenticated.get() && state.lessons_loading.get(),
             || column((
                 spacer(),
-                label("Загрузка расписания…")
-                    .font(Font::Body).secondary().align(TextAlign::Center),
+                spinner(),
                 spacer(),
             )).grow(),
         ),
@@ -84,7 +84,6 @@ fn week_navigator(state: ESchoolState) -> impl Piece {
         .spacing(12.0)
         .padding(Insets { top: 0.0, leading: 16.0, bottom: 6.0, trailing: 16.0 }),
 
-        // Quarter tabs: I, II, III, IV
         row((
             quarter_tab(state, "I", 0),
             quarter_tab(state, "II", 9),
@@ -107,38 +106,53 @@ fn quarter_tab(state: ESchoolState, label: &'static str, from_week: i32) -> impl
         if is_active { format!("[{}]", lbl) } else { lbl.clone() }
     })
     .action(move || {
+        s2.reset_marks();
         s2.load_week(from_week);
     })
     .id(format!("q-{label}"))
 }
 
-// ── Today summary card ───────────────────────────────────────────────────
+// ── Week summary card ────────────────────────────────────────────────────
 
-fn today_summary_card(state: ESchoolState) -> impl Piece {
+fn week_summary_card(state: ESchoolState) -> impl Piece {
     column((
-        label("Сегодня")
+        label("Неделя")
             .font(Font::Headline)
             .color(colors::PRIMARY)
             .padding(Insets { top: 16.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
         row((
-            stat_block(state, "Уроков", move || {
-                count_today(state, |s| s.slots.len())
+            stat_block("Уроков", move || {
+                let lessons = state.lessons.get();
+                lessons.iter().map(|d| d.slots.len()).sum::<usize>().to_string()
             }),
-            stat_block(state, "Оценок", move || {
-                count_today(state, |d| d.slots.iter().filter(|s| s.lesson_mark.is_some()).count())
+            stat_block("Оценок", move || {
+                let lessons = state.lessons.get();
+                lessons.iter()
+                    .flat_map(|d| &d.slots)
+                    .filter(|s| s.lesson_mark.is_some())
+                    .count()
+                    .to_string()
             }),
-            stat_block(state, "Ср. балл", move || {
-                avg_today(state)
+            stat_block("Ср. балл", move || {
+                let lessons = state.lessons.get();
+                let marks: Vec<f64> = lessons.iter()
+                    .flat_map(|d| &d.slots)
+                    .filter_map(|s| s.lesson_mark.as_ref())
+                    .filter_map(|m| m.mark.as_ref())
+                    .filter_map(|m| m.parse::<f64>().ok())
+                    .collect();
+                if marks.is_empty() { "—".into() }
+                else { format!("{:.1}", marks.iter().sum::<f64>() / marks.len() as f64) }
             }),
         ))
         .spacing(8.0)
-        .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
+        .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
     ))
     .spacing(0.0)
 }
 
-fn stat_block(_state: ESchoolState, title: &'static str, value_fn: impl Fn() -> String + 'static) -> impl Piece {
+fn stat_block(title: &'static str, value_fn: impl Fn() -> String + 'static) -> impl Piece {
     column((
         label(move || value_fn())
             .font(Font::Title2)
@@ -154,37 +168,60 @@ fn stat_block(_state: ESchoolState, title: &'static str, value_fn: impl Fn() -> 
     .grow()
 }
 
-fn count_today(state: ESchoolState, f: impl Fn(&DaySchedule) -> usize) -> String {
-    let lessons = state.lessons.get();
-    let today = today_date();
-    lessons.iter()
-        .find(|d| d.date == today)
-        .map(|d| f(d))
-        .unwrap_or(0)
-        .to_string()
-}
+// ── Quarter stats card ───────────────────────────────────────────────────
 
-fn avg_today(state: ESchoolState) -> String {
-    let lessons = state.lessons.get();
-    let today = today_date();
-    lessons.iter()
-        .find(|d| d.date == today)
-        .and_then(|d| {
-            let marks: Vec<f64> = d.slots.iter()
-                .filter_map(|s| s.lesson_mark.as_ref())
-                .filter_map(|m| m.mark.as_ref())
-                .filter_map(|m| m.parse::<f64>().ok())
-                .collect();
-            if marks.is_empty() { None }
-            else { Some(format!("{:.1}", marks.iter().sum::<f64>() / marks.len() as f64)) }
+fn quarter_stats_card(state: ESchoolState) -> impl Piece {
+    column((
+        label("Четверть")
+            .font(Font::Headline)
+            .color(colors::PRIMARY)
+            .padding(Insets { top: 16.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
+
+        row((
+            stat_block("Четверть", move || {
+                let idx = state.current_week_index.get();
+                let q = if idx < 9 { "I" } else if idx < 18 { "II" } else if idx < 27 { "III" } else { "IV" };
+                format!("{} четверть", q)
+            }),
+            stat_block("Оценок", move || {
+                state.all_marks.get().len().to_string()
+            }),
+            stat_block("Средний балл", move || {
+                let marks = state.all_marks.get();
+                if marks.is_empty() { "—".into() }
+                else {
+                    let avg: f64 = marks.iter().map(|(_, v)| v).sum::<f64>() / marks.len() as f64;
+                    format!("{:.2}", avg)
+                }
+            }),
+        ))
+        .spacing(8.0)
+        .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
+
+        // Per-subject breakdown
+        label(move || {
+            let marks = state.all_marks.get();
+            if marks.is_empty() {
+                return "Нет оценок за четверть".into();
+            }
+            let mut by_subject: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+            for (subj, val) in &marks {
+                by_subject.entry(subj.clone()).or_default().push(*val);
+            }
+            let mut subjects: Vec<_> = by_subject.into_iter().collect();
+            subjects.sort_by(|a, b| a.0.cmp(&b.0));
+
+            subjects.iter().map(|(subj, vals)| {
+                let avg = vals.iter().sum::<f64>() / vals.len() as f64;
+                let cnt = vals.len();
+                format!("{} — {:.1}  ({})", subj, avg, cnt)
+            }).collect::<Vec<_>>().join("\n")
         })
-        .unwrap_or_else(|| "—".into())
-}
-
-fn today_date() -> u64 {
-    let today = day_piece_datetime::DayDate::today();
-    let d = day_piece_datetime::DayDate::new(today.year, today.month, today.day).unwrap();
-    (d.to_epoch_days() as u64) * 86_400_000
+        .font(Font::Caption)
+        .secondary()
+        .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
+    ))
+    .spacing(0.0)
 }
 
 // ── Diary list ───────────────────────────────────────────────────────────

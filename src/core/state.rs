@@ -39,6 +39,10 @@ pub(crate) struct ESchoolState {
     pub current_week: Signal<String>,
     pub all_weeks: Signal<Vec<WeekActivity>>,
     pub current_week_index: Signal<i32>,
+    /// All marks accumulated across browsed weeks: (subject, mark_value)
+    pub all_marks: Signal<Vec<(String, f64)>>,
+    /// UUIDs of weeks whose marks have already been accumulated
+    pub loaded_mark_weeks: Signal<std::collections::HashSet<String>>,
 
     // ── schedule ─────────────────────────────────────────────────────────
     pub bell_times: Signal<Vec<BellTime>>,
@@ -73,6 +77,8 @@ impl Ambient for ESchoolState {
             current_week: Signal::new(String::new()),
             all_weeks: Signal::new(Vec::new()),
             current_week_index: Signal::new(0),
+            all_marks: Signal::new(Vec::new()),
+            loaded_mark_weeks: Signal::new(std::collections::HashSet::new()),
             bell_times: Signal::new(Vec::new()),
             timetable_days: Signal::new(Vec::new()),
             schedule_loading: Signal::new(false),
@@ -350,6 +356,7 @@ impl ESchoolState {
                             match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                                 Ok(lessons) => {
                                     eprintln!("[State] Got {} days of lessons", lessons.len());
+                                    self.update_marks(&lessons, &week_uuid);
                                     self.lessons.set(lessons);
                                 }
                                 Err(e) => {
@@ -417,6 +424,35 @@ impl ESchoolState {
         self.loading.set(false);
     }
 
+    /// Extract numeric marks from lessons and append to all_marks (skipping if week already loaded).
+    fn update_marks(self, lessons: &[DaySchedule], week_uuid: &str) {
+        let mut loaded = self.loaded_mark_weeks.get();
+        if loaded.contains(week_uuid) {
+            return;
+        }
+        loaded.insert(week_uuid.to_string());
+        self.loaded_mark_weeks.set(loaded);
+
+        let new_marks: Vec<(String, f64)> = lessons.iter()
+            .flat_map(|d| d.slots.iter())
+            .filter_map(|s| {
+                let mark_val = s.lesson_mark.as_ref()?
+                    .mark.as_ref()?
+                    .parse::<f64>().ok()?;
+                Some((s.subject_title.clone(), mark_val))
+            })
+            .collect();
+        let mut marks = self.all_marks.get();
+        marks.extend(new_marks);
+        self.all_marks.set(marks);
+    }
+
+    /// Reset marks when switching quarters.
+    pub(crate) fn reset_marks(self) {
+        self.all_marks.set(Vec::new());
+        self.loaded_mark_weeks.set(std::collections::HashSet::new());
+    }
+
     /// Load lessons for a specific week by index in all_weeks.
     pub(crate) fn load_week(self, new_index: i32) {
         let weeks = self.all_weeks.get();
@@ -441,6 +477,7 @@ impl ESchoolState {
             Ok(raw) => {
                 match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                     Ok(lessons) => {
+                        self.update_marks(&lessons, &week.uuid);
                         self.lessons.set(lessons);
                     }
                     Err(e) => {
