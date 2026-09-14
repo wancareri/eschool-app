@@ -1,10 +1,9 @@
 //! System locale detection — maps the device language to our locale codes.
 
-/// Detect the system language and return a locale code supported by the app.
 pub(crate) fn system_locale() -> &'static str {
     #[cfg(target_os = "ios")]
     {
-        return ios_preferred_locale();
+        ios_preferred_locale()
     }
     #[cfg(not(target_os = "ios"))]
     {
@@ -14,65 +13,60 @@ pub(crate) fn system_locale() -> &'static str {
 
 #[cfg(target_os = "ios")]
 fn ios_preferred_locale() -> &'static str {
-    use std::ffi::{CStr, c_char};
+    use std::ffi::{CStr, c_void};
 
+    #[link(name = "objc", kind = "dylib")]
     extern "C" {
-        fn objc_msgSend() -> *const std::ffi::c_void;
-        fn sel_registerName(name: *const c_char) -> *const std::ffi::c_void;
-        fn objc_getClass(name: *const c_char) -> *const std::ffi::c_void;
+        fn objc_getClass(name: *const std::ffi::c_char) -> *const c_void;
+        fn sel_registerName(name: *const std::ffi::c_char) -> *const c_void;
+        fn objc_msgSend() -> *const c_void;
     }
 
     unsafe {
-        let cls_name = c"NSLocale";
-        let cls = objc_getClass(cls_name.as_ptr());
+        let cls = objc_getClass(c"NSLocale".as_ptr());
         if cls.is_null() {
             return "en";
         }
+        let sel = sel_registerName(c"preferredLanguages".as_ptr());
 
-        let sel_name = c"preferredLanguages";
-        let sel = sel_registerName(sel_name.as_ptr());
-
-        let msg: extern "C" fn(*const std::ffi::c_void, *const std::ffi::c_void) -> *mut ObjcArray =
-            std::mem::transmute(objc_msgSend);
-        let langs = msg(cls, sel);
+        type MsgSendFn = unsafe extern "C" fn(*const c_void, *const c_void) -> *const c_void;
+        let msg_send: MsgSendFn = std::mem::transmute(objc_msgSend as *const c_void);
+        let langs = msg_send(cls, sel);
         if langs.is_null() {
             return "en";
         }
 
-        // NSArray count
-        let count_fn: extern "C" fn(*const std::ffi::c_void, *const std::ffi::c_void) -> usize =
-            std::mem::transmute(objc_msgSend);
         let count_sel = sel_registerName(c"count".as_ptr());
-        let count = count_fn(langs as *const std::ffi::c_void, count_sel);
+        let count: usize = {
+            type Fn = unsafe extern "C" fn(*const c_void, *const c_void) -> usize;
+            let f: Fn = std::mem::transmute(objc_msgSend as *const c_void);
+            f(langs, count_sel)
+        };
         if count == 0 {
             return "en";
         }
 
-        // objectAtIndex:
-        let idx_sel = sel_registerName(c"objectAtIndex:".as_ptr());
-        let obj_fn: extern "C" fn(
-            *const std::ffi::c_void,
-            *const std::ffi::c_void,
-            usize,
-        ) -> *mut ObjcString = std::mem::transmute(objc_msgSend);
-        let obj = obj_fn(langs as *const std::ffi::c_void, idx_sel, 0);
+        let obj = {
+            type Fn = unsafe extern "C" fn(*const c_void, *const c_void, usize) -> *const c_void;
+            let f: Fn = std::mem::transmute(objc_msgSend as *const c_void);
+            let idx_sel = sel_registerName(c"objectAtIndex:".as_ptr());
+            f(langs, idx_sel, 0)
+        };
         if obj.is_null() {
             return "en";
         }
 
-        // UTF8String
         let utf8_sel = sel_registerName(c"UTF8String".as_ptr());
-        let utf8_fn: extern "C" fn(
-            *const std::ffi::c_void,
-            *const std::ffi::c_void,
-        ) -> *const c_char = std::mem::transmute(objc_msgSend);
-        let ptr = utf8_fn(obj as *const std::ffi::c_void, utf8_sel);
+        let ptr = {
+            type Fn = unsafe extern "C" fn(*const c_void, *const c_void) -> *const std::ffi::c_char;
+            let f: Fn = std::mem::transmute(objc_msgSend as *const c_void);
+            f(obj, utf8_sel)
+        };
         if ptr.is_null() {
             return "en";
         }
 
-        let cstr = CStr::from_ptr(ptr);
-        let rust_str = cstr.to_str().unwrap_or("en");
+        let rust_str = CStr::from_ptr(ptr).to_str().unwrap_or("en");
         let code = rust_str.split('-').next().unwrap_or("en");
         match code {
             "ru" => "ru",
@@ -80,16 +74,4 @@ fn ios_preferred_locale() -> &'static str {
             _ => "en",
         }
     }
-}
-
-#[cfg(target_os = "ios")]
-#[repr(C)]
-struct ObjcArray {
-    _private: [u8; 0],
-}
-
-#[cfg(target_os = "ios")]
-#[repr(C)]
-struct ObjcString {
-    _private: [u8; 0],
 }
