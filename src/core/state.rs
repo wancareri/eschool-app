@@ -37,6 +37,8 @@ pub(crate) struct ESchoolState {
     pub lessons: Signal<Vec<DaySchedule>>,
     pub lessons_loading: Signal<bool>,
     pub current_week: Signal<String>,
+    pub all_weeks: Signal<Vec<WeekActivity>>,
+    pub current_week_index: Signal<i32>,
 
     // ── schedule ─────────────────────────────────────────────────────────
     pub bell_times: Signal<Vec<BellTime>>,
@@ -69,6 +71,8 @@ impl Ambient for ESchoolState {
             lessons: Signal::new(Vec::new()),
             lessons_loading: Signal::new(false),
             current_week: Signal::new(String::new()),
+            all_weeks: Signal::new(Vec::new()),
+            current_week_index: Signal::new(0),
             bell_times: Signal::new(Vec::new()),
             timetable_days: Signal::new(Vec::new()),
             schedule_loading: Signal::new(false),
@@ -309,14 +313,18 @@ impl ESchoolState {
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or(0);
-                let cur = weeks.iter().find(|w| w.start_ts <= now_ms && w.end_ts >= now_ms);
+                let cur = weeks.iter().enumerate().find(|(_, w)| w.start_ts <= now_ms && w.end_ts >= now_ms);
 
-                if let Some(week) = cur {
-                    eprintln!("[State] Current week: {}", week.summary);
-                    self.current_week.set(week.summary.clone());
+                if let Some((idx, week)) = cur {
+                    eprintln!("[State] Current week: {} (idx={})", week.summary, idx);
+                    let week_uuid = week.uuid.clone();
+                    let week_summary = week.summary.clone();
+                    self.all_weeks.set(weeks);
+                    self.current_week_index.set(idx as i32);
+                    self.current_week.set(week_summary);
                     let lessons_url = format!(
                         "/api/v1/education/diary/schools/{}/classes/{}/students/{}/lessons?week_activity_uuid={}",
-                        user.school_id, class_id, user.profile_id, week.uuid
+                        user.school_id, class_id, user.profile_id, week_uuid
                     );
                     eprintln!("[State] Lessons URL: {}", lessons_url);
                     match api_get_raw(&lessons_url) {
@@ -407,6 +415,44 @@ impl ESchoolState {
         self.teachers_loading.set(false);
 
         self.loading.set(false);
+    }
+
+    /// Load lessons for a specific week by index in all_weeks.
+    pub(crate) fn load_week(self, new_index: i32) {
+        let weeks = self.all_weeks.get();
+        let idx = new_index as usize;
+        if idx >= weeks.len() { return; }
+
+        let school_id = day::prefs::get(SCHOOL_ID_KEY).unwrap_or_default();
+        let class_id = day::prefs::get(CLASS_ID_KEY).unwrap_or_default();
+        let profile_id = day::prefs::get(PROFILE_ID_KEY).unwrap_or_default();
+        if school_id.is_empty() || class_id.is_empty() || profile_id.is_empty() { return; }
+
+        let week = &weeks[idx];
+        self.current_week_index.set(idx as i32);
+        self.current_week.set(week.summary.clone());
+        self.lessons_loading.set(true);
+
+        let lessons_url = format!(
+            "/api/v1/education/diary/schools/{}/classes/{}/students/{}/lessons?week_activity_uuid={}",
+            school_id, class_id, profile_id, week.uuid
+        );
+        match api_get_raw(&lessons_url) {
+            Ok(raw) => {
+                match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
+                    Ok(lessons) => {
+                        self.lessons.set(lessons);
+                    }
+                    Err(e) => {
+                        eprintln!("[State] load_week parse failed: {e}");
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[State] load_week request failed: {e}");
+            }
+        }
+        self.lessons_loading.set(false);
     }
 }
 
