@@ -1,11 +1,9 @@
 use crate::core::colors;
 use crate::core::network::models::*;
 use crate::core::state::ESchoolState;
-use crate::native;
 use crate::res;
 use day::prelude::*;
 
-/// Teachers page — subject → teacher list.
 pub(crate) fn teachers_page() -> impl Piece {
     let state = ESchoolState::ambient();
 
@@ -13,12 +11,12 @@ pub(crate) fn teachers_page() -> impl Piece {
         column((
             label(move || res::str::teachers_title().format())
                 .font(Font::LargeTitle),
-            label("Список учителей")
-                .font(Font::Subheadline),
+            label("Предметы и преподаватели")
+                .font(Font::Subheadline)
+                .secondary(),
         ))
-        .spacing(4.0)
-        .padding(16.0),
-        // ── not logged in ──
+        .spacing(6.0)
+        .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
         when(
             move || !state.is_authenticated.get(),
             || column((
@@ -28,18 +26,21 @@ pub(crate) fn teachers_page() -> impl Piece {
                 spacer(),
             )).grow(),
         ),
-        // ── loading ──
         when(
             move || state.is_authenticated.get() && state.teachers_loading.get(),
-            || label("Загрузка…").font(Font::Body).secondary(),
+            || column((
+                spacer(),
+                label("Загрузка…")
+                    .font(Font::Body).secondary().align(TextAlign::Center),
+                spacer(),
+            )).grow(),
         ),
-        // ── loaded ──
         when(
             move || state.is_authenticated.get() && !state.teachers_loading.get(),
             move || teachers_list(state),
         ),
     ))
-    .spacing(12.0)
+    .spacing(0.0)
     .grow())
     .grow()
 }
@@ -48,7 +49,6 @@ fn teachers_list(state: ESchoolState) -> impl Piece {
     each(
         items(
             move || {
-                // Deduplicate by (subject_title, teacher) pair.
                 let all = state.subjects_teachers.get();
                 let mut seen = std::collections::HashSet::new();
                 all.into_iter()
@@ -65,7 +65,6 @@ fn teachers_list(state: ESchoolState) -> impl Piece {
 }
 
 fn teacher_row(state: ESchoolState, key: String) -> impl Piece {
-    // Extract all fields once as owned Strings, then clone for each closure.
     let k1 = key.clone();
     let k2 = key.clone();
     let k3 = key.clone();
@@ -106,9 +105,7 @@ fn teacher_row(state: ESchoolState, key: String) -> impl Piece {
     };
 
     row((
-        // Subject icon
         label("📚").font(Font::Title2),
-        // Info column
         column((
             label(subject_fn).font(Font::Headline),
             label(teacher_fn).font(Font::Body).secondary(),
@@ -136,10 +133,10 @@ fn teacher_row(state: ESchoolState, key: String) -> impl Piece {
                 }),
             )).spacing(0.0),
         ))
-        .spacing(2.0)
+        .spacing(3.0)
         .align(HAlign::Leading)
         .grow(),
     ))
-    .spacing(12.0)
-    .padding(Insets { top: 8.0, leading: 16.0, bottom: 8.0, trailing: 16.0 })
+    .spacing(14.0)
+    .padding(Insets { top: 10.0, leading: 20.0, bottom: 10.0, trailing: 20.0 })
 }

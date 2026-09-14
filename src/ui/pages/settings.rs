@@ -1,9 +1,7 @@
 use crate::core::state::ESchoolState;
-use crate::native;
 use crate::res;
 use day::prelude::*;
 
-/// Appearance and language, from `day-piece-settings`.
 pub(crate) fn settings_body() -> impl Piece {
     form((day_piece_settings::settings_sections(
         crate::THEME_KEY,
@@ -12,20 +10,19 @@ pub(crate) fn settings_body() -> impl Piece {
     ),))
 }
 
-/// Settings page with navigation header
 pub(crate) fn settings_page() -> impl Piece {
     let state = ESchoolState::ambient();
 
-    column((
+    scroll(column((
         column((
             label(move || res::str::settings_title().format())
                 .font(Font::LargeTitle),
-            label("Настройки приложения")
-                .font(Font::Subheadline),
+            label("Настройки")
+                .font(Font::Subheadline)
+                .secondary(),
         ))
-        .spacing(4.0)
-        .padding(16.0),
-        // ── profile info ────────────────────────────────────────────────
+        .spacing(6.0)
+        .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
         when(
             move || state.is_authenticated.get(),
             move || {
@@ -42,13 +39,10 @@ pub(crate) fn settings_page() -> impl Piece {
                 ))
                 .spacing(4.0)
                 .align(HAlign::Leading)
-                .padding(16.0)
-                .grow()
+                .padding(Insets { top: 8.0, leading: 20.0, bottom: 16.0, trailing: 20.0 })
             },
         ),
-        // ── appearance & language ──
         settings_body(),
-        // ── logout ──────────────────────────────────────────────────────
         when(
             move || state.is_authenticated.get(),
             move || column((
@@ -60,8 +54,7 @@ pub(crate) fn settings_page() -> impl Piece {
             )).grow(),
         ),
     ))
-    .spacing(12.0)
-    .align(HAlign::Leading)
-    .padding(16.0)
+    .spacing(0.0)
+    .grow())
     .grow()
 }

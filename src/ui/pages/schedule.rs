@@ -1,11 +1,9 @@
 use crate::core::colors;
 use crate::core::network::models::*;
 use crate::core::state::{self, ESchoolState};
-use crate::native;
 use crate::res;
 use day::prelude::*;
 
-/// Schedule page — bell schedule + weekly timetable.
 pub(crate) fn schedule_page() -> impl Piece {
     let state = ESchoolState::ambient();
 
@@ -13,12 +11,12 @@ pub(crate) fn schedule_page() -> impl Piece {
         column((
             label(move || res::str::schedule_title().format())
                 .font(Font::LargeTitle),
-            label("Расписание звонков")
-                .font(Font::Subheadline),
+            label("Расписание звонков и уроков")
+                .font(Font::Subheadline)
+                .secondary(),
         ))
-        .spacing(4.0)
-        .padding(16.0),
-        // ── not logged in ──
+        .spacing(6.0)
+        .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
         when(
             move || !state.is_authenticated.get(),
             || column((
@@ -28,36 +26,37 @@ pub(crate) fn schedule_page() -> impl Piece {
                 spacer(),
             )).grow(),
         ),
-        // ── loading ──
         when(
             move || state.is_authenticated.get() && state.schedule_loading.get(),
-            || label("Загрузка расписания…").font(Font::Body).secondary(),
+            || column((
+                spacer(),
+                label("Загрузка расписания…")
+                    .font(Font::Body).secondary().align(TextAlign::Center),
+                spacer(),
+            )).grow(),
         ),
-        // ── loaded ──
         when(
             move || state.is_authenticated.get() && !state.schedule_loading.get(),
             move || schedule_content(state),
         ),
     ))
-    .spacing(12.0)
+    .spacing(0.0)
     .grow())
     .grow()
 }
 
 fn schedule_content(state: ESchoolState) -> impl Piece {
     column((
-        // ── Bell schedule section ──
         when(
             move || !state.bell_times.get().is_empty(),
             move || bell_section(state),
         ),
-        // ── Timetable section ──
         when(
             move || !state.timetable_days.get().is_empty(),
             move || timetable_section(state),
         ),
     ))
-    .spacing(16.0)
+    .spacing(0.0)
     .grow()
 }
 
@@ -65,9 +64,10 @@ fn schedule_content(state: ESchoolState) -> impl Piece {
 
 fn bell_section(state: ESchoolState) -> impl Piece {
     column((
-        label("Расписание звонков")
-            .font(Font::Title3)
-            .padding(Insets { top: 0.0, leading: 16.0, bottom: 4.0, trailing: 16.0 }),
+        label("Звонки")
+            .font(Font::Headline)
+            .color(colors::PRIMARY)
+            .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
         each(
             items(
                 move || state.bell_times.get(),
@@ -79,7 +79,7 @@ fn bell_section(state: ESchoolState) -> impl Piece {
             },
         ),
     ))
-    .spacing(4.0)
+    .spacing(0.0)
 }
 
 fn bell_row(state: ESchoolState, number: u32) -> impl Piece {
@@ -100,12 +100,13 @@ fn bell_row(state: ESchoolState, number: u32) -> impl Piece {
     row((
         label(number.to_string())
             .font(Font::Caption)
-            .color(colors::PRIMARY),
+            .color(colors::PRIMARY)
+            .align(TextAlign::Center),
         label(move || format!("{} — {}", start(), end()))
             .font(Font::Body),
     ))
-    .spacing(12.0)
-    .padding(Insets { top: 4.0, leading: 16.0, bottom: 4.0, trailing: 16.0 })
+    .spacing(16.0)
+    .padding(Insets { top: 8.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
 }
 
 // ── timetable ────────────────────────────────────────────────────────────
@@ -113,8 +114,9 @@ fn bell_row(state: ESchoolState, number: u32) -> impl Piece {
 fn timetable_section(state: ESchoolState) -> impl Piece {
     column((
         label("Расписание уроков")
-            .font(Font::Title3)
-            .padding(Insets { top: 8.0, leading: 16.0, bottom: 4.0, trailing: 16.0 }),
+            .font(Font::Headline)
+            .color(colors::PRIMARY)
+            .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
         each(
             items(
                 move || state.timetable_days.get(),
@@ -126,14 +128,14 @@ fn timetable_section(state: ESchoolState) -> impl Piece {
             },
         ),
     ))
-    .spacing(4.0)
+    .spacing(0.0)
 }
 
 fn timetable_day_row(state: ESchoolState, dow: u32) -> impl Piece {
     column((
         label(state::weekday_name(dow))
             .font(Font::Headline)
-            .padding(Insets { top: 6.0, leading: 16.0, bottom: 2.0, trailing: 16.0 }),
+            .padding(Insets { top: 12.0, leading: 20.0, bottom: 4.0, trailing: 20.0 }),
         label(move || {
             state.timetable_days.get()
                 .iter()
@@ -157,7 +159,8 @@ fn timetable_day_row(state: ESchoolState, dow: u32) -> impl Piece {
                 .unwrap_or_default()
         })
         .font(Font::Body)
-        .padding(Insets { top: 0.0, leading: 16.0, bottom: 4.0, trailing: 16.0 }),
+        .secondary()
+        .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
     ))
     .spacing(0.0)
 }

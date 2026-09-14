@@ -86,6 +86,19 @@ pub struct ClassesByDate {
 
 // Lesson models
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LessonMark {
+    pub mark: Option<String>,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub comment: Option<String>,
+    #[serde(default)]
+    pub author: Option<String>,
+    #[serde(default)]
+    pub uuid: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LessonSlot {
     pub lesson_uuid: String,
     pub lesson_template_id: String,
@@ -101,8 +114,11 @@ pub struct LessonSlot {
     pub start_time: String,
     #[serde(default)]
     pub has_attachments_or_links: bool,
-    pub homework_source_id: Option<String>,
-    pub lesson_mark: Option<String>,
+    #[serde(default)]
+    pub homework_source_id: Option<serde_json::Value>,
+    #[serde(default)]
+    pub lesson_mark: Option<LessonMark>,
+    #[serde(default)]
     pub substitution: Option<serde_json::Value>,
 }
 

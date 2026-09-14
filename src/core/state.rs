@@ -299,27 +299,66 @@ impl ESchoolState {
 
         // 4 — week activities → current week → lessons
         self.lessons_loading.set(true);
-        if let Ok(weeks) = api_get::<Vec<WeekActivity>>(
+        match api_get::<Vec<WeekActivity>>(
             &client,
             "/api/v1/education/diary/time_activities/week_activities",
         ) {
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            let cur = weeks.iter().find(|w| w.start_ts <= now_ms && w.end_ts >= now_ms);
+            Ok(weeks) => {
+                eprintln!("[State] Got {} weeks", weeks.len());
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                let cur = weeks.iter().find(|w| w.start_ts <= now_ms && w.end_ts >= now_ms);
 
-            if let Some(week) = cur {
-                self.current_week.set(week.summary.clone());
-                if let Ok(lessons) = api_get::<Vec<DaySchedule>>(
-                    &client,
-                    &format!(
+                if let Some(week) = cur {
+                    eprintln!("[State] Current week: {}", week.summary);
+                    self.current_week.set(week.summary.clone());
+                    let lessons_url = format!(
                         "/api/v1/education/diary/schools/{}/classes/{}/students/{}/lessons?week_activity_uuid={}",
                         user.school_id, class_id, user.profile_id, week.uuid
-                    ),
-                ) {
-                    self.lessons.set(lessons);
+                    );
+                    eprintln!("[State] Lessons URL: {}", lessons_url);
+                    match api_get_raw(&lessons_url) {
+                        Ok(raw) => {
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                                if let Some(arr) = val.as_array() {
+                                    eprintln!("[State] Lessons: {} days", arr.len());
+                                    for (di, day) in arr.iter().enumerate() {
+                                        if let Some(slots) = day.get("slots").and_then(|s| s.as_array()) {
+                                            for (si, slot) in slots.iter().enumerate() {
+                                                if let Some(obj) = slot.as_object() {
+                                                    for (k, v) in obj {
+                                                        if v.is_object() {
+                                                            eprintln!("[State] day[{}].slot[{}] field '{}' is OBJECT: {}", di, si, k, v);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
+                                Ok(lessons) => {
+                                    eprintln!("[State] Got {} days of lessons", lessons.len());
+                                    self.lessons.set(lessons);
+                                }
+                                Err(e) => {
+                                    eprintln!("[State] Lessons parse failed: {e}");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[State] Lessons failed: {e}");
+                        }
+                    }
+                } else {
+                    eprintln!("[State] No current week found (now={})", now_ms);
                 }
+            }
+            Err(e) => {
+                eprintln!("[State] Week activities failed: {e}");
             }
         }
         self.lessons_loading.set(false);
@@ -411,6 +450,27 @@ fn api_get<T: serde::de::DeserializeOwned>(
 
     resp.json::<T>()
         .map_err(|e| format!("parse failed: {e}"))
+}
+
+fn api_get_raw(
+    path: &str,
+) -> Result<String, String> {
+    let url = format!("{BASE_URL}{path}");
+    let token = day::prefs::get(TOKEN_KEY).unwrap_or_default();
+    let client = build_client(&token);
+    let resp = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().unwrap_or_default();
+        return Err(format!("HTTP {status}: {body}"));
+    }
+
+    resp.text()
+        .map_err(|e| format!("read failed: {e}"))
 }
 
 fn api_post<T: serde::de::DeserializeOwned>(

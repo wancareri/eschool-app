@@ -1,67 +1,54 @@
 use crate::core::colors;
 use crate::core::network::models::*;
 use crate::core::state::{self, ESchoolState};
-use crate::native;
 use crate::res;
 use day::prelude::*;
 
-/// Diary page — shows lessons for the current week grouped by day.
 pub(crate) fn diary_page() -> impl Piece {
     let state = ESchoolState::ambient();
 
     scroll(column((
+        // Header
         column((
             label(move || res::str::diary_title().format())
                 .font(Font::LargeTitle),
-            label("Расписание уроков")
-                .font(Font::Subheadline),
+            label(move || {
+                let w = state.current_week.get();
+                if w.is_empty() { "Текущая неделя".into() } else { w }
+            })
+            .font(Font::Subheadline)
+            .secondary(),
         ))
-        .spacing(4.0)
-        .padding(16.0),
-        // Current week label
-        label(move || {
-            let w = state.current_week.get();
-            if w.is_empty() { "Текущая неделя".into() } else { w }
-        })
-        .font(Font::Subheadline)
-        .secondary()
-        .padding(Insets { top: 0.0, leading: 16.0, bottom: 0.0, trailing: 16.0 }),
-        // ── not logged in ──
+        .spacing(6.0)
+        .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
+        // States
         when(
             move || !state.is_authenticated.get(),
             || column((
                 spacer(),
-                label("Войдите в аккаунт для просмотра дневника")
-                    .font(Font::Body)
-                    .secondary()
-                    .align(TextAlign::Center),
+                label("Войдите для просмотра дневника")
+                    .font(Font::Body).secondary().align(TextAlign::Center),
                 spacer(),
             )).grow(),
         ),
-        // ── loading ──
         when(
             move || state.is_authenticated.get() && state.lessons_loading.get(),
             || column((
                 spacer(),
                 label("Загрузка расписания…")
-                    .font(Font::Body)
-                    .secondary()
-                    .align(TextAlign::Center),
+                    .font(Font::Body).secondary().align(TextAlign::Center),
                 spacer(),
             )).grow(),
         ),
-        // ── loaded ──
         when(
             move || state.is_authenticated.get() && !state.lessons_loading.get(),
             move || diary_list(state),
         ),
     ))
-    .spacing(8.0)
+    .spacing(0.0)
     .grow())
     .grow()
 }
-
-// ── diary content ────────────────────────────────────────────────────────
 
 fn diary_list(state: ESchoolState) -> impl Piece {
     each(
@@ -78,7 +65,7 @@ fn diary_list(state: ESchoolState) -> impl Piece {
 
 fn day_card(state: ESchoolState, date: u64) -> impl Piece {
     column((
-        // Day header: "Понедельник, 07.09"
+        // Day header
         label(move || {
             let lessons = state.lessons.get();
             lessons
@@ -87,8 +74,9 @@ fn day_card(state: ESchoolState, date: u64) -> impl Piece {
                 .map(|d| state::format_date_header(d.day_of_week, d.date))
                 .unwrap_or_default()
         })
-        .font(Font::Title3)
-        .padding(Insets { top: 8.0, leading: 16.0, bottom: 4.0, trailing: 16.0 }),
+        .font(Font::Headline)
+        .color(colors::PRIMARY)
+        .padding(Insets { top: 16.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
         // Lessons
         each(
             items(
@@ -107,54 +95,68 @@ fn day_card(state: ESchoolState, date: u64) -> impl Piece {
             },
         ),
     ))
-    .spacing(2.0)
-    .padding(Insets { top: 4.0, leading: 0.0, bottom: 12.0, trailing: 0.0 })
+    .spacing(0.0)
+    .padding(Insets { top: 0.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
 }
 
 fn lesson_row(state: ESchoolState, date: u64, number: u32) -> impl Piece {
-    row((
-        // Lesson number badge
-        label(number.to_string())
-            .font(Font::Caption)
-            .color(colors::WHITE)
-            .align(TextAlign::Center),
-        // Subject + time column
-        column((
-            label(move || find_field(state, date, number, |s| s.subject_title.clone()))
-                .font(Font::Body),
-            row((
+    column((
+        row((
+            // Lesson number badge
+            label(number.to_string())
+                .font(Font::Caption)
+                .color(colors::WHITE)
+                .align(TextAlign::Center),
+            // Subject + time
+            column((
+                label(move || find_field(state, date, number, |s| s.subject_title.clone()))
+                    .font(Font::Body),
                 label(move || find_field(state, date, number, |s| {
-                    // "08:30" — trim the seconds portion if present
                     let t = &s.start_time;
                     t.get(..5).unwrap_or(t).to_string()
                 }))
                 .font(Font::Caption)
                 .secondary(),
-                when(
-                    move || find_field_bool(state, date, number, |s| s.homework.is_some()),
-                    || label(" · ДЗ").font(Font::Caption).color(colors::ACCENT),
-                ),
-            )).spacing(4.0),
-        ))
-        .spacing(2.0)
-        .align(HAlign::Leading)
-        .grow(),
-        // Grade
-        label(move || {
-            find_field(state, date, number, |s| {
-                s.lesson_mark.clone().unwrap_or_else(|| "—".into())
+            ))
+            .spacing(2.0)
+            .align(HAlign::Leading)
+            .grow(),
+            // Grade
+            label(move || {
+                find_field(state, date, number, |s| {
+                    s.lesson_mark.as_ref()
+                        .and_then(|m| m.mark.clone())
+                        .unwrap_or_else(|| "—".into())
+                })
             })
-        })
-        .font(Font::Title2)
-        .color(move || {
-            let mark = find_field(state, date, number, |s| {
-                s.lesson_mark.clone().unwrap_or_default()
-            });
-            state::grade_color(&mark)
-        }),
+            .font(Font::Title3)
+            .color(move || {
+                let mark = find_field(state, date, number, |s| {
+                    s.lesson_mark.as_ref()
+                        .and_then(|m| m.mark.clone())
+                        .unwrap_or_default()
+                });
+                state::grade_color(&mark)
+            }),
+        ))
+        .spacing(12.0)
+        .padding(Insets { top: 8.0, leading: 16.0, bottom: 0.0, trailing: 20.0 }),
+        // Homework
+        when(
+            move || find_field_bool(state, date, number, |s| s.homework.is_some()),
+            move || {
+                row((
+                    label(move || find_field(state, date, number, |s| {
+                        s.homework.clone().unwrap_or_default()
+                    }))
+                    .font(Font::Caption)
+                    .color(colors::ACCENT),
+                ))
+                .padding(Insets { top: 4.0, leading: 40.0, bottom: 4.0, trailing: 20.0 })
+            },
+        ),
     ))
-    .spacing(12.0)
-    .padding(Insets { top: 6.0, leading: 16.0, bottom: 6.0, trailing: 16.0 })
+    .spacing(0.0)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────

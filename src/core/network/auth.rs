@@ -127,17 +127,15 @@ impl Auth {
             .map_err(|e| format!("Step 3: {e}"))?;
         eprintln!("[OAuth] Step 3: status={}", resp3.status());
 
-        let callback_raw = resp3
-            .headers()
-            .get("location")
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| {
+        let callback_raw = match resp3.headers().get("location").and_then(|v| v.to_str().ok()) {
+            Some(loc) => loc.to_string(),
+            None => {
                 let body = resp3.text().unwrap_or_default();
                 let snippet: String = body.chars().take(300).collect();
                 eprintln!("[OAuth] Step 3: no Location. Body: {snippet}");
-                format!("Step 3: no Location header. Body: {snippet}")
-            })?
-            .to_string();
+                return Err(format!("Step 3: no Location header. Body: {snippet}"));
+            }
+        };
         let callback_url = decode_entities(&callback_raw);
         eprintln!("[OAuth] Step 3: callback → {}", &callback_url[..callback_url.len().min(120)]);
 
@@ -155,17 +153,15 @@ impl Auth {
             .map_err(|e| format!("Step 4: {e}"))?;
         eprintln!("[OAuth] Step 4: status={}", resp4.status());
 
-        let diary_callback_raw = resp4
-            .headers()
-            .get("location")
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| {
+        let diary_callback_raw = match resp4.headers().get("location").and_then(|v| v.to_str().ok()) {
+            Some(loc) => loc.to_string(),
+            None => {
                 let body = resp4.text().unwrap_or_default();
                 let snippet: String = body.chars().take(300).collect();
                 eprintln!("[OAuth] Step 4: no Location. Body: {snippet}");
-                format!("Step 4: no Location header (expected diary callback). Body: {snippet}")
-            })?
-            .to_string();
+                return Err(format!("Step 4: no Location header (expected diary callback). Body: {snippet}"));
+            }
+        };
         let diary_callback_url = decode_entities(&diary_callback_raw);
         eprintln!("[OAuth] Step 4: diary callback → {}", &diary_callback_url[..diary_callback_url.len().min(120)]);
 
@@ -182,17 +178,15 @@ impl Auth {
             .map_err(|e| format!("Step 5: {e}"))?;
         eprintln!("[OAuth] Step 5: status={}", resp5.status());
 
-        let preauth_redirect_raw = resp5
-            .headers()
-            .get("location")
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| {
+        let preauth_redirect_raw = match resp5.headers().get("location").and_then(|v| v.to_str().ok()) {
+            Some(loc) => loc.to_string(),
+            None => {
                 let body = resp5.text().unwrap_or_default();
                 let snippet: String = body.chars().take(300).collect();
                 eprintln!("[OAuth] Step 5: no Location. Body: {snippet}");
-                format!("Step 5: no Location header (expected preauthorized). Body: {snippet}")
-            })?
-            .to_string();
+                return Err(format!("Step 5: no Location header (expected preauthorized). Body: {snippet}"));
+            }
+        };
         let preauth_redirect = decode_entities(&preauth_redirect_raw);
         eprintln!("[OAuth] Step 5: preauth → {}", &preauth_redirect[..preauth_redirect.len().min(120)]);
 
