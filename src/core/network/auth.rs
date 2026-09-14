@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use sha2::{Sha256, Digest};
-use rand::Rng;
 use regex::Regex;
 
 const CLIENT_ID: &str = "oauth_diary_echools";
@@ -9,7 +7,7 @@ const REDIRECT_URI: &str = "https://diary.e-schools.by/api/v1/admin/auth/callbac
 const SCOPE: &str = "openid profile offline_access organization.write person.write person.write.all person.read persons.read dictionaries.read organization.read";
 const OAUTH_URL: &str = "https://oauth.rios.unibel.by";
 pub(crate) const BASE_URL: &str = "https://diary.e-schools.by";
-const USER_AGENT: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+const UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Token {
@@ -30,10 +28,8 @@ pub struct Auth {
 
 impl Auth {
     pub fn new() -> Self {
-        let state = "schools".to_string();
-
         Self {
-            state,
+            state: "schools".to_string(),
         }
     }
 
@@ -56,190 +52,194 @@ impl Auth {
         )
     }
 
-    /// Login with username and password.
+    /// Login with username and password — pure HTTP redirect flow matching iOS.
     pub fn login_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
-        // Single client for entire flow — cookies must be preserved
         let client = reqwest::blocking::Client::builder()
             .cookie_store(true)
             .redirect(reqwest::redirect::Policy::none())
-            .user_agent(USER_AGENT)
+            .user_agent(UA)
             .timeout(std::time::Duration::from_secs(15))
             .danger_accept_invalid_certs(true)
             .build()
-            .map_err(|e| format!("Failed to create client: {e}"))?;
+            .map_err(|e| format!("Client build: {e}"))?;
 
-        // 0. Hit diary login/student to establish session context
-        let init_resp = client
+        // Step 1: GET diary login/student → 302 to OAuth
+        eprintln!("[OAuth] Step 1: GET diary login/student");
+        let resp1 = client
             .get(format!("{}/api/v1/admin/auth/login/student", BASE_URL))
             .send()
-            .map_err(|e| format!("Failed to init login: {e}"))?;
-        let _init_status = init_resp.status(); // 302 expected, ignore errors
+            .map_err(|e| format!("Step 1: {e}"))?;
+        eprintln!("[OAuth] Step 1: status={}", resp1.status());
+        let oauth_login_url = resp1
+            .headers()
+            .get("location")
+            .and_then(|v| v.to_str().ok())
+            .ok_or("Step 1: no Location header")?
+            .to_string();
+        eprintln!("[OAuth] Step 1: redirect → {}", &oauth_login_url[..oauth_login_url.len().min(120)]);
 
-        // 1. GET OAuth login page
-        let login_url = self.login_url();
-        let login_page = client
-            .get(&login_url)
+        // Step 2: GET OAuth login page → extract CSRF + ReturnUrl
+        let login_page_url = if oauth_login_url.starts_with("http") {
+            oauth_login_url
+        } else {
+            format!("{}{}", OAUTH_URL, oauth_login_url)
+        };
+        eprintln!("[OAuth] Step 2: GET {}", &login_page_url[..login_page_url.len().min(120)]);
+        let resp2 = client
+            .get(&login_page_url)
             .send()
-            .map_err(|e| format!("Failed to load login page: {e}"))?;
+            .map_err(|e| format!("Step 2: {e}"))?;
+        eprintln!("[OAuth] Step 2: status={}", resp2.status());
+        let login_html = resp2.text().map_err(|e| format!("Step 2 text: {e}"))?;
 
-        let status = login_page.status();
-        if !status.is_success() {
-            return Err(format!("Login page returned HTTP {status}"));
-        }
-
-        let page_html = login_page
-            .text()
-            .map_err(|e| format!("Failed to read login page: {e}"))?;
-
-        // 2. Extract __RequestVerificationToken
-        let csrf_token = extract_csrf_token(&page_html)
+        let csrf = extract_csrf(&login_html)
             .ok_or_else(|| {
-                let snippet: String = page_html.chars().take(300).collect();
-                format!("CSRF token not found. Page: {snippet}")
+                let snippet: String = login_html.chars().take(300).collect();
+                eprintln!("[OAuth] Step 2: CSRF not found. HTML: {snippet}");
+                format!("CSRF not found. HTML: {snippet}")
             })?;
+        let return_url = extract_return_url(&login_html)
+            .ok_or_else(|| {
+                let snippet: String = login_html.chars().take(300).collect();
+                eprintln!("[OAuth] Step 2: ReturnUrl not found. HTML: {snippet}");
+                format!("ReturnUrl not found. HTML: {snippet}")
+            })?;
+        eprintln!("[OAuth] Step 2: CSRF={}… ReturnUrl={}…", &csrf[..csrf.len().min(30)], &return_url[..return_url.len().min(80)]);
 
-        // 3. POST credentials
-        let return_url = self.build_return_url();
+        // Step 3: POST credentials → 302 to callback
+        let oauth_origin = extract_origin(&login_page_url);
 
         let params = [
             ("Input.ReturnUrl", return_url.as_str()),
             ("Input.Username", username),
             ("Input.Password", password),
             ("Input.Button", "login"),
-            ("__RequestVerificationToken", csrf_token.as_str()),
             ("Input.RememberLogin", "false"),
+            ("__RequestVerificationToken", csrf.as_str()),
         ];
 
-        let response = client
-            .post(format!("{}/Account/Login", OAUTH_URL))
+        eprintln!("[OAuth] Step 3: POST {}/Account/Login", oauth_origin);
+        let resp3 = client
+            .post(format!("{}/Account/Login", oauth_origin))
+            .header("Content-Type", "application/x-www-form-urlencoded")
             .form(&params)
             .send()
-            .map_err(|e| format!("Login POST failed: {e}"))?;
+            .map_err(|e| format!("Step 3: {e}"))?;
+        eprintln!("[OAuth] Step 3: status={}", resp3.status());
 
-        // 4. Check redirect
-        let status = response.status();
-        if !status.is_redirection() {
-            let body = response.text().unwrap_or_default();
-            let snippet: String = body.chars().take(300).collect();
-            return Err(format!("Expected redirect, got HTTP {status}. Body: {snippet}"));
-        }
-
-        let callback_url = response
+        let callback_raw = resp3
             .headers()
             .get("location")
             .and_then(|v| v.to_str().ok())
-            .ok_or("No Location header in redirect")?;
+            .ok_or_else(|| {
+                let body = resp3.text().unwrap_or_default();
+                let snippet: String = body.chars().take(300).collect();
+                eprintln!("[OAuth] Step 3: no Location. Body: {snippet}");
+                format!("Step 3: no Location header. Body: {snippet}")
+            })?
+            .to_string();
+        let callback_url = decode_entities(&callback_raw);
+        eprintln!("[OAuth] Step 3: callback → {}", &callback_url[..callback_url.len().min(120)]);
 
-        let full_callback_url = if callback_url.starts_with("http") {
-            callback_url.to_string()
+        // Step 4: GET callback → 302 to diary callback
+        let resp4_url = if callback_url.starts_with("http") {
+            callback_url
         } else {
-            format!("{}{}", OAUTH_URL, callback_url)
+            format!("{}{}", oauth_origin, callback_url)
         };
+        eprintln!("[OAuth] Step 4: GET {}", &resp4_url[..resp4_url.len().min(120)]);
+        let resp4 = client
+            .get(&resp4_url)
+            .header("Referer", format!("{}/", oauth_origin))
+            .send()
+            .map_err(|e| format!("Step 4: {e}"))?;
+        eprintln!("[OAuth] Step 4: status={}", resp4.status());
 
-        // 5. Follow redirect chain from OAuth to diary callback
-        let mut current_url = full_callback_url;
-        let mut preauth_url = None;
+        let diary_callback_raw = resp4
+            .headers()
+            .get("location")
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| {
+                let body = resp4.text().unwrap_or_default();
+                let snippet: String = body.chars().take(300).collect();
+                eprintln!("[OAuth] Step 4: no Location. Body: {snippet}");
+                format!("Step 4: no Location header (expected diary callback). Body: {snippet}")
+            })?
+            .to_string();
+        let diary_callback_url = decode_entities(&diary_callback_raw);
+        eprintln!("[OAuth] Step 4: diary callback → {}", &diary_callback_url[..diary_callback_url.len().min(120)]);
 
-        for _step in 0..15 {
-            let resp = client
-                .get(&current_url)
-                .header("Referer", format!("{}/", OAUTH_URL))
-                .send()
-                .map_err(|e| format!("Redirect request failed: {e}"))?;
-
-            if resp.status().is_redirection() {
-                let location = resp
-                    .headers()
-                    .get("location")
-                    .and_then(|v| v.to_str().ok())
-                    .ok_or("Redirect without Location header")?;
-
-                current_url = resolve_url(&current_url, location);
-
-                if current_url.contains("login/error") {
-                    // Extract error message from base64 data param
-                    let error_msg = extract_uuid_from_url(&current_url)
-                        .and_then(|data| base64::engine::general_purpose::STANDARD.decode(format!("{}==", data.replace('/', "/").replace('-', "+")).as_bytes()).ok())
-                        .and_then(|bytes| String::from_utf8(bytes).ok())
-                        .unwrap_or_else(|| "Unknown error".to_string());
-                    return Err(format!("Login failed: {error_msg}"));
-                }
-
-                if current_url.contains("data_for_login") || current_url.contains("preauthorized") {
-                    preauth_url = Some(current_url.clone());
-                    break;
-                }
-            } else {
-                let body = resp.text().unwrap_or_default();
-                if let Some(url) = find_data_for_login_url(&body) {
-                    preauth_url = Some(url);
-                    break;
-                }
-                break;
-            }
-        }
-
-        // If we hit a preauthorized page, extract the uuid and call data_for_login
-        let data_url = if let Some(url) = preauth_url {
-            if url.contains("data_for_login") {
-                url
-            } else if let Some(uuid) = extract_uuid_from_url(&url) {
-                format!("{}/api/v1/admin/auth/data_for_login/{}", BASE_URL, uuid)
-            } else {
-                return Err(format!("Preauthorized URL has no UUID: {}", url).into());
-            }
+        // Step 5: GET diary callback → 302 to preauthorized?data=UUID
+        let resp5_url = if diary_callback_url.starts_with("http") {
+            diary_callback_url
         } else {
-            return Err("No preauthorized redirect received from callback".into());
+            format!("{}{}", BASE_URL, diary_callback_url)
         };
+        eprintln!("[OAuth] Step 5: GET {}", &resp5_url[..resp5_url.len().min(120)]);
+        let resp5 = client
+            .get(&resp5_url)
+            .send()
+            .map_err(|e| format!("Step 5: {e}"))?;
+        eprintln!("[OAuth] Step 5: status={}", resp5.status());
 
-        // 6. Get profile data from data_for_login
-        let data_resp = client
+        let preauth_redirect_raw = resp5
+            .headers()
+            .get("location")
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| {
+                let body = resp5.text().unwrap_or_default();
+                let snippet: String = body.chars().take(300).collect();
+                eprintln!("[OAuth] Step 5: no Location. Body: {snippet}");
+                format!("Step 5: no Location header (expected preauthorized). Body: {snippet}")
+            })?
+            .to_string();
+        let preauth_redirect = decode_entities(&preauth_redirect_raw);
+        eprintln!("[OAuth] Step 5: preauth → {}", &preauth_redirect[..preauth_redirect.len().min(120)]);
+
+        let uuid = extract_uuid(&preauth_redirect)
+            .ok_or_else(|| format!("UUID not found in preauth redirect: {}", &preauth_redirect))?;
+        eprintln!("[OAuth] Step 5: UUID = {}", uuid);
+
+        // Step 6: GET data_for_login/{UUID}
+        let data_url = format!("{}/api/v1/admin/auth/data_for_login/{}", BASE_URL, uuid);
+        eprintln!("[OAuth] Step 6: GET data_for_login/{}", uuid);
+        let resp6 = client
             .get(&data_url)
             .send()
-            .map_err(|e| format!("data_for_login request failed: {e}"))?;
+            .map_err(|e| format!("Step 6: {e}"))?;
+        eprintln!("[OAuth] Step 6: status={}", resp6.status());
+        let login_data: serde_json::Value = resp6
+            .json()
+            .map_err(|e| format!("Step 6 parse: {e}"))?;
 
-        let data_body = data_resp
-            .text()
-            .map_err(|e| format!("Failed to read data_for_login response: {e}"))?;
-
-        let profile_data: serde_json::Value = serde_json::from_str(&data_body)
-            .map_err(|e| format!("Failed to parse data_for_login JSON: {e}"))?;
-
-        let profile_id = profile_data["profile_id"]
-            .as_str()
-            .ok_or("No profile_id in data_for_login response")?;
-        let schools = profile_data["schools"]
-            .as_array()
-            .ok_or("No schools in data_for_login response")?;
-        let school_id = schools.first()
+        let profile_id = login_data["profile_id"].as_str().ok_or("Step 6: no profile_id")?;
+        let school_id = login_data["schools"].as_array()
+            .and_then(|s| s.first())
             .and_then(|s| s.get("id"))
             .and_then(|id| id.as_str())
-            .ok_or("No school_id in data_for_login response")?;
-        let kinds = profile_data["kinds"]
-            .as_array()
-            .ok_or("No kinds in data_for_login response")?;
-        let kind = kinds.first()
+            .ok_or("Step 6: no school_id")?;
+        let kind = login_data["kinds"].as_array()
+            .and_then(|k| k.first())
             .and_then(|k| k.as_str())
             .unwrap_or("student")
             .to_lowercase();
+        eprintln!("[OAuth] Step 6: profile={} school={} kind={}", profile_id, school_id, kind);
 
-        // 7. Build token string: profile_id:school_id:kind (base64 encoded)
-        //    Matches the web SPA: btoa(profile_id + ":" + school_id + ":" + kind)
-        let token_raw = format!("{}:{}:{}", profile_id, school_id, kind);
-        let token_b64 = BASE64.encode(token_raw.as_bytes());
-
-        let login_url = format!("{}/api/v1/auth/login?token={}", BASE_URL, token_b64);
-
-        // 8. Get JWT tokens
-        let auth_resp = client
-            .get(&login_url)
+        // Step 7: GET auth/login?token={base64}
+        let token_payload = format!("{}:{}:{}", profile_id, school_id, kind);
+        let token_b64 = BASE64.encode(token_payload.as_bytes());
+        eprintln!("[OAuth] Step 7: GET auth/login?token=…");
+        let resp7 = client
+            .get(format!("{}/api/v1/auth/login?token={}", BASE_URL, token_b64))
             .send()
-            .map_err(|e| format!("Token request failed: {e}"))?;
+            .map_err(|e| format!("Step 7: {e}"))?;
+        eprintln!("[OAuth] Step 7: status={}", resp7.status());
 
-        let auth_data: AuthResponse = auth_resp
+        let auth_data: AuthResponse = resp7
             .json()
-            .map_err(|e| format!("Failed to parse token response: {e}"))?;
+            .map_err(|e| format!("Step 7 parse: {e}"))?;
 
+        eprintln!("[OAuth] Done!");
         Ok(Token {
             access_token: auth_data.auth_token,
             refresh_token: auth_data.refresh_token,
@@ -248,28 +248,7 @@ impl Auth {
     }
 }
 
-fn resolve_url(base: &str, relative: &str) -> String {
-    if relative.starts_with("http") {
-        relative.to_string()
-    } else if relative.starts_with('/') {
-        let scheme_end = base.find("://").unwrap_or(0) + 3;
-        let base_host_end = base[scheme_end..]
-            .find('/')
-            .map(|i| scheme_end + i)
-            .unwrap_or(base.len());
-        format!("{}{}", &base[..base_host_end], relative)
-    } else {
-        let base_path = if let Some(pos) = base.rfind('/') {
-            &base[..=pos]
-        } else {
-            base
-        };
-        format!("{}{}", base_path, relative)
-    }
-}
-
 /// Refresh an expired access token using the stored refresh token.
-/// Returns (new_access_token, new_refresh_token) on success.
 pub(crate) fn refresh_access_token(
     refresh_token: &str,
 ) -> Result<(String, String), String> {
@@ -302,56 +281,36 @@ pub(crate) fn refresh_access_token(
     Ok((data.auth_token, data.refresh_token))
 }
 
-/// Extract __RequestVerificationToken from ASP.NET Core HTML form.
-/// Actual HTML: <input name="__RequestVerificationToken" type="hidden" value="CfDJ8..." />
-fn extract_csrf_token(html: &str) -> Option<String> {
-    // The exact pattern from the OAuth server:
-    // <input name="__RequestVerificationToken" type="hidden" value="CfDJ8..." />
+fn extract_csrf(html: &str) -> Option<String> {
     let re = Regex::new(r#"name="__RequestVerificationToken"[^>]*value="([^"]+)""#).ok()?;
     let caps = re.captures(html)?;
     Some(caps.get(1)?.as_str().to_string())
 }
 
-fn extract_code_from_url(url: &str) -> Option<String> {
-    let re = Regex::new(r"[?&]code=([^&]+)").ok()?;
-    let caps = re.captures(url)?;
-    Some(urlencoding::decode(caps.get(1)?.as_str()).ok()?.into_owned())
+fn extract_return_url(html: &str) -> Option<String> {
+    let re = Regex::new(r#"name="Input\.ReturnUrl"\s+value="([^"]+)""#).ok()?;
+    let caps = re.captures(html)?;
+    Some(decode_entities(caps.get(1)?.as_str()))
 }
 
-fn find_data_for_login_url(body: &str) -> Option<String> {
-    let re = Regex::new(r#"/api/v1/admin/auth/data_for_login/([a-f0-9-]+)"#).ok()?;
-    let caps = re.captures(body)?;
-    let uuid = caps.get(1)?.as_str();
-    Some(format!("{}/api/v1/admin/auth/data_for_login/{}", BASE_URL, uuid))
+fn extract_origin(url: &str) -> String {
+    let scheme_end = url.find("://").unwrap_or(0) + 3;
+    let host_end = url[scheme_end..]
+        .find('/')
+        .map(|i| scheme_end + i)
+        .unwrap_or(url.len());
+    url[..host_end].to_string()
 }
 
-fn extract_uuid_from_url(url: &str) -> Option<String> {
-    let re = Regex::new(r"[?&]data=([a-f0-9-]+)").ok()?;
+fn extract_uuid(url: &str) -> Option<String> {
+    let re = Regex::new(r"preauthorized\?data=([^&]+)").ok()?;
     let caps = re.captures(url)?;
     Some(caps.get(1)?.as_str().to_string())
 }
 
-fn generate_code_verifier() -> String {
-    let mut rng = rand::thread_rng();
-    (0..64)
-        .map(|_| {
-            let idx = rng.gen_range(0..62);
-            match idx {
-                0..10 => (b'0' + idx) as char,
-                10..36 => (b'a' + idx - 10) as char,
-                36..62 => (b'A' + idx - 36) as char,
-                _ => unreachable!(),
-            }
-        })
-        .collect()
-}
-
-fn generate_code_challenge(verifier: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(verifier.as_bytes());
-    let result = hasher.finalize();
-    BASE64.encode(result)
-        .replace('+', "-")
-        .replace('/', "_")
-        .replace('=', "")
+fn decode_entities(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
 }

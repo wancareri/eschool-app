@@ -94,8 +94,7 @@ impl ESchoolState {
         self.load_all_sync();
     }
 
-    /// Login with username and password via OAuth (desktop — blocking, matches iOS flow).
-    #[cfg(not(target_os = "ios"))]
+    /// Login with username and password via OAuth — pure HTTP redirect flow.
     pub(crate) fn login_with_password(self, username: &str, password: &str) {
         use crate::core::network::auth::Auth;
         self.loading.set(true);
@@ -111,40 +110,6 @@ impl ESchoolState {
                 self.load_all_sync();
             }
             Err(e) => {
-                self.error_msg.set(format!("Ошибка входа: {e}"));
-                self.loading.set(false);
-            }
-        }
-    }
-
-    /// Login with username and password via OAuth (iOS — pure HTTP, sync).
-    #[cfg(target_os = "ios")]
-    pub(crate) fn login_with_password(self, username: &str, password: &str) {
-        use crate::core::network::auth::Auth;
-        use crate::core::network::oauth_web;
-        nslog::nslog(&format!("[State] login_with_password called for user: {}", username));
-
-        self.loading.set(true);
-        self.error_msg.set(String::new());
-
-        let auth = Auth::new();
-        nslog::nslog("[State] Calling login_with_web_view...");
-        let result = oauth_web::login_with_web_view(&auth, username, password);
-        nslog::nslog(&format!("[State] login_with_web_view returned: {:?}", result.as_ref().map(|_| "Ok(Token)").unwrap_or_else(|e| e.as_str())));
-
-        match result {
-            Ok(token) => {
-                nslog::nslog("[State] Login OK, storing token");
-                day::prefs::set(TOKEN_KEY, &token.access_token);
-                day::prefs::set(REFRESH_KEY, &token.refresh_token);
-                self.is_authenticated.set(true);
-                self.loading.set(false);
-                nslog::nslog("[State] Calling load_all_sync...");
-                self.load_all_sync();
-                nslog::nslog("[State] load_all_sync completed");
-            }
-            Err(e) => {
-                nslog::nslog(&format!("[State] Login failed: {}", e));
                 self.error_msg.set(format!("Ошибка входа: {e}"));
                 self.loading.set(false);
             }
