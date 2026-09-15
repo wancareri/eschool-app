@@ -148,9 +148,9 @@ fn fallback_class_id(
 fn load_weeks_and_current(
     state: AppState,
     client: &reqwest::blocking::Client,
-    school_id: &str,
-    class_id: &str,
-    profile_id: &str,
+    _school_id: &str,
+    _class_id: &str,
+    _profile_id: &str,
 ) {
     state.lessons_loading.set(true);
     match blocking::api_get::<Vec<WeekActivity>>(client, endpoints::WEEK_ACTIVITIES) {
@@ -164,7 +164,7 @@ fn load_weeks_and_current(
                 .find(|(_, w)| w.start_ts <= now_ms && w.end_ts >= now_ms);
 
             if let Some((idx, week)) = cur {
-                let week_uuid = week.uuid.clone();
+                let _week_uuid = week.uuid.clone();
                 let week_summary = week.summary.clone();
                 state.all_weeks.set(weeks);
                 state.current_week_index.set(idx as i32);

@@ -4,8 +4,6 @@ use day::prelude::*;
 use eschool_api::entities::*;
 use crate::shared::nslog;
 
-use std::collections::HashMap;
-
 /// An official mark set by a teacher.
 #[derive(Debug, Clone)]
 pub struct OfficialMark {
