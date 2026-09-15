@@ -317,14 +317,20 @@ pub fn load_quarter(state: AppState, quarter: usize) {
                                     all_marks.entry(slot.subject_title.clone())
                                         .or_default()
                                         .push(mark_val);
+                                    // Only include marks with a non-empty author (teacher-set)
                                     if let Some(ref lm) = slot.lesson_mark {
-                                        all_official.entry(slot.subject_title.clone())
-                                            .or_default()
-                                            .push(OfficialMark {
-                                                value: mark_val,
-                                                kind: lm.kind.clone().unwrap_or_default(),
-                                                author: lm.author.clone().unwrap_or_default(),
-                                            });
+                                        let has_author = lm.author.as_ref()
+                                            .map(|a| !a.is_empty())
+                                            .unwrap_or(false);
+                                        if has_author {
+                                            all_official.entry(slot.subject_title.clone())
+                                                .or_default()
+                                                .push(OfficialMark {
+                                                    value: mark_val,
+                                                    kind: lm.kind.clone().unwrap_or_default(),
+                                                    author: lm.author.clone().unwrap_or_default(),
+                                                });
+                                        }
                                     }
                                 }
                             }
@@ -416,18 +422,24 @@ pub fn load_year(state: AppState) {
                                         all_marks.entry(slot.subject_title.clone())
                                             .or_default()
                                             .push(mark_val);
+                                        // Only include marks with a non-empty author (teacher-set)
                                         if let Some(ref lm) = slot.lesson_mark {
-                                            let om = OfficialMark {
-                                                value: mark_val,
-                                                kind: lm.kind.clone().unwrap_or_default(),
-                                                author: lm.author.clone().unwrap_or_default(),
-                                            };
-                                            q_off.entry(slot.subject_title.clone())
-                                                .or_default()
-                                                .push(om.clone());
-                                            all_official.entry(slot.subject_title.clone())
-                                                .or_default()
-                                                .push(om);
+                                            let has_author = lm.author.as_ref()
+                                                .map(|a| !a.is_empty())
+                                                .unwrap_or(false);
+                                            if has_author {
+                                                let om = OfficialMark {
+                                                    value: mark_val,
+                                                    kind: lm.kind.clone().unwrap_or_default(),
+                                                    author: lm.author.clone().unwrap_or_default(),
+                                                };
+                                                q_off.entry(slot.subject_title.clone())
+                                                    .or_default()
+                                                    .push(om.clone());
+                                                all_official.entry(slot.subject_title.clone())
+                                                    .or_default()
+                                                    .push(om);
+                                            }
                                         }
                                     }
                                 }

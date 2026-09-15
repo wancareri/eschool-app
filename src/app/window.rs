@@ -25,6 +25,7 @@ pub fn root() -> impl Piece {
         nslog::nslog(&format!("[init] First launch — system locale: {sys}"));
     }
     day_piece_settings::apply_startup("app.theme", "app.locale");
+    crate::shared::colors::init_accent();
     day::register_preferences(pages::settings::settings_body);
     day::register_new_window(|| window_shell(false));
 

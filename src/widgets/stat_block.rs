@@ -1,11 +1,12 @@
-use crate::shared::colors;
+use crate::app::AppState;
 use day::prelude::*;
 
-pub fn render(title: &'static str, value_fn: impl Fn() -> String + 'static) -> impl Piece {
+pub fn render(state: AppState, title: &'static str, value_fn: impl Fn() -> String + 'static) -> impl Piece {
+    let s = state;
     column((
         label(move || value_fn())
             .font(Font::Title2)
-            .color(colors::PRIMARY)
+            .color(move || Color::hex(s.accent_color.get()))
             .align(TextAlign::Center),
         label(title)
             .font(Font::Caption)

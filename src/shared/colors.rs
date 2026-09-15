@@ -1,17 +1,30 @@
 use day::prelude::Color;
+use std::sync::atomic::{AtomicU32, Ordering};
 
-/// Reactive accent color — reads from Signal.
-/// Pass `accent_hex` signal to get reactive color.
-pub fn primary_from(hex: u32) -> Color {
-    Color::hex(hex)
-}
+/// Global accent color — updated atomically when user picks a new color.
+static ACCENT_HEX: AtomicU32 = AtomicU32::new(0x3B82F6);
 
-/// Static accent color from prefs (non-reactive, for one-shot reads).
-pub fn primary() -> Color {
+/// Initialize the global accent color from prefs (call once at startup).
+pub fn init_accent() {
     let hex = day::prefs::get("app.accent_color")
         .and_then(|v| v.parse::<u32>().ok())
         .unwrap_or(0x3B82F6);
-    Color::hex(hex)
+    ACCENT_HEX.store(hex, Ordering::Relaxed);
+}
+
+/// Set the global accent color (call from settings when user picks a new color).
+pub fn set_accent(hex: u32) {
+    ACCENT_HEX.store(hex, Ordering::Relaxed);
+}
+
+/// Get current accent hex.
+pub fn accent_hex() -> u32 {
+    ACCENT_HEX.load(Ordering::Relaxed)
+}
+
+/// Get current accent color as Day Color.
+pub fn primary() -> Color {
+    Color::hex(ACCENT_HEX.load(Ordering::Relaxed))
 }
 
 /// Default accent hex value.

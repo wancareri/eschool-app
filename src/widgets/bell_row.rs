@@ -1,5 +1,4 @@
 use crate::app::AppState;
-use crate::shared::colors;
 use day::prelude::*;
 
 pub fn render(state: AppState, number: u32) -> impl Piece {
@@ -20,7 +19,7 @@ pub fn render(state: AppState, number: u32) -> impl Piece {
     row((
         label(format!("{}", number))
             .font(Font::Title3)
-            .color(colors::PRIMARY)
+            .color(move || Color::hex(state.accent_color.get()))
             .align(TextAlign::Center),
         column((
             label(format!("{} урок", number))

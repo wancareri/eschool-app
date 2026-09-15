@@ -218,7 +218,7 @@ fn day_card(state: AppState, date: u64) -> impl Piece {
                 .map(|d| utils::format_date_header(d.day_of_week, d.date))
                 .unwrap_or_default()
         })
-        .font(Font::Headline).color(colors::PRIMARY)
+        .font(Font::Headline).color(move || Color::hex(state.accent_color.get()))
         .padding(Insets { top: 16.0, leading: PAD, bottom: 6.0, trailing: PAD }),
         each(
             items(
@@ -245,7 +245,7 @@ fn summary_view(state: AppState) -> impl Piece {
         label(move || {
             if state.current_quarter.get() == 4 { "Итоги года" } else { "Итоги четверти" }
         })
-        .font(Font::Headline).color(colors::PRIMARY)
+        .font(Font::Headline).color(move || Color::hex(state.accent_color.get()))
         .align(TextAlign::Center)
         .padding(Insets { top: 16.0, leading: PAD, bottom: 6.0, trailing: PAD }),
 
@@ -253,7 +253,7 @@ fn summary_view(state: AppState) -> impl Piece {
         when(move || state.current_quarter.get() == 4, move || year_stats(state)),
 
         // ── Расчётные (сначала) ──
-        section_header("Расчётные оценки"),
+        section_header(state, "Расчётные оценки"),
 
         when(move || state.current_quarter.get() == 4 && !state.year_quarter_data.get().is_empty(),
             move || year_quarter_subjects(state)),
@@ -263,7 +263,7 @@ fn summary_view(state: AppState) -> impl Piece {
         divider().padding(Insets { top: 8.0, leading: PAD, bottom: 8.0, trailing: PAD }),
 
         // ── Выставленные (потом) ──
-        section_header("Выставленные оценки"),
+        section_header(state, "Выставленные оценки"),
 
         when(move || state.current_quarter.get() != 4,
             move || official_quarter_list(state)),
@@ -274,9 +274,9 @@ fn summary_view(state: AppState) -> impl Piece {
     .grow()
 }
 
-fn section_header(text: &'static str) -> impl Piece {
+fn section_header(state: AppState, text: &'static str) -> impl Piece {
     label(text)
-        .font(Font::Title3).color(colors::PRIMARY)
+        .font(Font::Title3).color(move || Color::hex(state.accent_color.get()))
         .align(TextAlign::Center)
         .padding(Insets { top: 10.0, leading: PAD, bottom: 6.0, trailing: PAD })
 }
@@ -285,12 +285,12 @@ fn section_header(text: &'static str) -> impl Piece {
 
 fn quarter_stats(state: AppState) -> impl Piece {
     row((
-        stat_block::render("Четверть", move || {
+        stat_block::render(state, "Четверть", move || {
             let labels = ["I", "II", "III", "IV"];
             format!("{} четверть", labels[state.current_quarter.get()])
         }),
-        stat_block::render("Предметов", move || state.quarter_marks.get().len().to_string()),
-        stat_block::render("Средний балл", move || {
+        stat_block::render(state, "Предметов", move || state.quarter_marks.get().len().to_string()),
+        stat_block::render(state, "Средний балл", move || {
             let marks = state.quarter_marks.get();
             let total: usize = marks.values().map(|v| v.len()).sum();
             if total == 0 { "—".into() }
@@ -304,21 +304,21 @@ fn quarter_stats(state: AppState) -> impl Piece {
 fn year_stats(state: AppState) -> impl Piece {
     column((
         row((
-            stat_block::render("Предметов", move || state.quarter_marks.get().len().to_string()),
-            stat_block::render("Оценок", move || {
+            stat_block::render(state, "Предметов", move || state.quarter_marks.get().len().to_string()),
+            stat_block::render(state, "Оценок", move || {
                 state.quarter_marks.get().values().map(|v| v.len()).sum::<usize>().to_string()
             }),
         ))
         .spacing(8.0)
         .padding(Insets { top: 0.0, leading: PAD, bottom: 8.0, trailing: PAD }),
 
-        year_avg_row("Средний (все оценки)", move || {
+        year_avg_row(state, "Средний (все оценки)", move || {
             let marks = state.quarter_marks.get();
             let total: usize = marks.values().map(|v| v.len()).sum();
             if total == 0 { return "—".into(); }
             format!("{:.2}", marks.values().flat_map(|v| v.iter()).sum::<f64>() / total as f64)
         }),
-        year_avg_row("Средний (по четвертям)", move || {
+        year_avg_row(state, "Средний (по четвертям)", move || {
             let yqd = state.year_quarter_data.get();
             if yqd.is_empty() { return "—".into(); }
             let q_avgs: Vec<f64> = yqd.iter().map(|(_, m)| {
@@ -327,7 +327,7 @@ fn year_stats(state: AppState) -> impl Piece {
             }).filter(|a| *a > 0.0).collect();
             if q_avgs.is_empty() { "—".into() } else { format!("{:.2}", q_avgs.iter().sum::<f64>() / q_avgs.len() as f64) }
         }),
-        year_avg_row("Средний (взвешенный)", move || {
+        year_avg_row(state, "Средний (взвешенный)", move || {
             let yqd = state.year_quarter_data.get();
             if yqd.is_empty() { return "—".into(); }
             let (mut ws, mut tm) = (0.0, 0usize);
@@ -339,10 +339,10 @@ fn year_stats(state: AppState) -> impl Piece {
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 12.0, trailing: 0.0 })
 }
 
-fn year_avg_row(lbl: &'static str, value: impl Fn() -> String + 'static) -> impl Piece {
+fn year_avg_row(state: AppState, lbl: &'static str, value: impl Fn() -> String + 'static) -> impl Piece {
     row((
         day::prelude::label(lbl).font(Font::Body).grow(),
-        day::prelude::label(value).font(Font::Headline).color(colors::PRIMARY),
+        day::prelude::label(value).font(Font::Headline).color(move || Color::hex(state.accent_color.get())),
     ))
     .spacing(8.0)
     .padding(Insets { top: 4.0, leading: PAD, bottom: 4.0, trailing: PAD })
@@ -380,7 +380,7 @@ fn year_subject_row(state: AppState, subject: String) -> impl Piece {
                     if vals.is_empty() { "—".into() }
                     else { format!("{:.2}", vals.iter().sum::<f64>() / vals.len() as f64) }
                 } else { "—".into() }
-            }).font(Font::Headline).color(colors::PRIMARY),
+            }).font(Font::Headline).color(move || Color::hex(state.accent_color.get())),
         ))
         .spacing(8.0)
         .padding(Insets { top: 6.0, leading: PAD, bottom: 2.0, trailing: PAD }),
@@ -518,7 +518,7 @@ fn official_year_row(state: AppState, subject: String) -> impl Piece {
                     if vals.is_empty() { "—".into() }
                     else { format!("{:.2} ({})", vals.iter().map(|m| m.value).sum::<f64>() / vals.len() as f64, vals.len()) }
                 } else { "—".into() }
-            }).font(Font::Headline).color(colors::PRIMARY),
+            }).font(Font::Headline).color(move || Color::hex(state.accent_color.get())),
         ))
         .spacing(8.0)
         .padding(Insets { top: 6.0, leading: PAD, bottom: 2.0, trailing: PAD }),

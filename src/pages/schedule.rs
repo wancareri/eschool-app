@@ -1,6 +1,6 @@
 use crate::app::AppState;
 use eschool_api::entities::*;
-use crate::shared::{colors, utils};
+use crate::shared::utils;
 use crate::widgets;
 use crate::res;
 use day::prelude::*;
@@ -64,7 +64,7 @@ fn bell_section(state: AppState) -> impl Piece {
     column((
         label("Звонки")
             .font(Font::Headline)
-            .color(colors::PRIMARY)
+            .color(move || Color::hex(state.accent_color.get()))
             .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
         each(
             items(
@@ -85,7 +85,7 @@ fn timetable_section(state: AppState) -> impl Piece {
     column((
         label("Расписание уроков")
             .font(Font::Headline)
-            .color(colors::PRIMARY)
+            .color(move || Color::hex(state.accent_color.get()))
             .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
         each(
             items(

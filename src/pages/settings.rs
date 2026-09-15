@@ -59,18 +59,16 @@ fn profile_section(state: AppState) -> impl Piece {
 
 fn appearance_section(state: AppState) -> impl Piece {
     column((
-        // ── Theme ──
         form((
             section(
                 (
                     label("Тема оформления").font(Font::Headline),
-                    theme_option("Классическая", "legacy"),
-                    theme_option("Liquid Glass", "liquid_glass"),
+                    theme_option(state, "Классическая", "legacy"),
+                    theme_option(state, "Liquid Glass", "liquid_glass"),
                 )
             ).title("Внешний вид"),
         )),
 
-        // ── Accent color ──
         form((
             section(
                 (
@@ -96,27 +94,38 @@ fn system_settings() -> impl Piece {
     ),))
 }
 
-fn theme_option(lbl: &'static str, key: &'static str) -> impl Piece {
+fn theme_option(state: AppState, lbl: &'static str, key: &'static str) -> impl Piece {
     let k = key.to_string();
-    let current = day::prefs::get("app.theme_style").unwrap_or_default();
-    let is_active = current == key;
-    let display = if is_active { format!("\u{2713} {lbl}") } else { lbl.to_string() };
-    button(display)
-        .id(format!("theme-{key}"))
-        .action(move || { day::prefs::set("app.theme_style", &k); })
+    let s = state;
+    button(move || {
+        // Read from signal or prefs — but we need a signal for reactivity
+        // Since we don't have a theme signal, read from prefs each time
+        // The button closure is re-evaluated when any tracked signal changes
+        // We track state.accent_color to force re-eval on any settings change
+        let _ = s.accent_color.get(); // force reactivity
+        let current = day::prefs::get("app.theme_style").unwrap_or_default();
+        if current == key { format!("\u{2713} {lbl}") } else { lbl.to_string() }
+    })
+    .id(format!("theme-{key}"))
+    .action(move || {
+        day::prefs::set("app.theme_style", &k);
+        // Force re-render by toggling a signal
+        let cur = state.accent_color.get();
+        state.accent_color.set(cur); // trigger reactivity
+    })
 }
 
 fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
-    let is_active = move || state.accent_color.get() == hex;
-    let display = move || {
-        if is_active() { format!("\u{2713} \u{25CF} {lbl}") } else { format!("\u{25CF} {lbl}") }
-    };
-    button(display)
-        .id(format!("accent-{hex}"))
-        .action(move || {
-            day::prefs::set("app.accent_color", &hex.to_string());
-            state.accent_color.set(hex);
-        })
+    let s = state;
+    button(move || {
+        if s.accent_color.get() == hex { format!("\u{2713} \u{25CF} {lbl}") } else { format!("\u{25CF} {lbl}") }
+    })
+    .id(format!("accent-{hex}"))
+    .action(move || {
+        day::prefs::set("app.accent_color", &hex.to_string());
+        colors::set_accent(hex);
+        state.accent_color.set(hex);
+    })
 }
 
 fn logout_section(state: AppState) -> impl Piece {
@@ -179,6 +188,26 @@ fn dev_settings(state: AppState) -> impl Piece {
                     }),
             )
         ).title("Dev Tools"),
+
+        section(
+            (
+                label("Логи приложения").font(Font::Headline).color(colors::INFO),
+
+                scroll(
+                    label(move || nslog::get_logs())
+                        .font(Font::Caption)
+                        .align(TextAlign::Leading)
+                )
+                .height(300.0),
+
+                row((
+                    button("Обновить").id("dev-log-refresh"),
+                    button("Очистить логи")
+                        .id("dev-log-clear")
+                        .action(move || nslog::clear_logs()),
+                )).spacing(8.0),
+            )
+        ).title("Логи"),
     ))
     .padding(Insets { top: 16.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }

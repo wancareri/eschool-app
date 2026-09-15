@@ -1,24 +1,23 @@
 use crate::app::AppState;
-use crate::shared::colors;
 use day::prelude::*;
 
 pub fn render(state: AppState) -> impl Piece {
     column((
         label("Четверть")
             .font(Font::Headline)
-            .color(colors::PRIMARY)
+            .color(move || Color::hex(state.accent_color.get()))
             .padding(Insets { top: 16.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
         row((
-            super::stat_block::render("Четверть", move || {
+            super::stat_block::render(state, "Четверть", move || {
                 let idx = state.current_week_index.get();
                 let q = if idx < 9 { "I" } else if idx < 18 { "II" } else if idx < 27 { "III" } else { "IV" };
                 format!("{} четверть", q)
             }),
-            super::stat_block::render("Оценок", move || {
+            super::stat_block::render(state, "Оценок", move || {
                 state.all_marks.get().len().to_string()
             }),
-            super::stat_block::render("Средний балл", move || {
+            super::stat_block::render(state, "Средний балл", move || {
                 let marks = state.all_marks.get();
                 if marks.is_empty() { "—".into() }
                 else {
