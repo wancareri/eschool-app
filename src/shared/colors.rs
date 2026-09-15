@@ -32,10 +32,6 @@ pub fn apply_ios_tint(hex: u32) {
             b as objc2_core_foundation::CGFloat,
             1.0 as objc2_core_foundation::CGFloat,
         );
-        // UIView.appearance().tintColor — propagates to ALL views
-        let view_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
-            objc2::msg_send![objc2::class!(UIView), appearance];
-        let _: () = objc2::msg_send![&*view_appearance, setTintColor: &*color];
         // UINavigationBar.appearance().tintColor — nav bar buttons
         let nav_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UINavigationBar), appearance];
@@ -48,6 +44,14 @@ pub fn apply_ios_tint(hex: u32) {
         let switch_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UISwitch), appearance];
         let _: () = objc2::msg_send![&*switch_appearance, setOnTintColor: &*color];
+        // UIBarButtonItem.appearance().tintColor — bar button items
+        let bar_btn_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
+            objc2::msg_send![objc2::class!(UIBarButtonItem), appearance];
+        let _: () = objc2::msg_send![&*bar_btn_appearance, setTintColor: &*color];
+        // UIButton.appearance().tintColor — buttons
+        let btn_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
+            objc2::msg_send![objc2::class!(UIButton), appearance];
+        let _: () = objc2::msg_send![&*btn_appearance, setTintColor: &*color];
     }
 }
 

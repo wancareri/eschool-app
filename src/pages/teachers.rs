@@ -4,19 +4,23 @@ use crate::shared::colors;
 use crate::res;
 use day::prelude::*;
 
+const PAD: f64 = 20.0;
+
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
 
     scroll(column((
         column((
             label(move || res::str::teachers_title().format())
-                .font(Font::LargeTitle),
+                .font(Font::LargeTitle)
+                .align(TextAlign::Center),
             label("Предметы и преподаватели")
                 .font(Font::Subheadline)
-                .secondary(),
+                .secondary()
+                .align(TextAlign::Center),
         ))
         .spacing(6.0)
-        .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
+        .padding(Insets { top: 16.0, leading: PAD, bottom: 12.0, trailing: PAD }),
         when(
             move || !state.is_authenticated.get(),
             || column((
@@ -30,8 +34,8 @@ pub fn render() -> impl Piece {
             move || state.is_authenticated.get() && state.teachers_loading.get(),
             || column((
                 spacer(),
-                label("Загрузка…")
-                    .font(Font::Body).secondary().align(TextAlign::Center),
+                spinner(),
+                label("  Загрузка…").font(Font::Caption).secondary(),
                 spacer(),
             )).grow(),
         ),
@@ -59,84 +63,81 @@ fn teachers_list(state: AppState) -> impl Piece {
         ),
         move |slot| {
             let key = slot.key();
-            teacher_row(state, key).any()
+            teacher_card(state, key).any()
         },
     )
 }
 
-fn teacher_row(state: AppState, key: String) -> impl Piece {
+fn teacher_card(state: AppState, key: String) -> impl Piece {
     let k1 = key.clone();
     let k2 = key.clone();
     let k3 = key.clone();
-    let k5 = key;
+    let k3b = key.clone();
+    let k5 = key.clone();
+    let k5b = key;
 
-    let subject_fn = move || {
-        state.subjects_teachers.get()
-            .iter()
-            .find(|s| format!("{}:{}", s.teacher_id, s.id) == k1)
-            .map(|s| s.subject_title.clone())
-            .unwrap_or_default()
-    };
-    let teacher_fn = move || {
-        state.subjects_teachers.get()
-            .iter()
-            .find(|s| format!("{}:{}", s.teacher_id, s.id) == k2)
-            .map(|s| s.teacher.clone())
-            .unwrap_or_default()
-    };
-
-    let level_key = k3.clone();
-    let level_check = move || {
-        state.subjects_teachers.get()
-            .iter()
-            .find(|s| format!("{}:{}", s.teacher_id, s.id) == k3)
-            .map(|s| !s.level_of_study.is_empty())
-            .unwrap_or(false)
-    };
-
-    let group_key_check = k5.clone();
-    let group_check = move || {
-        state.subjects_teachers.get()
-            .iter()
-            .find(|s| format!("{}:{}", s.teacher_id, s.id) == group_key_check)
-            .and_then(|s| s.group_name.as_ref())
-            .map(|g| !g.is_empty())
-            .unwrap_or(false)
-    };
-
-    row((
-        label("📚").font(Font::Title2),
-        column((
-            label(subject_fn).font(Font::Headline),
-            label(teacher_fn).font(Font::Body).secondary(),
-            row((
-                when(level_check, move || {
-                    let lk = level_key.clone();
-                    label(move || {
-                        state.subjects_teachers.get()
-                            .iter()
-                            .find(|s| format!("{}:{}", s.teacher_id, s.id) == lk)
-                            .map(|s| format!("Уровень: {}", s.level_of_study))
-                            .unwrap_or_default()
-                    }).font(Font::Caption).color(colors::INFO)
-                }),
-                when(group_check, move || {
-                    let gk = k5.clone();
-                    label(move || {
-                        state.subjects_teachers.get()
-                            .iter()
-                            .find(|s| format!("{}:{}", s.teacher_id, s.id) == gk)
-                            .and_then(|s| s.group_name.clone())
-                            .map(|g| format!(" · Группа: {}", g))
-                            .unwrap_or_default()
-                    }).font(Font::Caption).secondary()
-                }),
-            )).spacing(0.0),
+    column((
+        // Subject name — accent colored
+        label(move || {
+            state.subjects_teachers.get()
+                .iter()
+                .find(|s| format!("{}:{}", s.teacher_id, s.id) == k1)
+                .map(|s| s.subject_title.clone())
+                .unwrap_or_default()
+        })
+        .font(Font::Headline)
+        .color(move || Color::hex(state.accent_color.get()))
+        .padding(Insets { top: 10.0, leading: PAD, bottom: 2.0, trailing: PAD }),
+        // Teacher name
+        label(move || {
+            state.subjects_teachers.get()
+                .iter()
+                .find(|s| format!("{}:{}", s.teacher_id, s.id) == k2)
+                .map(|s| s.teacher.clone())
+                .unwrap_or_default()
+        })
+        .font(Font::Body).secondary()
+        .padding(Insets { top: 0.0, leading: PAD, bottom: 2.0, trailing: PAD }),
+        // Level + group info
+        row((
+            when(move || {
+                state.subjects_teachers.get()
+                    .iter()
+                    .find(|s| format!("{}:{}", s.teacher_id, s.id) == k3)
+                    .map(|s| !s.level_of_study.is_empty())
+                    .unwrap_or(false)
+            }, move || {
+                let lk = k3b.clone();
+                label(move || {
+                    state.subjects_teachers.get()
+                        .iter()
+                        .find(|s| format!("{}:{}", s.teacher_id, s.id) == lk)
+                        .map(|s| format!("Уровень: {}", s.level_of_study))
+                        .unwrap_or_default()
+                }).font(Font::Caption).color(colors::INFO)
+            }),
+            when(move || {
+                state.subjects_teachers.get()
+                    .iter()
+                    .find(|s| format!("{}:{}", s.teacher_id, s.id) == k5)
+                    .and_then(|s| s.group_name.as_ref())
+                    .map(|g| !g.is_empty())
+                    .unwrap_or(false)
+            }, move || {
+                let gk = k5b.clone();
+                label(move || {
+                    state.subjects_teachers.get()
+                        .iter()
+                        .find(|s| format!("{}:{}", s.teacher_id, s.id) == gk)
+                        .and_then(|s| s.group_name.clone())
+                        .map(|g| format!("Группа: {}", g))
+                        .unwrap_or_default()
+                }).font(Font::Caption).secondary()
+            }),
         ))
-        .spacing(3.0)
-        .align(HAlign::Leading)
-        .grow(),
+        .spacing(8.0)
+        .padding(Insets { top: 0.0, leading: PAD, bottom: 10.0, trailing: PAD }),
+        divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
     ))
-    .spacing(14.0)
-    .padding(Insets { top: 10.0, leading: 20.0, bottom: 10.0, trailing: 20.0 })
+    .spacing(0.0)
 }

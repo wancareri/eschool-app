@@ -254,29 +254,17 @@ fn summary_view(state: AppState) -> impl Piece {
         .padding(Insets { top: 16.0, leading: PAD, bottom: 6.0, trailing: PAD }),
 
         when(move || state.current_quarter.get() != 4 && {
-            // Show quarter stats only if teacher has officially set marks for this quarter
             let off = state.official_marks.get();
             off.values().any(|v| !v.is_empty())
         }, move || quarter_stats(state)),
         when(move || state.current_quarter.get() == 4, move || year_stats(state)),
 
-        // ── Расчётные (сначала) ──
-        section_header(state, "Расчётные оценки"),
+        section_header(state, "Оценки по предметам"),
 
         when(move || state.current_quarter.get() == 4 && !state.year_quarter_data.get().is_empty(),
             move || year_quarter_subjects(state)),
         when(move || state.current_quarter.get() != 4,
             move || subject_list(state)),
-
-        divider().padding(Insets { top: 8.0, leading: PAD, bottom: 8.0, trailing: PAD }),
-
-        // ── Выставленные (потом) ──
-        section_header(state, "Выставленные оценки"),
-
-        when(move || state.current_quarter.get() != 4,
-            move || official_quarter_list(state)),
-        when(move || state.current_quarter.get() == 4 && !state.year_quarter_data.get().is_empty(),
-            move || official_year_list(state)),
     ))
     .spacing(0.0)
     .grow()
@@ -513,90 +501,4 @@ fn subject_list(state: AppState) -> impl Piece {
     )
 }
 
-// ── Official: quarter list ─────────────────────────────────────────────
-
-fn official_quarter_list(state: AppState) -> impl Piece {
-    each(
-        items(
-            move || {
-                let marks = state.official_marks.get();
-                let mut subjects: Vec<OfficialSubject> = marks.iter()
-                    .filter(|(_, vals)| !vals.is_empty())
-                    .map(|(name, vals)| {
-                        let avg = vals.iter().map(|m| m.value).sum::<f64>() / vals.len() as f64;
-                        OfficialSubject { name: name.clone(), avg, count: vals.len() }
-                    }).collect();
-                subjects.sort_by(|a, b| a.name.cmp(&b.name));
-                subjects
-            },
-            |s: &OfficialSubject| s.name.clone(),
-        ),
-        move |item| {
-            let s = item.get();
-            row((
-                label(s.name.clone()).font(Font::Body).grow(),
-                label(format!("{:.1}", s.avg)).font(Font::Headline)
-                    .color(if s.avg >= 4.0 { colors::SUCCESS } else if s.avg >= 3.0 { colors::WARNING } else { colors::ERROR }),
-                label(format!("({})", s.count)).font(Font::Caption).secondary(),
-            ))
-            .spacing(8.0)
-            .padding(Insets { top: 6.0, leading: PAD, bottom: 6.0, trailing: PAD })
-            .any()
-        },
-    )
-}
-
-// ── Official: year list ────────────────────────────────────────────────
-
-fn official_year_list(state: AppState) -> impl Piece {
-    each(
-        items(
-            move || {
-                let marks = state.official_marks.get();
-                let mut subjects: Vec<String> = marks.keys().cloned().collect();
-                subjects.sort();
-                subjects
-            },
-            |s: &String| s.clone(),
-        ),
-        move |item| {
-            let subj_name = item.get();
-            official_year_row(state, subj_name).any()
-        },
-    )
-}
-
-fn official_year_row(state: AppState, subject: String) -> impl Piece {
-    let sj = subject.clone();
-    let sj2 = subject.clone();
-
-    column((
-        row((
-            label(subject).font(Font::Headline).grow(),
-            label(move || {
-                let marks = state.official_marks.get();
-                if let Some(vals) = marks.get(&*sj) {
-                    if vals.is_empty() { "—".into() }
-                    else { format!("{:.2} ({})", vals.iter().map(|m| m.value).sum::<f64>() / vals.len() as f64, vals.len()) }
-                } else { "—".into() }
-            }).font(Font::Headline).color(move || Color::hex(state.accent_color.get())),
-        ))
-        .spacing(8.0)
-        .padding(Insets { top: 6.0, leading: PAD, bottom: 2.0, trailing: PAD }),
-        label(move || {
-            let marks = state.official_marks.get();
-            if let Some(vals) = marks.get(&*sj2) {
-                if vals.is_empty() { return "Нет оценок".into(); }
-                vals.iter().map(|m| format!("{:.0}", m.value)).collect::<Vec<_>>().join(" · ")
-            } else { "Нет оценок".into() }
-        })
-        .font(Font::Caption).secondary()
-        .padding(Insets { top: 0.0, leading: PAD, bottom: 6.0, trailing: PAD }),
-        divider(),
-    )).spacing(0.0)
-}
-
 // ── Structs ────────────────────────────────────────────────────────────
-
-#[derive(Clone, Debug)]
-struct OfficialSubject { name: String, avg: f64, count: usize }
