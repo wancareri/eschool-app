@@ -1,12 +1,21 @@
 use day::prelude::Color;
 
-// ── Accent (runtime-switchable via prefs) ──────────────────────────────
+/// Reactive accent color — reads from Signal.
+/// Pass `accent_hex` signal to get reactive color.
+pub fn primary_from(hex: u32) -> Color {
+    Color::hex(hex)
+}
+
+/// Static accent color from prefs (non-reactive, for one-shot reads).
 pub fn primary() -> Color {
     let hex = day::prefs::get("app.accent_color")
         .and_then(|v| v.parse::<u32>().ok())
         .unwrap_or(0x3B82F6);
     Color::hex(hex)
 }
+
+/// Default accent hex value.
+pub const DEFAULT_ACCENT: u32 = 0x3B82F6;
 
 // ── Named accent colors ────────────────────────────────────────────────
 pub const BLUE: u32 = 0x3B82F6;

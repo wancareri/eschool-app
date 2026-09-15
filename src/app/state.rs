@@ -30,6 +30,9 @@ pub struct AppState {
     pub class_label: Signal<String>,
     pub is_graduating: Signal<bool>,
 
+    // ── theme ────────────────────────────────────────────────────────────
+    pub accent_color: Signal<u32>,
+
     // ── diary ────────────────────────────────────────────────────────────
     pub lessons: Signal<Vec<DaySchedule>>,
     pub lessons_loading: Signal<bool>,
@@ -43,6 +46,10 @@ pub struct AppState {
     pub official_marks: Signal<std::collections::HashMap<String, Vec<OfficialMark>>>,
     pub marks_loading: Signal<bool>,
     pub year_quarter_data: Signal<Vec<(String, std::collections::HashMap<String, Vec<f64>>)>>,
+
+    // ── per-quarter storage (index 0..3) ─────────────────────────────────
+    pub quarter_all_marks: Signal<Vec<std::collections::HashMap<String, Vec<f64>>>>,
+    pub quarter_official_marks: Signal<Vec<std::collections::HashMap<String, Vec<OfficialMark>>>>,
 
     // ── schedule ─────────────────────────────────────────────────────────
     pub bell_times: Signal<Vec<BellTime>>,
@@ -65,6 +72,10 @@ impl Ambient for AppState {
             .map(|v| v == "true")
             .unwrap_or(false);
 
+        let accent = day::prefs::get("app.accent_color")
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(crate::shared::colors::DEFAULT_ACCENT);
+
         let state = Self {
             is_authenticated: Signal::new(has_token),
             loading: Signal::new(false),
@@ -74,6 +85,7 @@ impl Ambient for AppState {
             school_name: Signal::new(day::prefs::get(SCHOOL_NAME_KEY).unwrap_or_default()),
             class_label: Signal::new(String::new()),
             is_graduating: Signal::new(false),
+            accent_color: Signal::new(accent),
             lessons: Signal::new(Vec::new()),
             lessons_loading: Signal::new(false),
             current_week: Signal::new(String::new()),
@@ -86,6 +98,8 @@ impl Ambient for AppState {
             official_marks: Signal::new(std::collections::HashMap::new()),
             marks_loading: Signal::new(false),
             year_quarter_data: Signal::new(Vec::new()),
+            quarter_all_marks: Signal::new(Vec::new()),
+            quarter_official_marks: Signal::new(Vec::new()),
             bell_times: Signal::new(Vec::new()),
             timetable_days: Signal::new(Vec::new()),
             schedule_loading: Signal::new(false),

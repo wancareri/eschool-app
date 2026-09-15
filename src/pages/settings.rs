@@ -18,44 +18,19 @@ pub fn render() -> impl Piece {
 
         when(
             move || state.is_authenticated.get(),
-            move || {
-                form((
-                    section(
-                        (
-                            label(move || state.full_name.get())
-                                .font(Font::Title3).align(TextAlign::Center),
-                            label(move || state.school_name.get())
-                                .font(Font::Body).secondary().align(TextAlign::Center),
-                            when(
-                                move || !state.class_label.get().is_empty(),
-                                move || label(move || format!("Класс: {}", state.class_label.get()))
-                                    .font(Font::Body).secondary().align(TextAlign::Center),
-                            ),
-                        )
-                    ).title("Профиль"),
-                ))
-                .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
-            },
+            move || profile_section(state),
         ),
 
-        general_settings(),
+        appearance_section(state),
 
-        settings_body(),
+        system_settings(),
 
         #[cfg(debug_assertions)]
         dev_settings(state),
 
         when(
             move || state.is_authenticated.get(),
-            move || {
-                form((
-                    section(
-                        (button("Выйти из аккаунта")
-                            .action(move || features::auth::logout(state)),)
-                    ).title("Аккаунт"),
-                ))
-                .padding(Insets { top: 16.0, leading: 0.0, bottom: 20.0, trailing: 0.0 })
-            },
+            move || logout_section(state),
         ),
     ))
     .spacing(0.0)
@@ -63,16 +38,28 @@ pub fn render() -> impl Piece {
     .grow()
 }
 
-pub fn settings_body() -> impl Piece {
-    form((day_piece_settings::settings_sections(
-        crate::THEME_KEY,
-        crate::LOCALE_KEY,
-        res::locales::ALL,
-    ),))
+fn profile_section(state: AppState) -> impl Piece {
+    form((
+        section(
+            (
+                label(move || state.full_name.get())
+                    .font(Font::Title3).align(TextAlign::Center),
+                label(move || state.school_name.get())
+                    .font(Font::Body).secondary().align(TextAlign::Center),
+                when(
+                    move || !state.class_label.get().is_empty(),
+                    move || label(move || format!("Класс: {}", state.class_label.get()))
+                        .font(Font::Body).secondary().align(TextAlign::Center),
+                ),
+            )
+        ).title("Профиль"),
+    ))
+    .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
-fn general_settings() -> impl Piece {
+fn appearance_section(state: AppState) -> impl Piece {
     column((
+        // ── Theme ──
         form((
             section(
                 (
@@ -83,21 +70,30 @@ fn general_settings() -> impl Piece {
             ).title("Внешний вид"),
         )),
 
+        // ── Accent color ──
         form((
             section(
                 (
                     label("Акцентный цвет").font(Font::Headline),
-                    accent_option("Синий", colors::BLUE),
-                    accent_option("Зелёный", colors::GREEN),
-                    accent_option("Фиолетовый", colors::PURPLE),
-                    accent_option("Оранжевый", colors::ORANGE),
-                    accent_option("Красный", colors::RED),
+                    accent_option(state, "Синий", colors::BLUE),
+                    accent_option(state, "Зелёный", colors::GREEN),
+                    accent_option(state, "Фиолетовый", colors::PURPLE),
+                    accent_option(state, "Оранжевый", colors::ORANGE),
+                    accent_option(state, "Красный", colors::RED),
                 )
             ).title("Цвета"),
         )),
     ))
     .spacing(0.0)
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
+}
+
+fn system_settings() -> impl Piece {
+    form((day_piece_settings::settings_sections(
+        crate::THEME_KEY,
+        crate::LOCALE_KEY,
+        res::locales::ALL,
+    ),))
 }
 
 fn theme_option(lbl: &'static str, key: &'static str) -> impl Piece {
@@ -110,16 +106,35 @@ fn theme_option(lbl: &'static str, key: &'static str) -> impl Piece {
         .action(move || { day::prefs::set("app.theme_style", &k); })
 }
 
-fn accent_option(lbl: &'static str, hex: u32) -> impl Piece {
-    let current = day::prefs::get("app.accent_color")
-        .map(|v| v.parse::<u32>().unwrap_or(0x3B82F6))
-        .unwrap_or(0x3B82F6);
-    let is_active = current == hex;
-    let marker = "\u{25CF}";
-    let display = if is_active { format!("\u{2713} {marker} {lbl}") } else { format!("{marker} {lbl}") };
+fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
+    let is_active = move || state.accent_color.get() == hex;
+    let display = move || {
+        if is_active() { format!("\u{2713} \u{25CF} {lbl}") } else { format!("\u{25CF} {lbl}") }
+    };
     button(display)
         .id(format!("accent-{hex}"))
-        .action(move || { day::prefs::set("app.accent_color", &hex.to_string()); })
+        .action(move || {
+            day::prefs::set("app.accent_color", &hex.to_string());
+            state.accent_color.set(hex);
+        })
+}
+
+fn logout_section(state: AppState) -> impl Piece {
+    form((
+        section(
+            (button("Выйти из аккаунта")
+                .action(move || features::auth::logout(state)),)
+        ).title("Аккаунт"),
+    ))
+    .padding(Insets { top: 16.0, leading: 0.0, bottom: 20.0, trailing: 0.0 })
+}
+
+pub fn settings_body() -> impl Piece {
+    form((day_piece_settings::settings_sections(
+        crate::THEME_KEY,
+        crate::LOCALE_KEY,
+        res::locales::ALL,
+    ),))
 }
 
 #[cfg(debug_assertions)]

@@ -45,13 +45,8 @@ pub fn render() -> impl Piece {
         // Inline spinner — shows alongside content, not blocking
         when(
             move || state.is_authenticated.get() && state.marks_loading.get(),
-            || row((
-                spacer().grow(),
-                spinner(),
-                label("  Загрузка…").font(Font::Caption).secondary(),
-                spacer().grow(),
-            ))
-            .padding(Insets { top: 8.0, leading: PAD, bottom: 8.0, trailing: PAD }),
+            || row((spacer().grow(), spinner(), label("  Загрузка…").font(Font::Caption).secondary(), spacer().grow()))
+                .padding(Insets { top: 8.0, leading: PAD, bottom: 8.0, trailing: PAD }),
         ),
 
         when(
@@ -90,7 +85,21 @@ fn quarter_btn(state: AppState, lbl: &'static str, q: usize) -> impl Piece {
         let cur = s1.current_quarter.get();
         if cur == q && !s1.marks_loading.get() { format!("[{}]", l) } else { l.clone() }
     })
-    .action(move || { features::diary::load_quarter(s2, q); })
+    .action(move || {
+        // Show existing per-quarter data immediately
+        let q_all = s2.quarter_all_marks.get();
+        if let Some(marks) = q_all.get(q) {
+            if !marks.is_empty() {
+                s2.quarter_marks.set(marks.clone());
+                let q_off = s2.quarter_official_marks.get();
+                if let Some(off) = q_off.get(q) {
+                    s2.official_marks.set(off.clone());
+                }
+            }
+        }
+        s2.current_quarter.set(q);
+        features::diary::load_quarter(s2, q);
+    })
     .id(format!("q-{lbl}"))
 }
 
@@ -109,6 +118,7 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
     let s1 = state;
     let s2 = state;
     let s3 = state;
+    let s4 = state;
     row((
         button(move || {
             if !show_summary.get() { "● Недели" } else { "○ Недели" }
@@ -126,8 +136,19 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
         })
         .action(move || {
             show_summary.set(true);
+            // Show existing per-quarter data immediately
             let q = s3.current_quarter.get();
-            if s3.quarter_marks.get().is_empty() { features::diary::load_quarter(s3, q); }
+            let q_all = s3.quarter_all_marks.get();
+            if let Some(marks) = q_all.get(q) {
+                if !marks.is_empty() {
+                    s3.quarter_marks.set(marks.clone());
+                    let q_off = s3.quarter_official_marks.get();
+                    if let Some(off) = q_off.get(q) {
+                        s3.official_marks.set(off.clone());
+                    }
+                }
+            }
+            if s3.quarter_marks.get().is_empty() { features::diary::load_quarter(s4, q); }
         })
         .id("sub-summary"),
     ))
@@ -140,15 +161,19 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
 fn week_view(state: AppState) -> impl Piece {
     column((
         when(
-            move || state.lessons_loading.get(),
-            || row((spacer().grow(), spinner(), spacer().grow())).padding(Insets { top: 24.0, ..Default::default() }),
+            move || state.lessons_loading.get() && state.lessons.get().is_empty(),
+            || row((spacer().grow(), spinner(), label("  Загрузка…").font(Font::Caption).secondary(), spacer().grow()))
+                .padding(Insets { top: 24.0, ..Default::default() }),
         ),
         when(
-            move || !state.lessons_loading.get() && !state.lessons.get().is_empty(),
+            move || !state.lessons.get().is_empty(),
             move || {
                 column((
                     week_header(state),
-                    widgets::week_summary::render(state),
+                    when(
+                        move || !state.lessons_loading.get(),
+                        move || widgets::week_summary::render(state),
+                    ),
                     diary_list(state),
                 )).spacing(0.0)
             },
