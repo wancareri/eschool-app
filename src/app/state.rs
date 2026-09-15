@@ -1,13 +1,10 @@
 //! Application state — the central signal hub.
 
 use day::prelude::*;
-use crate::entities::*;
+use eschool_api::entities::*;
 use crate::shared::nslog;
 
 const TOKEN_KEY: &str = "auth.token";
-const SCHOOL_ID_KEY: &str = "auth.school_id";
-const PROFILE_ID_KEY: &str = "auth.profile_id";
-const CLASS_ID_KEY: &str = "auth.class_id";
 const FULL_NAME_KEY: &str = "auth.full_name";
 const SCHOOL_NAME_KEY: &str = "auth.school_name";
 

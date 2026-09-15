@@ -50,3 +50,31 @@ pub struct WeekActivity {
     pub start_ts: u64,
     pub end_ts: u64,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EducationalSubject {
+    pub uuid: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiarySignature {
+    pub uuid: String,
+    pub school_id: String,
+    pub class_id: String,
+    pub student: String,
+    pub period: String,
+    pub parent_name: String,
+    pub dt_create: u64,
+    pub activity_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FinalMarks {
+    #[serde(default)]
+    pub marks: serde_json::Value,
+    #[serde(default)]
+    pub behaviour: serde_json::Value,
+    #[serde(default)]
+    pub diary_signature: serde_json::Value,
+}

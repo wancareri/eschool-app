@@ -26,6 +26,7 @@ name = "dayapp"
 crate-type = ["rlib"]
 
 [dependencies]
+eschool-api = { path = "crates/eschool-api" }
 day = { git = "https://github.com/wancareri/day.git", features = ["model"] }
 day-piece-datetime = { git = "https://github.com/wancareri/day.git" }
 day-piece-settings = { git = "https://github.com/wancareri/day.git" }
@@ -68,3 +69,4 @@ day-build = { git = "https://github.com/wancareri/day.git" }
 
 
 [workspace]
+members = [".", "crates/eschool-api"]

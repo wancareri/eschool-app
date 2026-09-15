@@ -1,7 +1,6 @@
 //! Eschool App — a Day framework cross-platform school diary.
 
 pub mod app;
-pub mod entities;
 pub mod features;
 pub mod native;
 pub mod pages;

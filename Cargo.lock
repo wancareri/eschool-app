@@ -758,6 +758,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "eschool-api"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "urlencoding",
+]
+
+[[package]]
 name = "eschool-app"
 version = "0.1.0"
 dependencies = [
@@ -771,6 +783,7 @@ dependencies = [
  "day-piece-settings",
  "day-piece-swiftui",
  "dispatch2",
+ "eschool-api",
  "objc2",
  "objc2-core-foundation",
  "objc2-core-graphics",

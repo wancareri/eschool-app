@@ -1,13 +1,11 @@
 //! Diary data loading — all school data fetching for the diary, schedule, and teachers.
 
 use crate::app::AppState;
-use crate::entities::*;
 use crate::features::auth;
-use crate::shared::api::blocking;
-use crate::shared::api::endpoints;
+use eschool_api::client::blocking;
+use eschool_api::client::endpoints;
+use eschool_api::entities::*;
 use crate::shared::nslog;
-
-const TOKEN_KEY: &str = "auth.token";
 
 /// Load ALL school data synchronously. Blocks the UI briefly.
 pub fn load_all(state: AppState) {
@@ -166,7 +164,7 @@ fn load_weeks_and_current(
                 state.current_week_index.set(idx as i32);
                 state.current_week.set(week_summary);
 
-                match blocking::api_get_raw(&endpoints::lessons(school_id, class_id, profile_id, &week_uuid)) {
+                match blocking::api_get_raw(client, &endpoints::lessons(school_id, class_id, profile_id, &week_uuid)) {
                     Ok(raw) => {
                         match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                             Ok(lessons) => {
@@ -226,12 +224,18 @@ pub fn load_week(state: AppState, new_index: i32) {
     let (school_id, class_id, profile_id) = auth::get_stored_ids();
     if school_id.is_empty() || class_id.is_empty() || profile_id.is_empty() { return; }
 
+    let token = match auth::get_token() {
+        Some(t) => t,
+        _ => return,
+    };
+    let client = blocking::build_client(&token);
+
     let week = &weeks[idx];
     state.current_week_index.set(idx as i32);
     state.current_week.set(week.summary.clone());
     state.lessons_loading.set(true);
 
-    match blocking::api_get_raw(&endpoints::lessons(&school_id, &class_id, &profile_id, &week.uuid)) {
+    match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &week.uuid)) {
         Ok(raw) => {
             match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                 Ok(lessons) => {

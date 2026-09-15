@@ -29,3 +29,8 @@ pub struct SchoolYear {
     #[serde(default)]
     pub author: Option<String>,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EmployeeFio {
+    pub name: String,
+}

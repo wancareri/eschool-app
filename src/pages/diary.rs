@@ -1,5 +1,5 @@
 use crate::app::AppState;
-use crate::entities::*;
+use eschool_api::entities::*;
 use crate::shared::{colors, utils};
 use crate::widgets;
 use crate::res;

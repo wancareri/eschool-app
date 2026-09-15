@@ -1,8 +1,6 @@
-//! Blocking HTTP helpers for the main thread.
+//! Blocking HTTP helpers for the e-schools.by API.
 
 pub const BASE_URL: &str = "https://diary.e-schools.by";
-
-const TOKEN_KEY: &str = "auth.token";
 
 pub fn build_client(token: &str) -> reqwest::blocking::Client {
     use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
@@ -43,10 +41,12 @@ pub fn api_get<T: serde::de::DeserializeOwned>(
         .map_err(|e| format!("parse failed: {e}"))
 }
 
-pub fn api_get_raw(path: &str) -> Result<String, String> {
-    let url = format!("{BASE_URL}{path}");
-    let token = day::prefs::get(TOKEN_KEY).unwrap_or_default();
-    let client = build_client(&token);
+pub fn api_get_raw(client: &reqwest::blocking::Client, path: &str) -> Result<String, String> {
+    let url = if path.starts_with("http") {
+        path.to_string()
+    } else {
+        format!("{BASE_URL}{path}")
+    };
     let resp = client
         .get(&url)
         .send()
@@ -67,7 +67,11 @@ pub fn api_post<T: serde::de::DeserializeOwned>(
     path: &str,
     body: &serde_json::Value,
 ) -> Result<T, String> {
-    let url = format!("{BASE_URL}{path}");
+    let url = if path.starts_with("http") {
+        path.to_string()
+    } else {
+        format!("{BASE_URL}{path}")
+    };
     let resp = client
         .post(&url)
         .json(body)
