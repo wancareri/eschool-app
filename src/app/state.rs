@@ -14,6 +14,7 @@ pub struct AppState {
     pub is_authenticated: Signal<bool>,
     pub loading: Signal<bool>,
     pub error_msg: Signal<String>,
+    pub remember_me: Signal<bool>,
 
     // ── user ─────────────────────────────────────────────────────────────
     pub full_name: Signal<String>,
@@ -46,10 +47,15 @@ impl Ambient for AppState {
             .map(|t| !t.is_empty())
             .unwrap_or(false);
 
+        let remember = day::prefs::get("auth.remember_me")
+            .map(|v| v == "true")
+            .unwrap_or(false);
+
         let state = Self {
             is_authenticated: Signal::new(has_token),
             loading: Signal::new(false),
             error_msg: Signal::new(String::new()),
+            remember_me: Signal::new(remember),
             full_name: Signal::new(day::prefs::get(FULL_NAME_KEY).unwrap_or_default()),
             school_name: Signal::new(day::prefs::get(SCHOOL_NAME_KEY).unwrap_or_default()),
             class_label: Signal::new(String::new()),

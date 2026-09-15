@@ -27,6 +27,15 @@ pub fn root() -> impl Piece {
     day_piece_settings::apply_startup("app.theme", "app.locale");
     day::register_preferences(pages::settings::settings_body);
     day::register_new_window(|| window_shell(false));
+
+    // Start background token refresh if authenticated
+    let has_token = day::prefs::get("auth.token")
+        .map(|t| !t.is_empty())
+        .unwrap_or(false);
+    if has_token {
+        crate::features::auth::start_background_refresh();
+    }
+
     window_shell(true)
 }
 

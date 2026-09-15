@@ -22,6 +22,10 @@ pub fn render() -> impl Piece {
 }
 
 fn profile_view(state: AppState) -> impl Piece {
+    let remember = day::prefs::get("auth.remember_me")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
     column((
         column((
             label(move || res::str::settings_title().format())
@@ -45,6 +49,9 @@ fn profile_view(state: AppState) -> impl Piece {
                         move || label(move || format!("Класс: {}", state.class_label.get()))
                             .font(Font::Body).secondary(),
                     ),
+                    label(move || if remember { "Сессия сохранена" } else { "Сессия не сохранена" })
+                        .font(Font::Caption)
+                        .secondary(),
                 )
             ).title("Ученик"),
             section(
@@ -83,6 +90,7 @@ fn profile_view(state: AppState) -> impl Piece {
 fn auth_form(state: AppState) -> impl Piece {
     let username = Signal::new(String::new());
     let password = Signal::new(String::new());
+    let remember = Signal::new(false);
     let error_local = Signal::new(String::new());
     let logging_in = Signal::new(false);
 
@@ -111,6 +119,13 @@ fn auth_form(state: AppState) -> impl Piece {
                             .secure()
                             .id("password-field"),
                     ),
+                    row((
+                        toggle(remember),
+                        label("Сохранить сессию")
+                            .font(Font::Body),
+                    ))
+                    .spacing(8.0)
+                    .padding(Insets { top: 8.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
                 )
             ).title("Учётные данные"),
             when(
@@ -145,6 +160,7 @@ fn auth_form(state: AppState) -> impl Piece {
         .action(move || {
             let u = username.get_untracked();
             let p = password.get_untracked();
+            let r = remember.get_untracked();
             if u.trim().is_empty() {
                 error_local.set("Введите имя пользователя".into());
                 return;
@@ -155,7 +171,7 @@ fn auth_form(state: AppState) -> impl Piece {
             }
             error_local.set(String::new());
             logging_in.set(true);
-            features::auth::login(state, &u, &p);
+            features::auth::login(state, &u, &p, r);
             logging_in.set(false);
         })
         .id("login-btn")
