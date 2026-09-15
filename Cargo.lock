@@ -570,6 +570,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "day-piece-texteditor"
+version = "0.4.3"
+source = "git+https://github.com/wancareri/day.git#fc6ac535dd51c6a29edaeab9d80d7b8cf60c4771"
+dependencies = [
+ "cc",
+ "day-core",
+ "day-pieces",
+ "day-reactive",
+ "day-spec",
+ "day-toolchain",
+ "linkme",
+ "log",
+]
+
+[[package]]
 name = "day-pieces"
 version = "0.4.3"
 source = "git+https://github.com/wancareri/day.git#fc6ac535dd51c6a29edaeab9d80d7b8cf60c4771"
@@ -782,6 +797,7 @@ dependencies = [
  "day-piece-rating",
  "day-piece-settings",
  "day-piece-swiftui",
+ "day-piece-texteditor",
  "dispatch2",
  "eschool-api",
  "objc2",

@@ -3,6 +3,7 @@ use crate::features;
 use crate::res;
 use crate::shared::{colors, nslog};
 use day::prelude::*;
+use day_piece_texteditor::text_editor;
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
@@ -89,7 +90,6 @@ fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
         if s.accent_color.get() == hex { format!("\u{2713} \u{25CF} {lbl}") } else { format!("\u{25CF} {lbl}") }
     })
     .id(format!("accent-{hex}"))
-    .tint(move || Color::hex(state.accent_color.get()))
     .action(move || {
         day::prefs::set("app.accent_color", &hex.to_string());
         colors::set_accent(hex);
@@ -101,7 +101,6 @@ fn logout_section(state: AppState) -> impl Piece {
     form((
         section(
             (button("Выйти из аккаунта")
-                .tint(move || Color::hex(state.accent_color.get()))
                 .action(move || features::auth::logout(state)),)
         ).title("Аккаунт"),
     ))
@@ -117,72 +116,54 @@ pub fn settings_body() -> impl Piece {
 }
 
 fn dev_settings(state: AppState) -> impl Piece {
-    let dev_output = Signal::new(String::new());
-    let dev_output2 = dev_output.clone();
+    let log_doc = Signal::new(StyledText::plain(nslog::get_logs()));
 
     form((
         section(
             (
                 label("Инструменты разработчика").font(Font::Headline).color(colors::WARNING),
 
-                label(move || {
-                    let v = dev_output2.get();
-                    if v.is_empty() { String::new() } else { v }
-                }).font(Font::Caption).color(colors::INFO),
-
                 button("Показать токен")
-                    .tint(move || Color::hex(state.accent_color.get()))
                     .action(move || {
-                        if let Some(t) = features::auth::get_token() {
+                        let msg = if let Some(t) = features::auth::get_token() {
                             let preview = if t.len() > 40 { &t[..40] } else { &t };
-                            let msg = format!("Token: {preview}...");
-                            nslog::nslog(&format!("[Dev] {msg}"));
-                            dev_output2.set(msg);
+                            format!("Token: {preview}...")
                         } else {
-                            nslog::nslog("[Dev] No token");
-                            dev_output2.set("Нет токена".into());
-                        }
-                        state.log_version.set(state.log_version.get() + 1);
+                            "Нет токена".into()
+                        };
+                        nslog::nslog(&format!("[Dev] {msg}"));
+                        log_doc.set(StyledText::plain(nslog::get_logs()));
                     }),
 
                 button("Обновить токен")
-                    .tint(move || Color::hex(state.accent_color.get()))
                     .action(move || {
                         nslog::nslog("[Dev] Manual token refresh...");
-                        let msg = match features::auth::try_refresh_token() {
+                        let msg: String = match features::auth::try_refresh_token() {
                             Some(_) => "Refresh OK".into(),
                             None => "Refresh FAILED".into(),
                         };
                         nslog::nslog(&format!("[Dev] {msg}"));
-                        dev_output.set(msg);
-                        state.log_version.set(state.log_version.get() + 1);
+                        log_doc.set(StyledText::plain(nslog::get_logs()));
                     }),
 
                 button("Очистить кэш")
-                    .tint(move || Color::hex(state.accent_color.get()))
                     .action(move || {
                         day::prefs::set("diary.cache", "");
                         nslog::nslog("[Dev] Cache cleared");
-                        dev_output2.set("Кэш очищен".into());
-                        state.log_version.set(state.log_version.get() + 1);
+                        log_doc.set(StyledText::plain(nslog::get_logs()));
                     }),
 
                 button("Перезагрузить данные")
-                    .tint(move || Color::hex(state.accent_color.get()))
                     .action(move || {
-                        dev_output2.set("Загрузка...".into());
-                        state.log_version.set(state.log_version.get() + 1);
+                        log_doc.set(StyledText::plain("Загрузка...".to_string()));
                         features::diary::load_all(state);
                     }),
 
                 button("Показать ID")
-                    .tint(move || Color::hex(state.accent_color.get()))
                     .action(move || {
                         let (sid, cid, pid) = features::auth::get_stored_ids();
-                        let msg = format!("school={sid}\nclass={cid}\nprofile={pid}");
-                        nslog::nslog(&format!("[Dev] {msg}"));
-                        dev_output2.set(msg);
-                        state.log_version.set(state.log_version.get() + 1);
+                        nslog::nslog(&format!("[Dev] school={sid} class={cid} profile={pid}"));
+                        log_doc.set(StyledText::plain(nslog::get_logs()));
                     }),
             )
         ).title("Dev Tools"),
@@ -191,27 +172,19 @@ fn dev_settings(state: AppState) -> impl Piece {
             (
                 label("Логи приложения").font(Font::Headline).color(colors::INFO),
 
-                scroll(
-                    label(move || {
-                        let _ = state.log_version.get(); // track for reactivity
-                        nslog::get_logs()
-                    })
-                        .font(Font::Caption)
-                        .align(TextAlign::Leading)
-                )
-                .height(300.0),
+                text_editor(log_doc.clone())
+                    .editable(false)
+                    .min_lines(12),
 
                 row((
                     button("Обновить")
-                        .tint(move || Color::hex(state.accent_color.get()))
                         .action(move || {
-                            state.log_version.set(state.log_version.get() + 1);
+                            log_doc.set(StyledText::plain(nslog::get_logs()));
                         }),
                     button("Очистить логи")
-                        .tint(move || Color::hex(state.accent_color.get()))
                         .action(move || {
                             nslog::clear_logs();
-                            state.log_version.set(state.log_version.get() + 1);
+                            log_doc.set(StyledText::plain(String::new()));
                         }),
                 )).spacing(8.0),
             )

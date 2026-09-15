@@ -157,7 +157,7 @@ fn auth_form(state: AppState) -> impl Piece {
         button(move || {
             if logging_in.get() { "Вход…" } else { "Войти" }
         })
-        .tint(move || Color::hex(state.accent_color.get()))
+        
         .action(move || {
             let u = username.get_untracked();
             let p = password.get_untracked();
