@@ -32,10 +32,10 @@ fn apply_ios_tint(hex: u32) {
         let app: objc2::rc::Retained<objc2_ui_kit::UIApplication> =
             objc2::msg_send![objc2::class!(UIApplication), sharedApplication];
         let color = objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(
-            r as objc2_core_graphics::CGFloat,
-            g as objc2_core_graphics::CGFloat,
-            b as objc2_core_graphics::CGFloat,
-            1.0 as objc2_core_graphics::CGFloat,
+            r as objc2_core_foundation::CGFloat,
+            g as objc2_core_foundation::CGFloat,
+            b as objc2_core_foundation::CGFloat,
+            1.0 as objc2_core_foundation::CGFloat,
         );
         // keyWindow is deprecated but the simplest path; iterate scenes as fallback
         if let Some(window) = app.keyWindow() {
