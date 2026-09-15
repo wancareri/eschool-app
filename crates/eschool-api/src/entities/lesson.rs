@@ -1,7 +1,17 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// Deserialize null JSON values as empty string (for String fields).
+fn null_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LessonMark {
+    #[serde(default)]
     pub mark: Option<String>,
     #[serde(default)]
     pub kind: Option<String>,
@@ -15,19 +25,20 @@ pub struct LessonMark {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LessonSlot {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub lesson_uuid: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub lesson_template_id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub subject_id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub subject_title: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub teacher_id: String,
     #[serde(rename = "type")]
     #[serde(default)]
     pub lesson_type: Option<String>,
+    #[serde(default)]
     pub number: u32,
     #[serde(default)]
     pub topic: Option<String>,
@@ -35,7 +46,7 @@ pub struct LessonSlot {
     pub homework: Option<String>,
     #[serde(default)]
     pub message: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub start_time: String,
     #[serde(default)]
     pub has_attachments_or_links: bool,

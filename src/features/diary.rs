@@ -254,7 +254,15 @@ pub fn load_week(state: AppState, new_index: i32) {
                     Ok(lessons) => {
                         state.lessons.set(lessons);
                     }
-                    Err(e) => nslog::nslog(&format!("[Diary] load_week parse failed: {e}")),
+                    Err(e) => {
+                        nslog::nslog(&format!("[Diary] load_week parse failed: {e}"));
+                        // Log raw JSON around error position for debugging
+                        if let Some(col) = e.column() {
+                            let start = col.saturating_sub(200);
+                            let end = (col + 200).min(raw.len());
+                            nslog::nslog(&format!("[Diary] JSON around col {}: ...{}...", col, &raw[start..end]));
+                        }
+                    }
                 }
             }
             Err(e) => nslog::nslog(&format!("[Diary] load_week request failed: {e}")),
