@@ -29,22 +29,17 @@ fn apply_ios_tint(hex: u32) {
     let g = ((hex >> 8) & 0xFF) as f64 / 255.0;
     let b = (hex & 0xFF) as f64 / 255.0;
     unsafe {
-        let cls = objc2::class!(UIApplication);
         let app: objc2::rc::Retained<objc2_ui_kit::UIApplication> =
-            objc2::msg_send![cls, sharedApplication];
-        for scene in app.connectedScenes() {
-            let scene = objc2::rc::Retained::retain(scene as *const objc2::runtime::ProtocolObject);
-            if let Some(win_scene) = scene.downcast_ref::<objc2_ui_kit::UIWindowScene>() {
-                for window in win_scene.windows() {
-                    let color = objc2_ui_kit::UIColor::colorWithRedGreenBlueAlpha(
-                        r as objc2_core_graphics::CGFloat,
-                        g as objc2_core_graphics::CGFloat,
-                        b as objc2_core_graphics::CGFloat,
-                        1.0 as objc2_core_graphics::CGFloat,
-                    );
-                    window.setTintColor(Some(&color));
-                }
-            }
+            objc2::msg_send![objc2::class!(UIApplication), sharedApplication];
+        let color = objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(
+            r as objc2_core_graphics::CGFloat,
+            g as objc2_core_graphics::CGFloat,
+            b as objc2_core_graphics::CGFloat,
+            1.0 as objc2_core_graphics::CGFloat,
+        );
+        // keyWindow is deprecated but the simplest path; iterate scenes as fallback
+        if let Some(window) = app.keyWindow() {
+            window.setTintColor(Some(&color));
         }
     }
 }

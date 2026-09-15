@@ -55,6 +55,7 @@ dispatch2 = "0.3"
 objc2-ui-kit = { version = "0.3", features = [
     "UIApplication", "UIView", "UIWindow", "UIScreen", "UIViewController",
     "UINavigationController", "UIKitCore", "block2",
+    "UIWindowScene", "UIColor",
 ] }
 
 [package.metadata.day.ios]
