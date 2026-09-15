@@ -15,17 +15,27 @@ pub struct LessonMark {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LessonSlot {
+    #[serde(default)]
     pub lesson_uuid: String,
+    #[serde(default)]
     pub lesson_template_id: String,
+    #[serde(default)]
     pub subject_id: String,
+    #[serde(default)]
     pub subject_title: String,
+    #[serde(default)]
     pub teacher_id: String,
     #[serde(rename = "type")]
+    #[serde(default)]
     pub lesson_type: Option<String>,
     pub number: u32,
+    #[serde(default)]
     pub topic: Option<String>,
+    #[serde(default)]
     pub homework: Option<String>,
+    #[serde(default)]
     pub message: Option<String>,
+    #[serde(default)]
     pub start_time: String,
     #[serde(default)]
     pub has_attachments_or_links: bool,

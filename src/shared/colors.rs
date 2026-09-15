@@ -10,11 +10,43 @@ pub fn init_accent() {
         .and_then(|v| v.parse::<u32>().ok())
         .unwrap_or(0x3B82F6);
     ACCENT_HEX.store(hex, Ordering::Relaxed);
+    #[cfg(target_os = "ios")]
+    apply_ios_tint(hex);
 }
 
 /// Set the global accent color (call from settings when user picks a new color).
 pub fn set_accent(hex: u32) {
     ACCENT_HEX.store(hex, Ordering::Relaxed);
+    #[cfg(target_os = "ios")]
+    apply_ios_tint(hex);
+}
+
+/// Apply tint color to the iOS window's tintColor — makes all native UIKit elements
+/// (buttons, switches, links, nav items) use this color instead of default blue.
+#[cfg(target_os = "ios")]
+fn apply_ios_tint(hex: u32) {
+    let r = ((hex >> 16) & 0xFF) as f64 / 255.0;
+    let g = ((hex >> 8) & 0xFF) as f64 / 255.0;
+    let b = (hex & 0xFF) as f64 / 255.0;
+    unsafe {
+        let cls = objc2::class!(UIApplication);
+        let app: objc2::rc::Retained<objc2_ui_kit::UIApplication> =
+            objc2::msg_send![cls, sharedApplication];
+        for scene in app.connectedScenes() {
+            let scene = objc2::rc::Retained::retain(scene as *const objc2::runtime::ProtocolObject);
+            if let Some(win_scene) = scene.downcast_ref::<objc2_ui_kit::UIWindowScene>() {
+                for window in win_scene.windows() {
+                    let color = objc2_ui_kit::UIColor::colorWithRedGreenBlueAlpha(
+                        r as objc2_core_graphics::CGFloat,
+                        g as objc2_core_graphics::CGFloat,
+                        b as objc2_core_graphics::CGFloat,
+                        1.0 as objc2_core_graphics::CGFloat,
+                    );
+                    window.setTintColor(Some(&color));
+                }
+            }
+        }
+    }
 }
 
 /// Get current accent hex.
