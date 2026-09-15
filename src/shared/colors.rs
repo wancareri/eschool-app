@@ -47,7 +47,8 @@ pub fn apply_ios_tint(hex: u32) {
                 let win_enumerator: objc2::rc::Retained<objc2_foundation::NSEnumerator> =
                     objc2::msg_send![&*windows, objectEnumerator];
                 while let Some(win_obj) = win_enumerator.nextObject() {
-                    let window = &*(win_obj as *const objc2::runtime::ProtocolObject as *const objc2_ui_kit::UIWindow);
+                    let obj: &objc2::runtime::AnyObject = &*win_obj;
+                    let window = &*(obj as *const objc2::runtime::AnyObject as *const objc2_ui_kit::UIWindow);
                     window.setTintColor(Some(&color));
                 }
             }
