@@ -68,6 +68,7 @@ fn quarter_tabs(state: AppState) -> impl Piece {
         quarter_btn(state, "II", 1),
         quarter_btn(state, "III", 2),
         quarter_btn(state, "IV", 3),
+        year_btn(state),
     ))
     .spacing(6.0)
     .padding(Insets { top: 0.0, leading: 16.0, bottom: 8.0, trailing: 16.0 })
@@ -79,12 +80,25 @@ fn quarter_btn(state: AppState, label: &'static str, q: usize) -> impl Piece {
     let lbl = label.to_string();
     button(move || {
         let cur = s1.current_quarter.get();
-        if cur == q { format!("[{}]", lbl) } else { lbl.clone() }
+        if cur == q && !s1.marks_loading.get() { format!("[{}]", lbl) } else { lbl.clone() }
     })
     .action(move || {
         features::diary::load_quarter(s2, q);
     })
     .id(format!("q-{label}"))
+}
+
+fn year_btn(state: AppState) -> impl Piece {
+    let s1 = state;
+    let s2 = state;
+    button(move || {
+        let cur = s1.current_quarter.get();
+        if cur == 4 && !s1.marks_loading.get() { "[Год]".to_string() } else { "Год".to_string() }
+    })
+    .action(move || {
+        features::diary::load_year(s2);
+    })
+    .id("q-year")
 }
 
 fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
@@ -220,16 +234,22 @@ fn day_card(state: AppState, date: u64) -> impl Piece {
 
 fn summary_view(state: AppState) -> impl Piece {
     column((
-        label("Итоги четверти")
-            .font(Font::Headline)
-            .color(colors::PRIMARY)
-            .padding(Insets { top: 16.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
+        label(move || {
+            let q = state.current_quarter.get();
+            if q == 4 { "Итоги года" } else { "Итоги четверти" }
+        })
+        .font(Font::Headline)
+        .color(colors::PRIMARY)
+        .padding(Insets { top: 16.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
         row((
-            stat_block::render("Четверть", move || {
+            stat_block::render("Период", move || {
                 let q = state.current_quarter.get();
-                let labels = ["I", "II", "III", "IV"];
-                format!("{} четверть", labels[q])
+                if q == 4 { "За год".into() }
+                else {
+                    let labels = ["I", "II", "III", "IV"];
+                    format!("{} четверть", labels[q])
+                }
             }),
             stat_block::render("Предметов", move || {
                 state.quarter_marks.get().len().to_string()

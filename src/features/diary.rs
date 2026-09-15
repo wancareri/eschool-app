@@ -296,6 +296,55 @@ pub fn load_quarter(state: AppState, quarter: usize) {
     nslog::nslog(&format!("[Diary] Quarter {} loaded", quarter + 1));
 }
 
+/// Load all weeks for the entire year and accumulate marks.
+pub fn load_year(state: AppState) {
+    let weeks = state.all_weeks.get();
+    if weeks.is_empty() { return; }
+
+    let (school_id, class_id, profile_id) = auth::get_stored_ids();
+    if school_id.is_empty() || class_id.is_empty() || profile_id.is_empty() { return; }
+
+    let token = match auth::get_token() {
+        Some(t) => t,
+        _ => return,
+    };
+    let client = blocking::build_client(&token);
+
+    state.current_quarter.set(4); // 4 = year
+    state.marks_loading.set(true);
+    state.quarter_marks.set(std::collections::HashMap::new());
+
+    let mut all_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+
+    let actual_end = weeks.len();
+    for idx in 0..actual_end {
+        let week = &weeks[idx];
+        match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &week.uuid)) {
+            Ok(raw) => {
+                if let Ok(days) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
+                    for day in &days {
+                        for slot in &day.slots {
+                            if let Some(mark_val) = slot.lesson_mark.as_ref()
+                                .and_then(|m| m.mark.as_ref())
+                                .and_then(|m| m.parse::<f64>().ok())
+                            {
+                                all_marks.entry(slot.subject_title.clone())
+                                    .or_default()
+                                    .push(mark_val);
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => nslog::nslog(&format!("[Diary] load_year week {idx} failed: {e}")),
+        }
+    }
+
+    state.quarter_marks.set(all_marks);
+    state.marks_loading.set(false);
+    nslog::nslog("[Diary] Year loaded");
+}
+
 /// Extract numeric marks from lessons and append to all_marks (legacy).
 fn update_marks(state: AppState, lessons: &[DaySchedule], week_uuid: &str) {
     let mut loaded = state.loaded_mark_weeks.get();
