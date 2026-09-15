@@ -256,8 +256,8 @@ pub fn load_week(state: AppState, new_index: i32) {
                     }
                     Err(e) => {
                         nslog::nslog(&format!("[Diary] load_week parse failed: {e}"));
-                        // Log raw JSON around error position for debugging
-                        if let Some(col) = e.column() {
+                        let col = e.column();
+                        if col > 0 && col < raw.len() {
                             let start = col.saturating_sub(200);
                             let end = (col + 200).min(raw.len());
                             nslog::nslog(&format!("[Diary] JSON around col {}: ...{}...", col, &raw[start..end]));
