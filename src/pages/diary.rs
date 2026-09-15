@@ -253,7 +253,11 @@ fn summary_view(state: AppState) -> impl Piece {
         .align(TextAlign::Center)
         .padding(Insets { top: 16.0, leading: PAD, bottom: 6.0, trailing: PAD }),
 
-        when(move || state.current_quarter.get() != 4, move || quarter_stats(state)),
+        when(move || state.current_quarter.get() != 4 && {
+            // Show quarter stats only if teacher has officially set marks for this quarter
+            let off = state.official_marks.get();
+            off.values().any(|v| !v.is_empty())
+        }, move || quarter_stats(state)),
         when(move || state.current_quarter.get() == 4, move || year_stats(state)),
 
         // ── Расчётные (сначала) ──
