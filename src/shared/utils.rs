@@ -29,7 +29,6 @@ pub fn format_date_header(dow: u32, ts: u64) -> String {
     format!("{}, {}", weekday_name(dow), format_date_short(ts))
 }
 
-/// Map a numeric mark string (e.g. "8") to a colour.
 pub fn grade_color(mark: &str) -> Color {
     match mark.trim().parse::<u32>() {
         Ok(9..=10) => colors::GRADE_EXCELLENT,

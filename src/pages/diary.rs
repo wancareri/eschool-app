@@ -85,6 +85,7 @@ fn quarter_btn(state: AppState, lbl: &'static str, q: usize) -> impl Piece {
         let cur = s1.current_quarter.get();
         if cur == q && !s1.marks_loading.get() { format!("[{}]", l) } else { l.clone() }
     })
+    .tint(move || Color::hex(state.accent_color.get()))
     .action(move || {
         // Show existing per-quarter data immediately
         let q_all = s2.quarter_all_marks.get();
@@ -110,6 +111,7 @@ fn year_btn(state: AppState) -> impl Piece {
         let cur = s1.current_quarter.get();
         if cur == 4 && !s1.marks_loading.get() { String::from("[Год]") } else { String::from("Год") }
     })
+    .tint(move || Color::hex(state.accent_color.get()))
     .action(move || { features::diary::load_year(s2); })
     .id("q-year")
 }
@@ -123,6 +125,7 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
         button(move || {
             if !show_summary.get() { "● Недели" } else { "○ Недели" }
         })
+        .tint(move || Color::hex(state.accent_color.get()))
         .action(move || {
             show_summary.set(false);
             let q = s1.current_quarter.get();
@@ -134,6 +137,7 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
         button(move || {
             if show_summary.get() { "● Итоги" } else { "○ Итоги" }
         })
+        .tint(move || Color::hex(state.accent_color.get()))
         .action(move || {
             show_summary.set(true);
             // Show existing per-quarter data immediately
@@ -185,13 +189,13 @@ fn week_view(state: AppState) -> impl Piece {
 
 fn week_header(state: AppState) -> impl Piece {
     row((
-        button("<").action(move || {
+        button("<").tint(move || Color::hex(state.accent_color.get())).action(move || {
             let idx = state.current_week_index.get();
             if idx > 0 { features::diary::load_week(state, idx - 1); }
         }).id("wk-prev"),
         label(move || state.current_week.get())
             .font(Font::Headline).grow().align(TextAlign::Center),
-        button(">").action(move || {
+        button(">").tint(move || Color::hex(state.accent_color.get())).action(move || {
             let idx = state.current_week_index.get();
             let total = state.all_weeks.get().len() as i32;
             if idx + 1 < total { features::diary::load_week(state, idx + 1); }

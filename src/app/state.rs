@@ -56,6 +56,9 @@ pub struct AppState {
     pub timetable_days: Signal<Vec<TimetableDay>>,
     pub schedule_loading: Signal<bool>,
 
+    // ── dev ────────────────────────────────────────────────────────────────
+    pub log_version: Signal<u64>,
+
     // ── teachers ─────────────────────────────────────────────────────────
     pub subjects_teachers: Signal<Vec<SubjectWithTeacher>>,
     pub teachers_loading: Signal<bool>,
@@ -105,6 +108,7 @@ impl Ambient for AppState {
             schedule_loading: Signal::new(false),
             subjects_teachers: Signal::new(Vec::new()),
             teachers_loading: Signal::new(false),
+            log_version: Signal::new(0u64),
         };
 
         if has_token {

@@ -1,6 +1,6 @@
 use day::prelude::*;
 use crate::app::AppState;
-use crate::shared::{colors, locale, nslog};
+use crate::shared::{locale, nslog};
 use crate::pages;
 use crate::res;
 
@@ -57,8 +57,13 @@ fn build_nav(primary: bool) -> impl Piece {
             move || pages::login::render().any(),
         ),
         when(
-            move || state.is_authenticated.get(),
+            move || state.is_authenticated.get() && {
+                // Track accent_color to trigger nav rebuild when it changes
+                let _ = state.accent_color.get();
+                true
+            },
             move || {
+                let accent = Color::hex(state.accent_color.get());
                 let sel = nav(section)
                     .title(res::str::app_title())
                     .sidebar_toggle(true)
@@ -68,28 +73,28 @@ fn build_nav(primary: bool) -> impl Piece {
                         res::vectors::tab_diary,
                         pages::diary::render,
                     )
-                    .icon_tint(colors::NAV_DIARY)
+                    .icon_tint(accent)
                     .item_icon(
                         crate::Section::Schedule,
                         res::str::nav_schedule(),
                         res::vectors::tab_schedule,
                         pages::schedule::render,
                     )
-                    .icon_tint(colors::NAV_SCHEDULE)
+                    .icon_tint(accent)
                     .item_icon(
                         crate::Section::Teachers,
                         res::str::nav_teachers(),
                         res::vectors::tab_teachers,
                         pages::teachers::render,
                     )
-                    .icon_tint(colors::NAV_TEACHERS)
+                    .icon_tint(accent)
                     .item_icon(
                         crate::Section::Settings,
                         res::str::nav_settings(),
                         res::vectors::tab_settings,
                         pages::settings::render,
                     )
-                    .icon_tint(colors::NAV_SETTINGS);
+                    .icon_tint(accent);
 
                 if primary {
                     sel.id("nav").restore("app.section").any()
