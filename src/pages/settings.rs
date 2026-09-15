@@ -25,7 +25,6 @@ pub fn render() -> impl Piece {
 
         system_settings(),
 
-        #[cfg(debug_assertions)]
         dev_settings(state),
 
         when(
@@ -62,16 +61,6 @@ fn appearance_section(state: AppState) -> impl Piece {
         form((
             section(
                 (
-                    label("Тема оформления").font(Font::Headline),
-                    theme_option(state, "Классическая", "legacy"),
-                    theme_option(state, "Liquid Glass", "liquid_glass"),
-                )
-            ).title("Внешний вид"),
-        )),
-
-        form((
-            section(
-                (
                     label("Акцентный цвет").font(Font::Headline),
                     accent_option(state, "Синий", colors::BLUE),
                     accent_option(state, "Зелёный", colors::GREEN),
@@ -92,27 +81,6 @@ fn system_settings() -> impl Piece {
         crate::LOCALE_KEY,
         res::locales::ALL,
     ),))
-}
-
-fn theme_option(state: AppState, lbl: &'static str, key: &'static str) -> impl Piece {
-    let k = key.to_string();
-    let s = state;
-    button(move || {
-        // Read from signal or prefs — but we need a signal for reactivity
-        // Since we don't have a theme signal, read from prefs each time
-        // The button closure is re-evaluated when any tracked signal changes
-        // We track state.accent_color to force re-eval on any settings change
-        let _ = s.accent_color.get(); // force reactivity
-        let current = day::prefs::get("app.theme_style").unwrap_or_default();
-        if current == key { format!("\u{2713} {lbl}") } else { lbl.to_string() }
-    })
-    .id(format!("theme-{key}"))
-    .action(move || {
-        day::prefs::set("app.theme_style", &k);
-        // Force re-render by toggling a signal
-        let cur = state.accent_color.get();
-        state.accent_color.set(cur); // trigger reactivity
-    })
 }
 
 fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
@@ -146,7 +114,6 @@ pub fn settings_body() -> impl Piece {
     ),))
 }
 
-#[cfg(debug_assertions)]
 fn dev_settings(state: AppState) -> impl Piece {
     form((
         section(
