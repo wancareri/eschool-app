@@ -4,6 +4,16 @@ use day::prelude::*;
 use eschool_api::entities::*;
 use crate::shared::nslog;
 
+use std::collections::HashMap;
+
+/// An official mark set by a teacher.
+#[derive(Debug, Clone)]
+pub struct OfficialMark {
+    pub value: f64,
+    pub kind: String,
+    pub author: String,
+}
+
 const TOKEN_KEY: &str = "auth.token";
 const FULL_NAME_KEY: &str = "auth.full_name";
 const SCHOOL_NAME_KEY: &str = "auth.school_name";
@@ -32,6 +42,7 @@ pub struct AppState {
     pub loaded_mark_weeks: Signal<std::collections::HashSet<String>>,
     pub current_quarter: Signal<usize>,
     pub quarter_marks: Signal<std::collections::HashMap<String, Vec<f64>>>,
+    pub official_marks: Signal<std::collections::HashMap<String, Vec<OfficialMark>>>,
     pub marks_loading: Signal<bool>,
     pub year_quarter_data: Signal<Vec<(String, std::collections::HashMap<String, Vec<f64>>)>>,
 
@@ -74,6 +85,7 @@ impl Ambient for AppState {
             loaded_mark_weeks: Signal::new(std::collections::HashSet::new()),
             current_quarter: Signal::new(0),
             quarter_marks: Signal::new(std::collections::HashMap::new()),
+            official_marks: Signal::new(std::collections::HashMap::new()),
             marks_loading: Signal::new(false),
             year_quarter_data: Signal::new(Vec::new()),
             bell_times: Signal::new(Vec::new()),

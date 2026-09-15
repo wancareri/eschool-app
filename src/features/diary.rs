@@ -1,6 +1,7 @@
 //! Diary data loading — all school data fetching for the diary, schedule, and teachers.
 
 use crate::app::AppState;
+use crate::app::OfficialMark;
 use crate::features::auth;
 use eschool_api::client::blocking;
 use eschool_api::client::endpoints;
@@ -247,13 +248,15 @@ pub fn load_week(state: AppState, new_index: i32) {
     state.lessons_loading.set(false);
 }
 
-/// Initialize marks HashMap with all known subjects (empty vecs).
-fn init_all_subjects(state: AppState) -> std::collections::HashMap<String, Vec<f64>> {
+/// Initialize marks HashMaps with all known subjects (empty vecs).
+fn init_all_subjects(state: AppState) -> (std::collections::HashMap<String, Vec<f64>>, std::collections::HashMap<String, Vec<OfficialMark>>) {
     let mut marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+    let mut official: std::collections::HashMap<String, Vec<OfficialMark>> = std::collections::HashMap::new();
     for subj in state.subjects_teachers.get() {
         marks.entry(subj.subject_title.clone()).or_default();
+        official.entry(subj.subject_title.clone()).or_default();
     }
-    marks
+    (marks, official)
 }
 
 /// Load all weeks for a quarter and accumulate marks.
@@ -276,7 +279,7 @@ pub fn load_quarter(state: AppState, quarter: usize) {
     state.current_quarter.set(quarter);
     state.marks_loading.set(true);
 
-    let mut all_marks = init_all_subjects(state);
+    let (mut all_marks, mut all_official) = init_all_subjects(state);
 
     let actual_end = end.min(weeks.len());
     for idx in start..actual_end {
@@ -293,6 +296,15 @@ pub fn load_quarter(state: AppState, quarter: usize) {
                                 all_marks.entry(slot.subject_title.clone())
                                     .or_default()
                                     .push(mark_val);
+                                if let Some(ref lm) = slot.lesson_mark {
+                                    all_official.entry(slot.subject_title.clone())
+                                        .or_default()
+                                        .push(OfficialMark {
+                                            value: mark_val,
+                                            kind: lm.kind.clone().unwrap_or_default(),
+                                            author: lm.author.clone().unwrap_or_default(),
+                                        });
+                                }
                             }
                         }
                     }
@@ -303,6 +315,7 @@ pub fn load_quarter(state: AppState, quarter: usize) {
     }
 
     state.quarter_marks.set(all_marks);
+    state.official_marks.set(all_official);
     state.marks_loading.set(false);
     nslog::nslog(&format!("[Diary] Quarter {} loaded", quarter + 1));
 }
@@ -326,33 +339,42 @@ pub fn load_year(state: AppState) {
 
     let quarter_labels = ["I четверть", "II четверть", "III четверть", "IV четверть"];
     let mut year_data: Vec<(String, std::collections::HashMap<String, Vec<f64>>)> = Vec::new();
-    let mut all_marks = init_all_subjects(state);
+    let (mut all_marks, mut all_official) = init_all_subjects(state);
 
     for q in 0..4 {
         let (start, end) = QUARTER_RANGES[q];
         let actual_end = end.min(weeks.len());
-        let mut q_marks = init_all_subjects(state);
+        let (mut q_marks, _) = init_all_subjects(state);
 
         for idx in start..actual_end {
             let week = &weeks[idx];
             match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &week.uuid)) {
                 Ok(raw) => {
                     if let Ok(days) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
-                        for day in &days {
-                            for slot in &day.slots {
-                                if let Some(mark_val) = slot.lesson_mark.as_ref()
-                                    .and_then(|m| m.mark.as_ref())
-                                    .and_then(|m| m.parse::<f64>().ok())
-                                {
-                                    q_marks.entry(slot.subject_title.clone())
+                    for day in &days {
+                        for slot in &day.slots {
+                            if let Some(mark_val) = slot.lesson_mark.as_ref()
+                                .and_then(|m| m.mark.as_ref())
+                                .and_then(|m| m.parse::<f64>().ok())
+                            {
+                                q_marks.entry(slot.subject_title.clone())
+                                    .or_default()
+                                    .push(mark_val);
+                                all_marks.entry(slot.subject_title.clone())
+                                    .or_default()
+                                    .push(mark_val);
+                                if let Some(ref lm) = slot.lesson_mark {
+                                    all_official.entry(slot.subject_title.clone())
                                         .or_default()
-                                        .push(mark_val);
-                                    all_marks.entry(slot.subject_title.clone())
-                                        .or_default()
-                                        .push(mark_val);
+                                        .push(OfficialMark {
+                                            value: mark_val,
+                                            kind: lm.kind.clone().unwrap_or_default(),
+                                            author: lm.author.clone().unwrap_or_default(),
+                                        });
                                 }
                             }
                         }
+                    }
                     }
                 }
                 Err(e) => nslog::nslog(&format!("[Diary] load_year q{} week {idx} failed: {e}", q + 1)),
@@ -364,6 +386,7 @@ pub fn load_year(state: AppState) {
 
     state.year_quarter_data.set(year_data);
     state.quarter_marks.set(all_marks);
+    state.official_marks.set(all_official);
     state.marks_loading.set(false);
     nslog::nslog("[Diary] Year loaded with per-quarter data");
 }
