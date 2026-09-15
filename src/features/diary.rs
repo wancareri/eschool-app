@@ -247,6 +247,15 @@ pub fn load_week(state: AppState, new_index: i32) {
     state.lessons_loading.set(false);
 }
 
+/// Initialize marks HashMap with all known subjects (empty vecs).
+fn init_all_subjects(state: AppState) -> std::collections::HashMap<String, Vec<f64>> {
+    let mut marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+    for subj in state.subjects_teachers.get() {
+        marks.entry(subj.subject_title.clone()).or_default();
+    }
+    marks
+}
+
 /// Load all weeks for a quarter and accumulate marks.
 pub fn load_quarter(state: AppState, quarter: usize) {
     if quarter > 3 { return; }
@@ -266,9 +275,8 @@ pub fn load_quarter(state: AppState, quarter: usize) {
 
     state.current_quarter.set(quarter);
     state.marks_loading.set(true);
-    state.quarter_marks.set(std::collections::HashMap::new());
 
-    let mut all_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+    let mut all_marks = init_all_subjects(state);
 
     let actual_end = end.min(weeks.len());
     for idx in start..actual_end {
@@ -315,17 +323,15 @@ pub fn load_year(state: AppState) {
 
     state.current_quarter.set(4); // 4 = year
     state.marks_loading.set(true);
-    state.quarter_marks.set(std::collections::HashMap::new());
-    state.year_quarter_data.set(Vec::new());
 
     let quarter_labels = ["I четверть", "II четверть", "III четверть", "IV четверть"];
     let mut year_data: Vec<(String, std::collections::HashMap<String, Vec<f64>>)> = Vec::new();
-    let mut all_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+    let mut all_marks = init_all_subjects(state);
 
     for q in 0..4 {
         let (start, end) = QUARTER_RANGES[q];
         let actual_end = end.min(weeks.len());
-        let mut q_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+        let mut q_marks = init_all_subjects(state);
 
         for idx in start..actual_end {
             let week = &weeks[idx];
