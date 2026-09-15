@@ -83,6 +83,7 @@ pub fn load_all(state: AppState) {
         if let Some(c) = cbd.classes.first() {
             let id = c.uuid.clone();
             state.class_label.set(format!("{}{}", c.level, c.label));
+            state.is_graduating.set(c.graduating.unwrap_or(false));
             id
         } else {
             fallback_class_id(&client, &user.school_id, &user.profile_id, state)
@@ -133,6 +134,7 @@ fn fallback_class_id(
         if let Some(c) = classes.first() {
             let id = c.uuid.clone();
             state.class_label.set(format!("{}{}", c.level, c.label));
+            state.is_graduating.set(c.graduating.unwrap_or(false));
             id
         } else {
             day::prefs::get("auth.class_id").unwrap_or_default()
@@ -228,6 +230,7 @@ pub fn load_week(state: AppState, new_index: i32) {
     let week = &weeks[idx];
     state.current_week_index.set(idx as i32);
     state.current_week.set(week.summary.clone());
+    state.current_quarter.set(quarter_for_index(idx));
     state.lessons_loading.set(true);
 
     match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &week.uuid)) {
@@ -296,7 +299,7 @@ pub fn load_quarter(state: AppState, quarter: usize) {
     nslog::nslog(&format!("[Diary] Quarter {} loaded", quarter + 1));
 }
 
-/// Load all weeks for the entire year and accumulate marks.
+/// Load all weeks for the entire year, storing marks per-quarter and total.
 pub fn load_year(state: AppState) {
     let weeks = state.all_weeks.get();
     if weeks.is_empty() { return; }
@@ -313,36 +316,50 @@ pub fn load_year(state: AppState) {
     state.current_quarter.set(4); // 4 = year
     state.marks_loading.set(true);
     state.quarter_marks.set(std::collections::HashMap::new());
+    state.year_quarter_data.set(Vec::new());
 
+    let quarter_labels = ["I четверть", "II четверть", "III четверть", "IV четверть"];
+    let mut year_data: Vec<(String, std::collections::HashMap<String, Vec<f64>>)> = Vec::new();
     let mut all_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
 
-    let actual_end = weeks.len();
-    for idx in 0..actual_end {
-        let week = &weeks[idx];
-        match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &week.uuid)) {
-            Ok(raw) => {
-                if let Ok(days) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
-                    for day in &days {
-                        for slot in &day.slots {
-                            if let Some(mark_val) = slot.lesson_mark.as_ref()
-                                .and_then(|m| m.mark.as_ref())
-                                .and_then(|m| m.parse::<f64>().ok())
-                            {
-                                all_marks.entry(slot.subject_title.clone())
-                                    .or_default()
-                                    .push(mark_val);
+    for q in 0..4 {
+        let (start, end) = QUARTER_RANGES[q];
+        let actual_end = end.min(weeks.len());
+        let mut q_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+
+        for idx in start..actual_end {
+            let week = &weeks[idx];
+            match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &week.uuid)) {
+                Ok(raw) => {
+                    if let Ok(days) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
+                        for day in &days {
+                            for slot in &day.slots {
+                                if let Some(mark_val) = slot.lesson_mark.as_ref()
+                                    .and_then(|m| m.mark.as_ref())
+                                    .and_then(|m| m.parse::<f64>().ok())
+                                {
+                                    q_marks.entry(slot.subject_title.clone())
+                                        .or_default()
+                                        .push(mark_val);
+                                    all_marks.entry(slot.subject_title.clone())
+                                        .or_default()
+                                        .push(mark_val);
+                                }
                             }
                         }
                     }
                 }
+                Err(e) => nslog::nslog(&format!("[Diary] load_year q{} week {idx} failed: {e}", q + 1)),
             }
-            Err(e) => nslog::nslog(&format!("[Diary] load_year week {idx} failed: {e}")),
         }
+
+        year_data.push((quarter_labels[q].to_string(), q_marks));
     }
 
+    state.year_quarter_data.set(year_data);
     state.quarter_marks.set(all_marks);
     state.marks_loading.set(false);
-    nslog::nslog("[Diary] Year loaded");
+    nslog::nslog("[Diary] Year loaded with per-quarter data");
 }
 
 /// Extract numeric marks from lessons and append to all_marks (legacy).

@@ -20,6 +20,7 @@ pub struct AppState {
     pub full_name: Signal<String>,
     pub school_name: Signal<String>,
     pub class_label: Signal<String>,
+    pub is_graduating: Signal<bool>,
 
     // ── diary ────────────────────────────────────────────────────────────
     pub lessons: Signal<Vec<DaySchedule>>,
@@ -32,6 +33,7 @@ pub struct AppState {
     pub current_quarter: Signal<usize>,
     pub quarter_marks: Signal<std::collections::HashMap<String, Vec<f64>>>,
     pub marks_loading: Signal<bool>,
+    pub year_quarter_data: Signal<Vec<(String, std::collections::HashMap<String, Vec<f64>>)>>,
 
     // ── schedule ─────────────────────────────────────────────────────────
     pub bell_times: Signal<Vec<BellTime>>,
@@ -62,6 +64,7 @@ impl Ambient for AppState {
             full_name: Signal::new(day::prefs::get(FULL_NAME_KEY).unwrap_or_default()),
             school_name: Signal::new(day::prefs::get(SCHOOL_NAME_KEY).unwrap_or_default()),
             class_label: Signal::new(String::new()),
+            is_graduating: Signal::new(false),
             lessons: Signal::new(Vec::new()),
             lessons_loading: Signal::new(false),
             current_week: Signal::new(String::new()),
@@ -72,6 +75,7 @@ impl Ambient for AppState {
             current_quarter: Signal::new(0),
             quarter_marks: Signal::new(std::collections::HashMap::new()),
             marks_loading: Signal::new(false),
+            year_quarter_data: Signal::new(Vec::new()),
             bell_times: Signal::new(Vec::new()),
             timetable_days: Signal::new(Vec::new()),
             schedule_loading: Signal::new(false),

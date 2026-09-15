@@ -267,10 +267,63 @@ fn summary_view(state: AppState) -> impl Piece {
         .spacing(8.0)
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
 
+        // Per-quarter breakdown (only in year view)
+        when(
+            move || state.current_quarter.get() == 4 && !state.year_quarter_data.get().is_empty(),
+            move || quarter_breakdown(state),
+        ),
+
         subject_list(state),
     ))
     .spacing(0.0)
     .grow()
+}
+
+fn quarter_breakdown(state: AppState) -> impl Piece {
+    column((
+        label("По четвертям")
+            .font(Font::Headline)
+            .color(colors::PRIMARY)
+            .padding(Insets { top: 8.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
+        each(
+            items(
+                move || {
+                    state.year_quarter_data.get().iter().map(|(label, marks)| {
+                        let total: usize = marks.values().map(|v| v.len()).sum();
+                        let sum: f64 = marks.values().flat_map(|v| v.iter()).sum();
+                        let avg = if total > 0 { sum / total as f64 } else { 0.0 };
+                        QuarterSummary { label: label.clone(), avg, count: total }
+                    }).collect::<Vec<_>>()
+                },
+                |s: &QuarterSummary| s.label.clone(),
+            ),
+            move |item| {
+                let s = item.get();
+                row((
+                    label(s.label.clone())
+                        .font(Font::Body)
+                        .grow(),
+                    label(format!("{:.2}", s.avg))
+                        .font(Font::Headline)
+                        .color(if s.avg >= 4.0 { colors::SUCCESS } else if s.avg >= 3.0 { colors::WARNING } else { colors::ERROR }),
+                    label(format!("({})", s.count))
+                        .font(Font::Caption)
+                        .secondary(),
+                ))
+                .spacing(8.0)
+                .padding(Insets { top: 6.0, leading: 20.0, bottom: 6.0, trailing: 20.0 })
+                .any()
+            },
+        ),
+    ))
+    .spacing(0.0)
+}
+
+#[derive(Clone, Debug)]
+struct QuarterSummary {
+    label: String,
+    avg: f64,
+    count: usize,
 }
 
 fn subject_list(state: AppState) -> impl Piece {
