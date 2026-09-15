@@ -35,19 +35,19 @@ pub fn apply_ios_tint(hex: u32) {
         // UIView.appearance().tintColor — propagates to ALL views
         let view_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UIView), appearance];
-        objc2::msg_send![&*view_appearance, setTintColor: &color];
+        objc2::msg_send![&*view_appearance, setTintColor: &*color];
         // UINavigationBar.appearance().tintColor — nav bar buttons
         let nav_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UINavigationBar), appearance];
-        objc2::msg_send![&*nav_appearance, setTintColor: &color];
+        objc2::msg_send![&*nav_appearance, setTintColor: &*color];
         // UITabBar.appearance().tintColor — tab bar icons
         let tab_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UITabBar), appearance];
-        objc2::msg_send![&*tab_appearance, setTintColor: &color];
+        objc2::msg_send![&*tab_appearance, setTintColor: &*color];
         // UISwitch.appearance().onTintColor — switch accent color
         let switch_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UISwitch), appearance];
-        objc2::msg_send![&*switch_appearance, setOnTintColor: &color];
+        objc2::msg_send![&*switch_appearance, setOnTintColor: &*color];
     }
 }
 
