@@ -297,7 +297,18 @@ fn quarter_stats(state: AppState) -> impl Piece {
             let labels = ["I", "II", "III", "IV"];
             format!("{} четверть", labels[state.current_quarter.get()])
         }),
-        stat_block::render(state, "Предметов", move || state.quarter_marks.get().len().to_string()),
+        stat_block::render(state, "Предметов", move || {
+            // Count ALL subjects from subjects_teachers
+            let teachers = state.subjects_teachers.get();
+            let marks = state.quarter_marks.get();
+            let mut count = teachers.len();
+            for name in marks.keys() {
+                if !teachers.iter().any(|t| t.subject_title == *name) {
+                    count += 1;
+                }
+            }
+            count.to_string()
+        }),
         stat_block::render(state, "Средний балл", move || {
             let marks = state.quarter_marks.get();
             let total: usize = marks.values().map(|v| v.len()).sum();
@@ -312,7 +323,19 @@ fn quarter_stats(state: AppState) -> impl Piece {
 fn year_stats(state: AppState) -> impl Piece {
     column((
         row((
-            stat_block::render(state, "Предметов", move || state.quarter_marks.get().len().to_string()),
+            stat_block::render(state, "Предметов", move || {
+                // Count ALL subjects from subjects_teachers
+                let teachers = state.subjects_teachers.get();
+                let marks = state.quarter_marks.get();
+                let mut count = teachers.len();
+                // Add any extra from marks not in teachers
+                for name in marks.keys() {
+                    if !teachers.iter().any(|t| t.subject_title == *name) {
+                        count += 1;
+                    }
+                }
+                count.to_string()
+            }),
             stat_block::render(state, "Оценок", move || {
                 state.quarter_marks.get().values().map(|v| v.len()).sum::<usize>().to_string()
             }),
@@ -362,9 +385,20 @@ fn year_quarter_subjects(state: AppState) -> impl Piece {
     each(
         items(
             move || {
-                let mut subjects: Vec<String> = state.quarter_marks.get().keys().cloned().collect();
-                subjects.sort();
-                subjects
+                // Start with ALL subjects from subjects_teachers
+                let teachers = state.subjects_teachers.get();
+                let marks = state.quarter_marks.get();
+                let mut subject_names: Vec<String> = teachers.iter()
+                    .map(|t| t.subject_title.clone())
+                    .collect();
+                for name in marks.keys() {
+                    if !subject_names.contains(name) {
+                        subject_names.push(name.clone());
+                    }
+                }
+                subject_names.dedup();
+                subject_names.sort();
+                subject_names
             },
             |s: &String| s.clone(),
         ),
@@ -432,26 +466,45 @@ fn subject_list(state: AppState) -> impl Piece {
     each(
         items(
             move || {
+                // Start with ALL subjects from subjects_teachers
+                let teachers = state.subjects_teachers.get();
                 let marks = state.quarter_marks.get();
-                let mut subjects: Vec<SubjectMark> = marks.iter().map(|(name, vals)| {
-                    let (sum, len) = (vals.iter().sum::<f64>(), vals.len());
-                    SubjectMark { name: name.clone(), avg: if len > 0 { sum / len as f64 } else { 0.0 }, count: len }
-                }).collect();
-                subjects.sort_by(|a, b| a.name.cmp(&b.name));
-                subjects
+                let mut subject_names: Vec<String> = teachers.iter()
+                    .map(|t| t.subject_title.clone())
+                    .collect();
+                // Add any subjects from marks that aren't in teachers (shouldn't happen, but safety)
+                for name in marks.keys() {
+                    if !subject_names.contains(name) {
+                        subject_names.push(name.clone());
+                    }
+                }
+                subject_names.dedup();
+                subject_names.sort();
+                subject_names
             },
-            |s: &SubjectMark| s.name.clone(),
+            |s: &String| s.clone(),
         ),
         move |item| {
-            let s = item.get();
+            let subj_name = item.get();
+            let s2 = subj_name.clone();
             row((
-                label(s.name.clone()).font(Font::Body).grow(),
-                if s.count == 0 { label("—").font(Font::Headline).secondary() }
-                else {
-                    label(format!("{:.1}", s.avg)).font(Font::Headline)
-                        .color(if s.avg >= 4.0 { colors::SUCCESS } else if s.avg >= 3.0 { colors::WARNING } else { colors::ERROR })
+                label(subj_name).font(Font::Body).grow(),
+                {
+                    let marks = state.quarter_marks.get();
+                    match marks.get(&*s2) {
+                        Some(vals) if !vals.is_empty() => {
+                            let avg = vals.iter().sum::<f64>() / vals.len() as f64;
+                            label(format!("{:.1}", avg)).font(Font::Headline)
+                                .color(if avg >= 4.0 { colors::SUCCESS } else if avg >= 3.0 { colors::WARNING } else { colors::ERROR })
+                        }
+                        _ => label("—").font(Font::Headline).secondary(),
+                    }
                 },
-                label(format!("({})", s.count)).font(Font::Caption).secondary(),
+                {
+                    let marks = state.quarter_marks.get();
+                    let count = marks.get(&s2).map(|v| v.len()).unwrap_or(0);
+                    label(format!("({})", count)).font(Font::Caption).secondary()
+                },
             ))
             .spacing(8.0)
             .padding(Insets { top: 6.0, leading: PAD, bottom: 6.0, trailing: PAD })
@@ -547,6 +600,3 @@ fn official_year_row(state: AppState, subject: String) -> impl Piece {
 
 #[derive(Clone, Debug)]
 struct OfficialSubject { name: String, avg: f64, count: usize }
-
-#[derive(Clone, Debug)]
-struct SubjectMark { name: String, avg: f64, count: usize }

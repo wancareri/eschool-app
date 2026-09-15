@@ -56,15 +56,27 @@ fn build_nav(primary: bool) -> impl Piece {
             move || !state.is_authenticated.get(),
             move || pages::login::render().any(),
         ),
+        // Loading overlay while load_all is running
         when(
-            move || state.is_authenticated.get() && {
+            move || state.is_authenticated.get() && state.loading.get(),
+            move || row((
+                spacer().grow(),
+                spinner(),
+                label("  Загрузка данных…").font(Font::Body).secondary(),
+                spacer().grow(),
+            ))
+            .padding(Insets { top: 40.0, leading: 20.0, bottom: 20.0, trailing: 20.0 })
+            .grow(),
+        ),
+        when(
+            move || state.is_authenticated.get() && !state.loading.get() && {
                 // Track accent_color to trigger nav rebuild when it changes
                 let _ = state.accent_color.get();
                 true
             },
             move || {
                 let accent = Color::hex(state.accent_color.get());
-                // Apply iOS global tint after window is created
+                // Apply iOS global tint via UIAppearance proxies
                 #[cfg(target_os = "ios")]
                 crate::shared::colors::apply_ios_tint(state.accent_color.get());
                 let sel = nav(section)

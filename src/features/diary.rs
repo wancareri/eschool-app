@@ -11,7 +11,7 @@ use crate::shared::nslog;
 /// Quarter ranges: weeks indices in all_weeks
 const QUARTER_RANGES: &[(usize, usize)] = &[(0, 9), (9, 18), (18, 27), (27, 36)];
 
-/// Load ALL school data synchronously. Blocks the UI briefly.
+/// Load ALL school data asynchronously. Does NOT block the UI.
 pub fn load_all(state: AppState) {
     nslog::nslog("[Diary] load_all starting");
     let token = match auth::get_token() {
@@ -25,111 +25,114 @@ pub fn load_all(state: AppState) {
     state.loading.set(true);
     state.error_msg.set(String::new());
 
-    let mut client = blocking::build_client(&token);
+    day::task(async move {
+        let mut client = blocking::build_client(&token);
 
-    // 1 — user info (with auto-refresh on 401)
-    nslog::nslog("[Diary] Fetching /auth/me...");
-    let user = match blocking::api_get::<UserInfo>(&client, endpoints::AUTH_ME) {
-        Ok(u) => {
-            nslog::nslog(&format!("[Diary] Got user: {} ({})", u.full_name, u.school_name));
-            u
-        }
-        Err(e) if e.starts_with("HTTP 401") => {
-            nslog::nslog("[Diary] /auth/me returned 401, attempting token refresh...");
-            if let Some(refreshed) = auth::try_refresh_token() {
-                client = blocking::build_client(&refreshed);
-                match blocking::api_get::<UserInfo>(&client, endpoints::AUTH_ME) {
-                    Ok(u) => u,
-                    Err(e) => {
-                        state.error_msg.set(format!("Auth error: {e}"));
-                        state.loading.set(false);
-                        return;
+        // 1 — user info (with auto-refresh on 401)
+        nslog::nslog("[Diary] Fetching /auth/me...");
+        let user = match blocking::api_get::<UserInfo>(&client, endpoints::AUTH_ME) {
+            Ok(u) => {
+                nslog::nslog(&format!("[Diary] Got user: {} ({})", u.full_name, u.school_name));
+                u
+            }
+            Err(e) if e.starts_with("HTTP 401") => {
+                nslog::nslog("[Diary] /auth/me returned 401, attempting token refresh...");
+                if let Some(refreshed) = auth::try_refresh_token() {
+                    client = blocking::build_client(&refreshed);
+                    match blocking::api_get::<UserInfo>(&client, endpoints::AUTH_ME) {
+                        Ok(u) => u,
+                        Err(e) => {
+                            state.error_msg.set(format!("Auth error: {e}"));
+                            state.loading.set(false);
+                            return;
+                        }
                     }
+                } else {
+                    state.error_msg.set("Сессия истекла. Войдите снова.".into());
+                    state.loading.set(false);
+                    auth::logout(state);
+                    return;
                 }
-            } else {
-                state.error_msg.set("Сессия истекла. Войдите снова.".into());
+            }
+            Err(e) => {
+                state.error_msg.set(format!("Auth error: {e}"));
                 state.loading.set(false);
-                auth::logout(state);
                 return;
             }
-        }
-        Err(e) => {
-            state.error_msg.set(format!("Auth error: {e}"));
+        };
+        state.full_name.set(user.full_name.clone());
+        state.school_name.set(user.school_name.clone());
+
+        // 2 — school year
+        let year = blocking::api_get::<SchoolYear>(&client, endpoints::SCHOOL_YEAR).ok();
+        let school_period = year.as_ref().map(|y| y.uuid.clone());
+
+        // 3 — classes
+        let today = day_piece_datetime::DayDate::today();
+        let start_of_year = format!("01.09.{:04}", today.year);
+        let end_of_year = format!("31.05.{:04}", today.year + 1);
+
+        let class_body = serde_json::json!({
+            "school_period": school_period,
+            "from": start_of_year,
+            "to": end_of_year,
+        });
+        let class_id = if let Ok(cbd) = blocking::api_post::<ClassesByDate>(
+            &client,
+            &endpoints::classes(&user.school_id, &user.profile_id),
+            &class_body,
+        ) {
+            if let Some(c) = cbd.classes.first() {
+                let id = c.uuid.clone();
+                state.class_label.set(format!("{}{}", c.level, c.label));
+                state.is_graduating.set(c.graduating.unwrap_or(false));
+                id
+            } else {
+                fallback_class_id(&client, &user.school_id, &user.profile_id, state)
+            }
+        } else {
+            fallback_class_id(&client, &user.school_id, &user.profile_id, state)
+        };
+
+        if class_id.is_empty() {
+            state.error_msg.set("Class not found — try opening diary.e-schools.by to sync".into());
             state.loading.set(false);
             return;
         }
-    };
-    state.full_name.set(user.full_name.clone());
-    state.school_name.set(user.school_name.clone());
 
-    // 2 — school year
-    let year = blocking::api_get::<SchoolYear>(&client, endpoints::SCHOOL_YEAR).ok();
-    let school_period = year.as_ref().map(|y| y.uuid.clone());
+        auth::store_ids(
+            &user.school_id,
+            &class_id,
+            &user.profile_id,
+            &user.full_name,
+            &user.school_name,
+        );
 
-    // 3 — classes
-    let today = day_piece_datetime::DayDate::today();
-    let start_of_year = format!("01.09.{:04}", today.year);
-    let end_of_year = format!("31.05.{:04}", today.year + 1);
-
-    let class_body = serde_json::json!({
-        "school_period": school_period,
-        "from": start_of_year,
-        "to": end_of_year,
-    });
-    let class_id = if let Ok(cbd) = blocking::api_post::<ClassesByDate>(
-        &client,
-        &endpoints::classes(&user.school_id, &user.profile_id),
-        &class_body,
-    ) {
-        if let Some(c) = cbd.classes.first() {
-            let id = c.uuid.clone();
-            state.class_label.set(format!("{}{}", c.level, c.label));
-            state.is_graduating.set(c.graduating.unwrap_or(false));
-            id
-        } else {
-            fallback_class_id(&client, &user.school_id, &user.profile_id, state)
+        // Initialize per-quarter storage
+        {
+            let mut q_all = state.quarter_all_marks.get();
+            let mut q_off = state.quarter_official_marks.get();
+            q_all.resize(4, std::collections::HashMap::new());
+            q_off.resize(4, std::collections::HashMap::new());
+            state.quarter_all_marks.set(q_all);
+            state.quarter_official_marks.set(q_off);
         }
-    } else {
-        fallback_class_id(&client, &user.school_id, &user.profile_id, state)
-    };
 
-    if class_id.is_empty() {
-        state.error_msg.set("Class not found — try opening diary.e-schools.by to sync".into());
+        // 4 — week activities → current week → lessons
+        load_weeks_and_current(state, &client, &user.school_id, &class_id, &user.profile_id);
+
+        // 5 — bell schedule
+        load_bells(state, &client, &user.school_id);
+
+        // 6 — timetable
+        load_timetable(state, &client, &user.school_id, &class_id);
+
+        // 7 — subjects with teachers
+        load_teachers(state, &client, &user.school_id, &user.profile_id, &class_id);
+
         state.loading.set(false);
-        return;
-    }
-
-    auth::store_ids(
-        &user.school_id,
-        &class_id,
-        &user.profile_id,
-        &user.full_name,
-        &user.school_name,
-    );
-
-    // Initialize per-quarter storage
-    {
-        let mut q_all = state.quarter_all_marks.get();
-        let mut q_off = state.quarter_official_marks.get();
-        q_all.resize(4, std::collections::HashMap::new());
-        q_off.resize(4, std::collections::HashMap::new());
-        state.quarter_all_marks.set(q_all);
-        state.quarter_official_marks.set(q_off);
-    }
-
-    // 4 — week activities → current week → lessons
-    load_weeks_and_current(state, &client, &user.school_id, &class_id, &user.profile_id);
-
-    // 5 — bell schedule
-    load_bells(state, &client, &user.school_id);
-
-    // 6 — timetable
-    load_timetable(state, &client, &user.school_id, &class_id);
-
-    // 7 — subjects with teachers
-    load_teachers(state, &client, &user.school_id, &user.profile_id, &class_id);
-
-    state.loading.set(false);
+        nslog::nslog("[Diary] load_all completed");
+    });
 }
 
 fn fallback_class_id(

@@ -17,42 +17,37 @@ pub fn set_accent(hex: u32) {
     ACCENT_HEX.store(hex, Ordering::Relaxed);
 }
 
-/// Apply tint color to ALL iOS windows — makes native UIKit elements use accent color.
-/// Call this AFTER the window is created (from the nav builder or root).
+/// Apply tint color to ALL iOS native UIKit elements via UIAppearance proxies.
+/// This is the standard way to set global tint in UIKit — affects UINavigationBar,
+/// UITabBar, UIButton, UISwitch, etc. without needing to find windows.
 #[cfg(target_os = "ios")]
 pub fn apply_ios_tint(hex: u32) {
     let r = ((hex >> 16) & 0xFF) as f64 / 255.0;
     let g = ((hex >> 8) & 0xFF) as f64 / 255.0;
     let b = (hex & 0xFF) as f64 / 255.0;
     unsafe {
-        let app: objc2::rc::Retained<objc2_ui_kit::UIApplication> =
-            objc2::msg_send![objc2::class!(UIApplication), sharedApplication];
         let color = objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(
             r as objc2_core_foundation::CGFloat,
             g as objc2_core_foundation::CGFloat,
             b as objc2_core_foundation::CGFloat,
             1.0 as objc2_core_foundation::CGFloat,
         );
-        // Iterate ALL connected scenes and ALL windows in each scene
-        let scenes = app.connectedScenes();
-        let enumerator: objc2::rc::Retained<objc2_foundation::NSEnumerator> =
-            objc2::msg_send![&*scenes, objectEnumerator];
-        while let Some(scene_obj) = enumerator.nextObject() {
-            // Try downcast to UIWindowScene
-            let is_window_scene: bool =
-                objc2::msg_send![&*scene_obj, isKindOfClass: objc2::class!(UIWindowScene)];
-            if is_window_scene {
-                let windows: objc2::rc::Retained<objc2_foundation::NSArray<objc2_ui_kit::UIWindow>> =
-                    objc2::msg_send![&*scene_obj, windows];
-                let win_enumerator: objc2::rc::Retained<objc2_foundation::NSEnumerator> =
-                    objc2::msg_send![&*windows, objectEnumerator];
-                while let Some(win_obj) = win_enumerator.nextObject() {
-                    let obj: &objc2::runtime::AnyObject = &*win_obj;
-                    let window = &*(obj as *const objc2::runtime::AnyObject as *const objc2_ui_kit::UIWindow);
-                    window.setTintColor(Some(&color));
-                }
-            }
-        }
+        // UIView.appearance().tintColor — propagates to ALL views
+        let view_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
+            objc2::msg_send![objc2::class!(UIView), appearance];
+        objc2::msg_send![&*view_appearance, setTintColor: &color];
+        // UINavigationBar.appearance().tintColor — nav bar buttons
+        let nav_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
+            objc2::msg_send![objc2::class!(UINavigationBar), appearance];
+        objc2::msg_send![&*nav_appearance, setTintColor: &color];
+        // UITabBar.appearance().tintColor — tab bar icons
+        let tab_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
+            objc2::msg_send![objc2::class!(UITabBar), appearance];
+        objc2::msg_send![&*tab_appearance, setTintColor: &color];
+        // UISwitch.appearance().onTintColor — switch accent color
+        let switch_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
+            objc2::msg_send![objc2::class!(UISwitch), appearance];
+        objc2::msg_send![&*switch_appearance, setOnTintColor: &color];
     }
 }
 
