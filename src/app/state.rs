@@ -29,6 +29,9 @@ pub struct AppState {
     pub current_week_index: Signal<i32>,
     pub all_marks: Signal<Vec<(String, f64)>>,
     pub loaded_mark_weeks: Signal<std::collections::HashSet<String>>,
+    pub current_quarter: Signal<usize>,
+    pub quarter_marks: Signal<std::collections::HashMap<String, Vec<f64>>>,
+    pub marks_loading: Signal<bool>,
 
     // ── schedule ─────────────────────────────────────────────────────────
     pub bell_times: Signal<Vec<BellTime>>,
@@ -66,6 +69,9 @@ impl Ambient for AppState {
             current_week_index: Signal::new(0),
             all_marks: Signal::new(Vec::new()),
             loaded_mark_weeks: Signal::new(std::collections::HashSet::new()),
+            current_quarter: Signal::new(0),
+            quarter_marks: Signal::new(std::collections::HashMap::new()),
+            marks_loading: Signal::new(false),
             bell_times: Signal::new(Vec::new()),
             timetable_days: Signal::new(Vec::new()),
             schedule_loading: Signal::new(false),

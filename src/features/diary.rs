@@ -7,6 +7,9 @@ use eschool_api::client::endpoints;
 use eschool_api::entities::*;
 use crate::shared::nslog;
 
+/// Quarter ranges: weeks indices in all_weeks
+const QUARTER_RANGES: &[(usize, usize)] = &[(0, 9), (9, 18), (18, 27), (27, 36)];
+
 /// Load ALL school data synchronously. Blocks the UI briefly.
 pub fn load_all(state: AppState) {
     nslog::nslog("[Diary] load_all starting");
@@ -163,20 +166,12 @@ fn load_weeks_and_current(
                 state.all_weeks.set(weeks);
                 state.current_week_index.set(idx as i32);
                 state.current_week.set(week_summary);
+                state.current_quarter.set(quarter_for_index(idx));
 
-                match blocking::api_get_raw(client, &endpoints::lessons(school_id, class_id, profile_id, &week_uuid)) {
-                    Ok(raw) => {
-                        match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
-                            Ok(lessons) => {
-                                nslog::nslog(&format!("[Diary] Got {} days of lessons", lessons.len()));
-                                update_marks(state, &lessons, &week_uuid);
-                                state.lessons.set(lessons);
-                            }
-                            Err(e) => nslog::nslog(&format!("[Diary] Lessons parse failed: {e}")),
-                        }
-                    }
-                    Err(e) => nslog::nslog(&format!("[Diary] Lessons failed: {e}")),
-                }
+                // Load first week of current quarter
+                let q = quarter_for_index(idx);
+                let (start, _) = QUARTER_RANGES[q];
+                load_week(state, start as i32);
             }
         }
         Err(e) => nslog::nslog(&format!("[Diary] Week activities failed: {e}")),
@@ -239,7 +234,6 @@ pub fn load_week(state: AppState, new_index: i32) {
         Ok(raw) => {
             match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                 Ok(lessons) => {
-                    update_marks(state, &lessons, &week.uuid);
                     state.lessons.set(lessons);
                 }
                 Err(e) => nslog::nslog(&format!("[Diary] load_week parse failed: {e}")),
@@ -250,7 +244,59 @@ pub fn load_week(state: AppState, new_index: i32) {
     state.lessons_loading.set(false);
 }
 
-/// Extract numeric marks from lessons and append to all_marks.
+/// Load all weeks for a quarter and accumulate marks.
+pub fn load_quarter(state: AppState, quarter: usize) {
+    if quarter > 3 { return; }
+
+    let weeks = state.all_weeks.get();
+    let (start, end) = QUARTER_RANGES[quarter];
+    if start >= weeks.len() { return; }
+
+    let (school_id, class_id, profile_id) = auth::get_stored_ids();
+    if school_id.is_empty() || class_id.is_empty() || profile_id.is_empty() { return; }
+
+    let token = match auth::get_token() {
+        Some(t) => t,
+        _ => return,
+    };
+    let client = blocking::build_client(&token);
+
+    state.current_quarter.set(quarter);
+    state.marks_loading.set(true);
+    state.quarter_marks.set(std::collections::HashMap::new());
+
+    let mut all_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+
+    let actual_end = end.min(weeks.len());
+    for idx in start..actual_end {
+        let week = &weeks[idx];
+        match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &week.uuid)) {
+            Ok(raw) => {
+                if let Ok(days) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
+                    for day in &days {
+                        for slot in &day.slots {
+                            if let Some(mark_val) = slot.lesson_mark.as_ref()
+                                .and_then(|m| m.mark.as_ref())
+                                .and_then(|m| m.parse::<f64>().ok())
+                            {
+                                all_marks.entry(slot.subject_title.clone())
+                                    .or_default()
+                                    .push(mark_val);
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => nslog::nslog(&format!("[Diary] load_quarter week {idx} failed: {e}")),
+        }
+    }
+
+    state.quarter_marks.set(all_marks);
+    state.marks_loading.set(false);
+    nslog::nslog(&format!("[Diary] Quarter {} loaded", quarter + 1));
+}
+
+/// Extract numeric marks from lessons and append to all_marks (legacy).
 fn update_marks(state: AppState, lessons: &[DaySchedule], week_uuid: &str) {
     let mut loaded = state.loaded_mark_weeks.get();
     if loaded.contains(week_uuid) {
@@ -277,4 +323,16 @@ fn update_marks(state: AppState, lessons: &[DaySchedule], week_uuid: &str) {
 pub fn reset_marks(state: AppState) {
     state.all_marks.set(Vec::new());
     state.loaded_mark_weeks.set(std::collections::HashSet::new());
+    state.quarter_marks.set(std::collections::HashMap::new());
+}
+
+/// Get week indices for a quarter.
+pub fn quarter_week_indices(quarter: usize) -> std::ops::Range<usize> {
+    let (start, end) = QUARTER_RANGES[quarter];
+    start..end
+}
+
+/// Determine which quarter a week index belongs to.
+pub fn quarter_for_index(idx: usize) -> usize {
+    if idx < 9 { 0 } else if idx < 18 { 1 } else if idx < 27 { 2 } else { 3 }
 }
