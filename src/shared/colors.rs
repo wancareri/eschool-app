@@ -10,21 +10,17 @@ pub fn init_accent() {
         .and_then(|v| v.parse::<u32>().ok())
         .unwrap_or(0x3B82F6);
     ACCENT_HEX.store(hex, Ordering::Relaxed);
-    #[cfg(target_os = "ios")]
-    apply_ios_tint(hex);
 }
 
 /// Set the global accent color (call from settings when user picks a new color).
 pub fn set_accent(hex: u32) {
     ACCENT_HEX.store(hex, Ordering::Relaxed);
-    #[cfg(target_os = "ios")]
-    apply_ios_tint(hex);
 }
 
-/// Apply tint color to the iOS window's tintColor — makes all native UIKit elements
-/// (buttons, switches, links, nav items) use this color instead of default blue.
+/// Apply tint color to ALL iOS windows — makes native UIKit elements use accent color.
+/// Call this AFTER the window is created (from the nav builder or root).
 #[cfg(target_os = "ios")]
-fn apply_ios_tint(hex: u32) {
+pub fn apply_ios_tint(hex: u32) {
     let r = ((hex >> 16) & 0xFF) as f64 / 255.0;
     let g = ((hex >> 8) & 0xFF) as f64 / 255.0;
     let b = (hex & 0xFF) as f64 / 255.0;
@@ -37,12 +33,30 @@ fn apply_ios_tint(hex: u32) {
             b as objc2_core_foundation::CGFloat,
             1.0 as objc2_core_foundation::CGFloat,
         );
-        // keyWindow is deprecated but the simplest path; iterate scenes as fallback
-        if let Some(window) = app.keyWindow() {
-            window.setTintColor(Some(&color));
+        // Iterate ALL connected scenes and ALL windows in each scene
+        let scenes = app.connectedScenes();
+        let enumerator: objc2::rc::Retained<objc2_foundation::NSEnumerator> =
+            objc2::msg_send![&*scenes, objectEnumerator];
+        while let Some(scene_obj) = enumerator.nextObject() {
+            // Try downcast to UIWindowScene
+            let is_window_scene: bool =
+                objc2::msg_send![&*scene_obj, isKindOfClass: objc2::class!(UIWindowScene)];
+            if is_window_scene {
+                let windows: objc2::rc::Retained<objc2_foundation::NSArray<objc2_ui_kit::UIWindow>> =
+                    objc2::msg_send![&*scene_obj, windows];
+                let win_enumerator: objc2::rc::Retained<objc2_foundation::NSEnumerator> =
+                    objc2::msg_send![&*windows, objectEnumerator];
+                while let Some(win_obj) = win_enumerator.nextObject() {
+                    let window = &*(win_obj as *const objc2::runtime::ProtocolObject as *const objc2_ui_kit::UIWindow);
+                    window.setTintColor(Some(&color));
+                }
+            }
         }
     }
 }
+
+#[cfg(not(target_os = "ios"))]
+pub fn apply_ios_tint(_hex: u32) {}
 
 /// Get current accent hex.
 pub fn accent_hex() -> u32 {

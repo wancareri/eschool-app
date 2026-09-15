@@ -64,6 +64,9 @@ fn build_nav(primary: bool) -> impl Piece {
             },
             move || {
                 let accent = Color::hex(state.accent_color.get());
+                // Apply iOS global tint after window is created
+                #[cfg(target_os = "ios")]
+                crate::shared::colors::apply_ios_tint(state.accent_color.get());
                 let sel = nav(section)
                     .title(res::str::app_title())
                     .sidebar_toggle(true)
