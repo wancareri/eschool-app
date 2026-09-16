@@ -35,6 +35,9 @@ pub fn root() -> impl Piece {
         .unwrap_or(false);
     if has_token {
         crate::features::auth::start_background_refresh();
+        crate::features::grade_checker::start_grade_checker();
+        #[cfg(target_os = "ios")]
+        crate::shared::notifications::ios::request_permission();
     }
 
     window_shell(true)

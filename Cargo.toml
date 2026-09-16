@@ -58,6 +58,10 @@ objc2-ui-kit = { version = "0.3", features = [
     "UINavigationController", "UIKitCore", "block2",
     "UIColor", "UINavigationBar", "UITabBar", "UISwitch", "UIButton", "UIBarButtonItem",
 ] }
+objc2-user-notifications = { version = "0.3", features = [
+    "UNUserNotificationCenter", "UNNotificationSettings", "UNNotificationRequest",
+    "UNNotificationContent", "UNNotificationSound",
+] }
 
 [package.metadata.day.ios]
 swift-packages = [{ path = "platform/swiftui", products = ["EschoolViews"] }]
