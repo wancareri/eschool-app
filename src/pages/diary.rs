@@ -6,14 +6,16 @@ use crate::widgets;
 use crate::widgets::stat_block;
 use crate::res;
 use day::prelude::*;
+use day_piece_pullrefresh::pull_to_refresh;
 
 const PAD: f64 = 20.0;
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let show_summary = Signal::new(false);
+    let refreshing = Signal::new(false);
 
-    scroll(column((
+    pull_to_refresh(refreshing, scroll(column((
         column((
             label(move || res::str::diary_title().format())
                 .font(Font::LargeTitle)
@@ -66,7 +68,15 @@ pub fn render() -> impl Piece {
         ),
     ))
     .spacing(0.0)
-    .grow())
+    .grow()))
+    .on_refresh(move || {
+        let state = AppState::ambient();
+        let done = refreshing.setter();
+        if state.is_authenticated.get() {
+            features::diary::load_all(state);
+        }
+        done.set(false);
+    })
     .grow()
 }
 
