@@ -184,10 +184,8 @@ fn load_weeks_and_current(
                 state.current_week.set(week_summary);
                 state.current_quarter.set(quarter_for_index(idx));
 
-                // Load first week of current quarter
-                let q = quarter_for_index(idx);
-                let (start, _) = QUARTER_RANGES[q];
-                load_week(state, start as i32);
+                // Load current week
+                load_week(state, idx as i32);
             }
         }
         Err(e) => nslog::nslog(&format!("[Diary] Week activities failed: {e}")),
