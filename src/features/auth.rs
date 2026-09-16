@@ -1,10 +1,8 @@
 //! Authentication — login, logout, token refresh.
-//! Wraps eschool_api::auth with day::prefs storage.
-
-use serde::{Deserialize, Serialize};
+//! Uses secure keychain/keystore for sensitive data.
 
 use crate::app::AppState;
-use crate::shared::nslog;
+use crate::shared::{nslog, secure};
 
 const TOKEN_KEY: &str = "auth.token";
 const REFRESH_KEY: &str = "auth.refresh_token";
@@ -17,13 +15,6 @@ const USERNAME_KEY: &str = "auth.username";
 const PASSWORD_KEY: &str = "auth.password";
 const REMEMBER_KEY: &str = "auth.remember_me";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Token {
-    pub access_token: String,
-    pub refresh_token: String,
-    pub expires_at: Option<u64>,
-}
-
 pub fn login(state: AppState, username: &str, password: &str, remember: bool) {
     state.loading.set(true);
     state.error_msg.set(String::new());
@@ -31,16 +22,16 @@ pub fn login(state: AppState, username: &str, password: &str, remember: bool) {
     let auth = eschool_api::auth::Auth::new();
     match auth.login_blocking(username, password) {
         Ok(token) => {
-            day::prefs::set(TOKEN_KEY, &token.access_token);
-            day::prefs::set(REFRESH_KEY, &token.refresh_token);
+            secure::save(TOKEN_KEY, &token.access_token);
+            secure::save(REFRESH_KEY, &token.refresh_token);
             if remember {
-                day::prefs::set(USERNAME_KEY, username);
-                day::prefs::set(PASSWORD_KEY, password);
-                day::prefs::set(REMEMBER_KEY, "true");
+                secure::save(USERNAME_KEY, username);
+                secure::save(PASSWORD_KEY, password);
+                secure::save(REMEMBER_KEY, "true");
             } else {
-                day::prefs::set(USERNAME_KEY, "");
-                day::prefs::set(PASSWORD_KEY, "");
-                day::prefs::set(REMEMBER_KEY, "false");
+                secure::delete(USERNAME_KEY);
+                secure::delete(PASSWORD_KEY);
+                secure::save(REMEMBER_KEY, "false");
             }
             state.is_authenticated.set(true);
             state.loading.set(false);
@@ -58,7 +49,7 @@ pub fn logout(state: AppState) {
         TOKEN_KEY, REFRESH_KEY, SCHOOL_ID_KEY, PROFILE_ID_KEY, CLASS_ID_KEY, FULL_NAME_KEY,
         SCHOOL_NAME_KEY, USERNAME_KEY, PASSWORD_KEY, REMEMBER_KEY,
     ] {
-        day::prefs::set(key, "");
+        secure::delete(key);
     }
     state.is_authenticated.set(false);
     state.remember_me.set(false);
@@ -72,25 +63,22 @@ pub fn logout(state: AppState) {
 }
 
 pub fn save_token(state: AppState, access: &str, refresh: &str) {
-    day::prefs::set(TOKEN_KEY, access);
-    day::prefs::set(REFRESH_KEY, refresh);
+    secure::save(TOKEN_KEY, access);
+    secure::save(REFRESH_KEY, refresh);
     state.is_authenticated.set(true);
     super::diary::load_all(state);
 }
 
 /// Try to refresh the token.
-/// 1. Try PUT /api/v1/auth/refresh
-/// 2. If refresh fails and credentials saved — try full re-login
 pub fn try_refresh_token() -> Option<String> {
     nslog::nslog("[Auth] Attempting token refresh...");
 
-    // Step 1: try refresh
-    if let Some(refresh_str) = day::prefs::get(REFRESH_KEY).filter(|r| !r.is_empty()) {
+    if let Some(refresh_str) = secure::load(REFRESH_KEY) {
         match eschool_api::auth::refresh_access_token(&refresh_str) {
             Ok((new_access, new_refresh)) => {
                 nslog::nslog("[Auth] Token refresh OK");
-                day::prefs::set(TOKEN_KEY, &new_access);
-                day::prefs::set(REFRESH_KEY, &new_refresh);
+                secure::save(TOKEN_KEY, &new_access);
+                secure::save(REFRESH_KEY, &new_refresh);
                 return Some(new_access);
             }
             Err(e) => {
@@ -99,20 +87,17 @@ pub fn try_refresh_token() -> Option<String> {
         }
     }
 
-    // Step 2: try re-login (only if credentials saved)
-    let has_credentials = day::prefs::get(REMEMBER_KEY).map(|v| v == "true").unwrap_or(false);
+    // Try re-login with stored credentials
+    let has_credentials = secure::load(REMEMBER_KEY).map(|v| v == "true").unwrap_or(false);
     if has_credentials {
-        if let (Some(username), Some(password)) = (
-            day::prefs::get(USERNAME_KEY).filter(|u| !u.is_empty()),
-            day::prefs::get(PASSWORD_KEY).filter(|p| !p.is_empty()),
-        ) {
+        if let (Some(username), Some(password)) = (secure::load(USERNAME_KEY), secure::load(PASSWORD_KEY)) {
             nslog::nslog("[Auth] Trying re-login with stored credentials...");
             let auth = eschool_api::auth::Auth::new();
             match auth.login_blocking(&username, &password) {
                 Ok(token) => {
                     nslog::nslog("[Auth] Re-login OK");
-                    day::prefs::set(TOKEN_KEY, &token.access_token);
-                    day::prefs::set(REFRESH_KEY, &token.refresh_token);
+                    secure::save(TOKEN_KEY, &token.access_token);
+                    secure::save(REFRESH_KEY, &token.refresh_token);
                     return Some(token.access_token);
                 }
                 Err(e) => {
@@ -127,14 +112,14 @@ pub fn try_refresh_token() -> Option<String> {
 }
 
 pub fn get_token() -> Option<String> {
-    day::prefs::get(TOKEN_KEY).filter(|t| !t.is_empty())
+    secure::load(TOKEN_KEY)
 }
 
 pub fn get_stored_ids() -> (String, String, String) {
     (
-        day::prefs::get(SCHOOL_ID_KEY).unwrap_or_default(),
-        day::prefs::get(CLASS_ID_KEY).unwrap_or_default(),
-        day::prefs::get(PROFILE_ID_KEY).unwrap_or_default(),
+        secure::load(SCHOOL_ID_KEY).unwrap_or_default(),
+        secure::load(CLASS_ID_KEY).unwrap_or_default(),
+        secure::load(PROFILE_ID_KEY).unwrap_or_default(),
     )
 }
 
@@ -145,25 +130,21 @@ pub fn store_ids(
     full_name: &str,
     school_name: &str,
 ) {
-    day::prefs::set(SCHOOL_ID_KEY, school_id);
-    day::prefs::set(CLASS_ID_KEY, class_id);
-    day::prefs::set(PROFILE_ID_KEY, profile_id);
-    day::prefs::set(FULL_NAME_KEY, full_name);
-    day::prefs::set(SCHOOL_NAME_KEY, school_name);
+    secure::save(SCHOOL_ID_KEY, school_id);
+    secure::save(CLASS_ID_KEY, class_id);
+    secure::save(PROFILE_ID_KEY, profile_id);
+    secure::save(FULL_NAME_KEY, full_name);
+    secure::save(SCHOOL_NAME_KEY, school_name);
 }
 
 /// Start background token refresh — every 55 minutes.
-/// Spawns a thread that calls try_refresh_token().
 pub fn start_background_refresh() {
     std::thread::spawn(|| {
         nslog::nslog("[Auth] Background refresh started (55 min interval)");
         loop {
             std::thread::sleep(std::time::Duration::from_secs(55 * 60));
 
-            let has_token = day::prefs::get(TOKEN_KEY)
-                .map(|t| !t.is_empty())
-                .unwrap_or(false);
-            if !has_token {
+            if secure::load(TOKEN_KEY).is_none() {
                 nslog::nslog("[Auth] Background refresh: no token, stopping");
                 break;
             }

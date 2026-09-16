@@ -30,9 +30,7 @@ pub fn root() -> impl Piece {
     day::register_new_window(|| window_shell(false));
 
     // Start background token refresh if authenticated
-    let has_token = day::prefs::get("auth.token")
-        .map(|t| !t.is_empty())
-        .unwrap_or(false);
+    let has_token = crate::shared::secure::load("auth.token").is_some();
     if has_token {
         crate::features::auth::start_background_refresh();
         crate::features::grade_checker::start_grade_checker();

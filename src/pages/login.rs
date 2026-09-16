@@ -22,7 +22,7 @@ pub fn render() -> impl Piece {
 }
 
 fn profile_view(state: AppState) -> impl Piece {
-    let remember = day::prefs::get("auth.remember_me")
+    let remember = crate::shared::secure::load("auth.remember_me")
         .map(|v| v == "true")
         .unwrap_or(false);
 

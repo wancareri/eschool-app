@@ -151,10 +151,10 @@ fn fallback_class_id(
             state.is_graduating.set(c.graduating.unwrap_or(false));
             id
         } else {
-            day::prefs::get("auth.class_id").unwrap_or_default()
+            crate::shared::secure::load("auth.class_id").unwrap_or_default()
         }
     } else {
-        day::prefs::get("auth.class_id").unwrap_or_default()
+        crate::shared::secure::load("auth.class_id").unwrap_or_default()
     }
 }
 

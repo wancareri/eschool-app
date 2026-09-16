@@ -2,7 +2,7 @@
 
 use day::prelude::*;
 use eschool_api::entities::*;
-use crate::shared::nslog;
+use crate::shared::{nslog, secure};
 
 /// An official mark set by a teacher.
 #[derive(Debug, Clone)]
@@ -67,11 +67,9 @@ pub struct AppState {
 impl Ambient for AppState {
     fn create() -> Self {
         nslog::nslog("[App] AppState::create()");
-        let has_token = day::prefs::get(TOKEN_KEY)
-            .map(|t| !t.is_empty())
-            .unwrap_or(false);
+        let has_token = secure::load(TOKEN_KEY).is_some();
 
-        let remember = day::prefs::get("auth.remember_me")
+        let remember = secure::load("auth.remember_me")
             .map(|v| v == "true")
             .unwrap_or(false);
 
@@ -84,8 +82,8 @@ impl Ambient for AppState {
             loading: Signal::new(false),
             error_msg: Signal::new(String::new()),
             remember_me: Signal::new(remember),
-            full_name: Signal::new(day::prefs::get(FULL_NAME_KEY).unwrap_or_default()),
-            school_name: Signal::new(day::prefs::get(SCHOOL_NAME_KEY).unwrap_or_default()),
+            full_name: Signal::new(secure::load(FULL_NAME_KEY).unwrap_or_default()),
+            school_name: Signal::new(secure::load(SCHOOL_NAME_KEY).unwrap_or_default()),
             class_label: Signal::new(String::new()),
             is_graduating: Signal::new(false),
             accent_color: Signal::new(accent),
