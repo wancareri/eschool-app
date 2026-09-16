@@ -49,7 +49,7 @@ regex = "1"
 [target.'cfg(target_os = "ios")'.dependencies]
 block2 = "0.6"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSDictionary"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSDictionary", "NSUserDefaults"] }
 objc2-core-foundation = { version = "0.3", features = ["CFCGTypes"] }
 objc2-core-graphics = { version = "0.3", features = [] }
 dispatch2 = "0.3"

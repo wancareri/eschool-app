@@ -256,6 +256,7 @@ pub fn load_week(state: AppState, new_index: i32) {
                 match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                     Ok(lessons) => {
                         state.lessons.set(lessons);
+                        crate::shared::widget::update_widget_data(state);
                     }
                     Err(e) => {
                         nslog::nslog(&format!("[Diary] load_week parse failed: {e}"));
