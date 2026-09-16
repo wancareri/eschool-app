@@ -6,21 +6,21 @@ use crate::app::AppState;
 pub fn update_widget_data(_state: AppState) {
     #[cfg(target_os = "ios")]
     {
+        use objc2::AnyThread;
         use crate::shared::nslog;
-        use eschool_api::entities::*;
 
         let lessons = _state.lessons.get();
         let bell_times = _state.bell_times.get();
 
         // Build lesson data for widget
         let today = day_piece_datetime::DayDate::today();
-        let today_str = today.to_string();
+        let today_epoch = today.to_epoch_days() as u64;
 
         let widget_lessons: Vec<WidgetLesson> = lessons.iter()
-            .filter(|d| d.date == today_str)
+            .filter(|d| d.date == today_epoch)
             .flat_map(|d| {
-                d.lessons.iter().filter_map(|slot| {
-                    let subject = slot.subject.as_ref()?;
+                d.slots.iter().filter_map(|slot| {
+                    let subject = if slot.subject.is_empty() { None } else { Some(&slot.subject) }?;
                     let time = bell_times.get(slot.number as usize - 1)
                         .map(|b| b.time_start.clone())
                         .unwrap_or_default();
@@ -38,13 +38,15 @@ pub fn update_widget_data(_state: AppState) {
         // Serialize to JSON
         if let Ok(json) = serde_json::to_string(&widget_lessons) {
             unsafe {
-                let suite_name = objc2_foundation::NSString::from_str("group.by.eschool.app.shared");
-                let defaults = objc2_foundation::NSUserDefaults::alloc()
-                    .initWithSuiteName(&suite_name);
+                use objc2_foundation::{NSString, NSUserDefaults};
 
-                let key = objc2_foundation::NSString::from_str("widget.schedule");
-                let value = objc2_foundation::NSString::from_str(&json);
-                defaults.setObjectForKey(Some(&value), Some(&key));
+                let suite_name = NSString::from_str("group.by.eschool.app.shared");
+                let defaults = NSUserDefaults::alloc()
+                    .initWithSuiteName(Some(&suite_name));
+
+                let key = NSString::from_str("widget.schedule");
+                let value = NSString::from_str(&json);
+                defaults.setObjectForKey(Some(&*value), Some(&*key));
 
                 nslog::nslog(&format!("[Widget] Updated schedule: {} lessons", widget_lessons.len()));
             }
