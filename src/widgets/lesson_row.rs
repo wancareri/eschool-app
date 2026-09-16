@@ -3,13 +3,16 @@ use eschool_api::entities::*;
 use crate::shared::{colors, utils};
 use day::prelude::*;
 
+const NUM_WIDTH: f64 = 28.0;
+const HW_LEFT: f64 = 16.0 + NUM_WIDTH + 12.0;
+
 pub fn render(state: AppState, date: u64, number: u32) -> impl Piece {
     column((
         row((
             label(number.to_string())
                 .font(Font::Caption)
                 .color(colors::WHITE)
-                .align(TextAlign::Center),
+                .frame(NUM_WIDTH, 20.0),
             column((
                 label(move || find_field(state, date, number, |s| s.subject_title.clone()))
                     .font(Font::Body),
@@ -43,16 +46,16 @@ pub fn render(state: AppState, date: u64, number: u32) -> impl Piece {
         .spacing(12.0)
         .padding(Insets { top: 8.0, leading: 16.0, bottom: 0.0, trailing: 20.0 }),
         when(
-            move || find_field_bool(state, date, number, |s| s.homework.is_some()),
+            move || find_field_bool(state, date, number, |s| {
+                s.homework.as_ref().map_or(false, |h| !h.is_empty())
+            }),
             move || {
-                row((
-                    label(move || find_field(state, date, number, |s| {
-                        s.homework.clone().unwrap_or_default()
-                    }))
-                    .font(Font::Caption)
-                    .color(colors::ACCENT),
-                ))
-                .padding(Insets { top: 4.0, leading: 40.0, bottom: 4.0, trailing: 20.0 })
+                label(move || find_field(state, date, number, |s| {
+                    s.homework.clone().unwrap_or_default()
+                }))
+                .font(Font::Caption)
+                .color(colors::ACCENT)
+                .padding(Insets { top: 4.0, leading: HW_LEFT, bottom: 8.0, trailing: 20.0 })
             },
         ),
     ))

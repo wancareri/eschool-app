@@ -212,7 +212,9 @@ fn week_header(state: AppState) -> impl Piece {
             if idx > 0 { features::diary::load_week(state, idx - 1); }
         }).id("wk-prev"),
         label(move || state.current_week.get())
-            .font(Font::Headline).grow().align(TextAlign::Center),
+            .font(Font::Headline)
+            .align(TextAlign::Center)
+            .grow(),
         button(">").action(move || {
             let idx = state.current_week_index.get();
             let total = state.all_weeks.get().len() as i32;

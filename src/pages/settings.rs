@@ -1,7 +1,7 @@
 use crate::app::AppState;
 use crate::features;
 use crate::res;
-use crate::shared::{colors, nslog};
+use crate::shared::{biometric, colors, nslog};
 use day::prelude::*;
 use day_piece_texteditor::text_editor;
 
@@ -23,6 +23,8 @@ pub fn render() -> impl Piece {
         ),
 
         appearance_section(state),
+
+        biometric_section(state),
 
         system_settings(),
 
@@ -95,6 +97,37 @@ fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
         colors::set_accent(hex);
         state.accent_color.set(hex);
     })
+}
+
+fn biometric_section(_state: AppState) -> impl Piece {
+    let available = biometric::is_available();
+    let enabled = Signal::new(biometric::is_enabled());
+
+    form((
+        section(
+            (
+                when(
+                    move || available,
+                    move || {
+                        row((
+                            label("Вход по Face ID / Touch ID")
+                                .font(Font::Body)
+                                .grow(),
+                            toggle(enabled),
+                        ))
+                        .spacing(8.0)
+                    },
+                ),
+                when(
+                    move || !available,
+                    || label("Биометрия не поддерживается")
+                        .font(Font::Body)
+                        .secondary(),
+                ),
+            )
+        ).title("Безопасность"),
+    ))
+    .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
 fn logout_section(state: AppState) -> impl Piece {
