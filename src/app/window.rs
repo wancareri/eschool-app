@@ -52,35 +52,29 @@ fn build_nav(primary: bool) -> impl Piece {
     let section = Signal::new(crate::Section::Diary);
 
     column((
+        // Not authenticated → show login
         when(
             move || !state.is_authenticated.get(),
             move || pages::login::render().any(),
         ),
-        // Loading overlay while load_all is running
+        // Authenticated → always show nav (even while loading)
         when(
-            move || state.is_authenticated.get() && state.loading.get(),
-            move || row((
-                spacer().grow(),
-                spinner(),
-                label("  Загрузка данных…").font(Font::Body).secondary(),
-                spacer().grow(),
-            ))
-            .padding(Insets { top: 40.0, leading: 20.0, bottom: 20.0, trailing: 20.0 })
-            .grow(),
-        ),
-        when(
-            move || state.is_authenticated.get() && !state.loading.get() && {
-                // Track accent_color to trigger nav rebuild when it changes
+            move || state.is_authenticated.get() && {
                 let _ = state.accent_color.get();
                 true
             },
             move || {
                 let accent = Color::hex(state.accent_color.get());
-                // Apply iOS global tint via UIAppearance proxies
                 #[cfg(target_os = "ios")]
                 crate::shared::colors::apply_ios_tint(state.accent_color.get());
                 let sel = nav(section)
-                    .title(res::str::app_title())
+                    .title(move || {
+                        if state.loading.get() {
+                            format!("{}  ⏳", res::str::app_title().format())
+                        } else {
+                            res::str::app_title().format()
+                        }
+                    })
                     .sidebar_toggle(true)
                     .item_icon(
                         crate::Section::Diary,

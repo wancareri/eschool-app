@@ -42,10 +42,17 @@ pub fn render() -> impl Piece {
             )).grow(),
         ),
 
-        // Inline spinner — shows alongside content, not blocking
+        // Initial load_all spinner — shown on top of content
+        when(
+            move || state.is_authenticated.get() && state.loading.get() && state.lessons.get().is_empty(),
+            || row((spacer().grow(), spinner(), label("  Загрузка данных…").font(Font::Caption).secondary(), spacer().grow()))
+                .padding(Insets { top: 24.0, leading: PAD, bottom: 24.0, trailing: PAD }),
+        ),
+
+        // Quarter/year marks loading spinner
         when(
             move || state.is_authenticated.get() && state.marks_loading.get(),
-            || row((spacer().grow(), spinner(), label("  Загрузка…").font(Font::Caption).secondary(), spacer().grow()))
+            || row((spacer().grow(), spinner(), label("  Загрузка оценок…").font(Font::Caption).secondary(), spacer().grow()))
                 .padding(Insets { top: 8.0, leading: PAD, bottom: 8.0, trailing: PAD }),
         ),
 
@@ -164,13 +171,14 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
 
 fn week_view(state: AppState) -> impl Piece {
     column((
+        // Show spinner during week loading (alongside existing content)
         when(
-            move || state.lessons_loading.get() && state.lessons.get().is_empty(),
+            move || state.lessons_loading.get(),
             || row((spacer().grow(), spinner(), label("  Загрузка…").font(Font::Caption).secondary(), spacer().grow()))
-                .padding(Insets { top: 24.0, ..Default::default() }),
+                .padding(Insets { top: 8.0, leading: PAD, bottom: 8.0, trailing: PAD }),
         ),
         when(
-            move || !state.lessons.get().is_empty(),
+            move || !state.lessons.get().is_empty() || !state.lessons_loading.get(),
             move || {
                 column((
                     week_header(state),
