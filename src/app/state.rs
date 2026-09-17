@@ -77,8 +77,13 @@ impl Ambient for AppState {
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(crate::shared::colors::DEFAULT_ACCENT);
 
+        let biometric_lock = has_token
+            && crate::shared::biometric::is_available()
+            && crate::shared::biometric::is_enabled();
+
         let state = Self {
-            is_authenticated: Signal::new(has_token),
+            // If biometric lock is active, start unauthenticated (Face ID will unlock)
+            is_authenticated: Signal::new(has_token && !biometric_lock),
             loading: Signal::new(false),
             error_msg: Signal::new(String::new()),
             remember_me: Signal::new(remember),
@@ -109,8 +114,10 @@ impl Ambient for AppState {
             log_version: Signal::new(0u64),
         };
 
-        if has_token {
+        if has_token && !biometric_lock {
             crate::features::diary::load_all(state);
+        } else if biometric_lock {
+            nslog::nslog("[App] Biometric lock active, waiting for Face ID");
         }
         state
     }

@@ -191,35 +191,19 @@ fn auth_form(state: AppState) -> impl Piece {
                     label("или").font(Font::Caption).secondary().align(TextAlign::Center),
                     button("Войти по Face ID / Touch ID")
                         .action(move || {
-                            if state.loading.get() { return; } // debounce
+                            if state.loading.get() { return; }
                             BIOMETRIC_FAILED.store(false, Ordering::Relaxed);
-                            state.loading.set(true);
-                            state.error_msg.set(String::new());
-                            // authenticate() must be called from main thread for Face ID UI
-                            // but it blocks waiting for reply. Use std::thread + on_main for result.
+                            // Face ID just verifies identity — token is already stored
                             std::thread::spawn(move || {
                                 let ok = biometric::authenticate();
                                 if ok {
-                                    // Login with stored credentials
-                                    if let (Some(u), Some(p)) = (
-                                        crate::shared::secure::load("auth.username"),
-                                        crate::shared::secure::load("auth.password"),
-                                    ) {
-                                        let state_back = AppState::ambient();
-                                        features::auth::login(state_back, &u, &p, true);
-                                    } else {
-                                        day::reactive::on_main(|| {
-                                            let s = AppState::ambient();
-                                            s.loading.set(false);
-                                            s.error_msg.set("Нет сохранённых учётных данных".into());
-                                        });
-                                    }
-                                } else {
-                                    BIOMETRIC_FAILED.store(true, Ordering::Relaxed);
+                                    // Token exists, just unlock the app
                                     day::reactive::on_main(|| {
                                         let s = AppState::ambient();
-                                        s.loading.set(false);
+                                        s.is_authenticated.set(true);
                                     });
+                                } else {
+                                    BIOMETRIC_FAILED.store(true, Ordering::Relaxed);
                                 }
                             });
                         })

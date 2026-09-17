@@ -48,13 +48,34 @@ fn window_shell(primary: bool) -> impl Piece {
         // Reactive: trigger load_all when is_authenticated transitions to true
         day::reactive::watch(
             move || state.is_authenticated.get(),
-            move |&_auth, old| {
-                if _auth && old != Some(&true) {
+            move |&auth, old| {
+                if auth && old != Some(&true) {
                     nslog::nslog("[App] is_authenticated changed true, triggering load_all");
                     crate::features::diary::load_all(state);
                 }
             },
         );
+
+        // Biometric lock: if token exists + biometric enabled, prompt Face ID on startup
+        if !state.is_authenticated.get()
+            && crate::shared::secure::load("auth.token").is_some()
+            && crate::shared::biometric::is_available()
+            && crate::shared::biometric::is_enabled()
+        {
+            nslog::nslog("[App] Biometric lock: prompting Face ID on startup");
+            std::thread::spawn(move || {
+                let ok = crate::shared::biometric::authenticate();
+                if ok {
+                    nslog::nslog("[App] Biometric lock: Face ID success");
+                    day::reactive::on_main(|| {
+                        let s = crate::app::AppState::ambient();
+                        s.is_authenticated.set(true);
+                    });
+                } else {
+                    nslog::nslog("[App] Biometric lock: Face ID failed");
+                }
+            });
+        }
 
         build_nav(primary)
     })
