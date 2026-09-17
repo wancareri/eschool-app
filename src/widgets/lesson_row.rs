@@ -55,7 +55,23 @@ pub fn render(state: AppState, date: u64, number: u32) -> impl Piece {
                 }))
                 .font(Font::Caption)
                 .color(colors::ACCENT)
-                .padding(Insets { top: 4.0, leading: HW_LEFT, bottom: 8.0, trailing: 20.0 })
+                .padding(Insets { top: 4.0, leading: HW_LEFT, bottom: 4.0, trailing: 20.0 })
+            },
+        ),
+        when(
+            move || find_field_bool(state, date, number, |s| {
+                s.message.as_ref().map_or(false, |m| !m.is_empty())
+            }),
+            move || {
+                label(move || {
+                    let msg = find_field(state, date, number, |s| {
+                        s.message.clone().unwrap_or_default()
+                    });
+                    format!("ℹ {msg}")
+                })
+                .font(Font::Caption)
+                .color(colors::SECONDARY)
+                .padding(Insets { top: 2.0, leading: HW_LEFT, bottom: 8.0, trailing: 20.0 })
             },
         ),
     ))

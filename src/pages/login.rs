@@ -3,6 +3,9 @@ use crate::features;
 use crate::shared::{biometric, colors};
 use crate::res;
 use day::prelude::*;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static BIOMETRIC_FAILED: AtomicBool = AtomicBool::new(false);
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
@@ -184,25 +187,29 @@ fn auth_form(state: AppState) -> impl Piece {
                 crate::shared::secure::load("auth.token").is_some()
             },
             move || {
-                let error_biometric = Signal::new(String::new());
                 column((
                     label("или").font(Font::Caption).secondary().align(TextAlign::Center),
                     button("Войти по Face ID / Touch ID")
                         .action(move || {
-                            error_biometric.set(String::new());
-                            if biometric::authenticate() {
-                                // Token already stored, just authenticate
-                                state.is_authenticated.set(true);
-                                features::diary::load_all(state);
-                            } else {
-                                error_biometric.set("Биометрия не прошла".into());
-                            }
+                            BIOMETRIC_FAILED.store(false, Ordering::Relaxed);
+                            std::thread::spawn(move || {
+                                let ok = biometric::authenticate();
+                                day::reactive::on_main(move || {
+                                    if ok {
+                                        let s = AppState::ambient();
+                                        s.is_authenticated.set(true);
+                                        features::diary::load_all(s);
+                                    } else {
+                                        BIOMETRIC_FAILED.store(true, Ordering::Relaxed);
+                                    }
+                                });
+                            });
                         })
                         .id("biometric-btn")
                         .padding(Insets { top: 0.0, leading: 20.0, bottom: 0.0, trailing: 20.0 }),
                     when(
-                        move || !error_biometric.get().is_empty(),
-                        move || label(error_biometric.get())
+                        move || BIOMETRIC_FAILED.load(Ordering::Relaxed),
+                        || label("Биометрия не прошла")
                             .font(Font::Caption)
                             .color(colors::ERROR)
                             .align(TextAlign::Center),

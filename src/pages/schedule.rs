@@ -2,7 +2,6 @@ use crate::app::AppState;
 use crate::features;
 use eschool_api::entities::*;
 use crate::shared::utils;
-use crate::widgets;
 use crate::res;
 use day::prelude::*;
 use day_piece_pullrefresh::pull_to_refresh;
@@ -18,7 +17,7 @@ pub fn render() -> impl Piece {
             label(move || res::str::schedule_title().format())
                 .font(Font::LargeTitle)
                 .align(TextAlign::Center),
-            label("Расписание звонков и уроков")
+            label("Расписание уроков")
                 .font(Font::Subheadline)
                 .secondary()
                 .align(TextAlign::Center),
@@ -65,37 +64,12 @@ pub fn render() -> impl Piece {
 fn schedule_content(state: AppState) -> impl Piece {
     column((
         when(
-            move || !state.bell_times.get().is_empty(),
-            move || bell_section(state),
-        ),
-        when(
             move || !state.timetable_days.get().is_empty(),
             move || timetable_section(state),
         ),
     ))
     .spacing(0.0)
     .grow()
-}
-
-fn bell_section(state: AppState) -> impl Piece {
-    column((
-        label("Звонки")
-            .font(Font::Title3)
-            .color(move || Color::hex(state.accent_color.get()))
-            .padding(Insets { top: 8.0, leading: PAD, bottom: 8.0, trailing: PAD }),
-        each(
-            items(
-                move || state.bell_times.get(),
-                |b: &BellTime| b.number,
-            ),
-            move |slot| {
-                let num = slot.key();
-                widgets::bell_row::render(state, num).any()
-            },
-        ),
-    ))
-    .spacing(0.0)
-    .padding(Insets { top: 0.0, leading: 0.0, bottom: 20.0, trailing: 0.0 })
 }
 
 fn timetable_section(state: AppState) -> impl Piece {

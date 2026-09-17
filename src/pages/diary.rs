@@ -71,11 +71,9 @@ pub fn render() -> impl Piece {
     .grow()))
     .on_refresh(move || {
         let state = AppState::ambient();
-        let done = refreshing.setter();
         if state.is_authenticated.get() {
             features::diary::load_all(state);
         }
-        done.set(false);
     })
     .grow()
 }
@@ -137,7 +135,6 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
     let s1 = state;
     let s2 = state;
     let s3 = state;
-    let s4 = state;
     row((
         button(move || {
             if !show_summary.get() { "● Недели" } else { "○ Недели" }
@@ -157,19 +154,8 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
         
         .action(move || {
             show_summary.set(true);
-            // Show existing per-quarter data immediately
             let q = s3.current_quarter.get();
-            let q_all = s3.quarter_all_marks.get();
-            if let Some(marks) = q_all.get(q) {
-                if !marks.is_empty() {
-                    s3.quarter_marks.set(marks.clone());
-                    let q_off = s3.quarter_official_marks.get();
-                    if let Some(off) = q_off.get(q) {
-                        s3.official_marks.set(off.clone());
-                    }
-                }
-            }
-            if s3.quarter_marks.get().is_empty() { features::diary::load_quarter(s4, q); }
+            features::diary::load_quarter(s3, q);
         })
         .id("sub-summary"),
     ))
@@ -214,7 +200,7 @@ fn week_header(state: AppState) -> impl Piece {
         label(move || strip_week_summary(&state.current_week.get()))
             .font(Font::Headline)
             .align(TextAlign::Center)
-            .grow(),
+            .frame(240.0, 24.0),
         button(">").action(move || {
             let idx = state.current_week_index.get();
             let total = state.all_weeks.get().len() as i32;
