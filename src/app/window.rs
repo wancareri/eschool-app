@@ -42,8 +42,20 @@ pub fn root() -> impl Piece {
 }
 
 fn window_shell(primary: bool) -> impl Piece {
-    AppState::scoped(move |_state| {
+    AppState::scoped(move |state| {
         day::window_title(move || res::str::app_title().format());
+
+        // Reactive: trigger load_all when is_authenticated transitions to true
+        day::reactive::watch(
+            move || state.is_authenticated.get(),
+            move |&_auth, old| {
+                if _auth && old != Some(&true) {
+                    nslog::nslog("[App] is_authenticated changed true, triggering load_all");
+                    crate::features::diary::load_all(state);
+                }
+            },
+        );
+
         build_nav(primary)
     })
 }

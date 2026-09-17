@@ -42,14 +42,11 @@ pub fn login(state: AppState, username: &str, password: &str, remember: bool) {
                     secure::delete(PASSWORD_KEY);
                     secure::save(REMEMBER_KEY, "false");
                 }
-                set_authenticated.set(true);
                 set_loading.set(false);
-                nslog::nslog("[Auth] Login OK, triggering load_all...");
-                day::reactive::on_main(|| {
-                    use day::prelude::Ambient;
-                    let s = crate::app::AppState::ambient();
-                    super::diary::load_all(s);
-                });
+                nslog::nslog("[Auth] Login OK, setting is_authenticated=true");
+                // Set is_authenticated LAST — triggers the reactive watch in window_shell
+                // which will call load_all.
+                set_authenticated.set(true);
             }
             Err(e) => {
                 set_error.set(format!("Ошибка входа: {e}"));
@@ -73,11 +70,17 @@ pub fn logout(state: AppState) {
 }
 
 pub fn logout_keys() {
+    // If biometric is enabled, preserve username/password for biometric re-login
+    let keep_creds = crate::shared::biometric::is_enabled();
     for key in [
         TOKEN_KEY, REFRESH_KEY, SCHOOL_ID_KEY, PROFILE_ID_KEY, CLASS_ID_KEY, FULL_NAME_KEY,
-        SCHOOL_NAME_KEY, USERNAME_KEY, PASSWORD_KEY, REMEMBER_KEY,
+        SCHOOL_NAME_KEY, REMEMBER_KEY,
     ] {
         secure::delete(key);
+    }
+    if !keep_creds {
+        secure::delete(USERNAME_KEY);
+        secure::delete(PASSWORD_KEY);
     }
 }
 
@@ -132,6 +135,10 @@ pub fn try_refresh_token() -> Option<String> {
 
 pub fn get_token() -> Option<String> {
     secure::load(TOKEN_KEY)
+}
+
+pub fn has_stored_credentials() -> bool {
+    secure::load(USERNAME_KEY).is_some() && secure::load(PASSWORD_KEY).is_some()
 }
 
 pub fn get_stored_ids() -> (String, String, String) {

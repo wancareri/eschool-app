@@ -162,6 +162,7 @@ fn auth_form(state: AppState) -> impl Piece {
         })
         
         .action(move || {
+            if state.loading.get() { return; } // debounce
             let u = username.get_untracked();
             let p = password.get_untracked();
             let r = remember.get_untracked();
@@ -176,33 +177,50 @@ fn auth_form(state: AppState) -> impl Piece {
             error_local.set(String::new());
             logging_in.set(true);
             features::auth::login(state, &u, &p, r);
-            logging_in.set(false);
         })
         .id("login-btn")
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 0.0, trailing: 20.0 }),
 
-        // Biometric login button
+        // Biometric login button — show when biometric enabled + stored credentials exist
         when(
             move || biometric::is_available() && biometric::is_enabled() && {
-                crate::shared::secure::load("auth.token").is_some()
+                features::auth::has_stored_credentials()
             },
             move || {
                 column((
                     label("или").font(Font::Caption).secondary().align(TextAlign::Center),
                     button("Войти по Face ID / Touch ID")
                         .action(move || {
+                            if state.loading.get() { return; } // debounce
                             BIOMETRIC_FAILED.store(false, Ordering::Relaxed);
+                            state.loading.set(true);
+                            state.error_msg.set(String::new());
+                            // authenticate() must be called from main thread for Face ID UI
+                            // but it blocks waiting for reply. Use std::thread + on_main for result.
                             std::thread::spawn(move || {
                                 let ok = biometric::authenticate();
-                                day::reactive::on_main(move || {
-                                    if ok {
-                                        let s = AppState::ambient();
-                                        s.is_authenticated.set(true);
-                                        features::diary::load_all(s);
+                                if ok {
+                                    // Login with stored credentials
+                                    if let (Some(u), Some(p)) = (
+                                        crate::shared::secure::load("auth.username"),
+                                        crate::shared::secure::load("auth.password"),
+                                    ) {
+                                        let state_back = AppState::ambient();
+                                        features::auth::login(state_back, &u, &p, true);
                                     } else {
-                                        BIOMETRIC_FAILED.store(true, Ordering::Relaxed);
+                                        day::reactive::on_main(|| {
+                                            let s = AppState::ambient();
+                                            s.loading.set(false);
+                                            s.error_msg.set("Нет сохранённых учётных данных".into());
+                                        });
                                     }
-                                });
+                                } else {
+                                    BIOMETRIC_FAILED.store(true, Ordering::Relaxed);
+                                    day::reactive::on_main(|| {
+                                        let s = AppState::ambient();
+                                        s.loading.set(false);
+                                    });
+                                }
                             });
                         })
                         .id("biometric-btn")
