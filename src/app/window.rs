@@ -63,18 +63,7 @@ fn window_shell(primary: bool) -> impl Piece {
             && crate::shared::biometric::is_enabled()
         {
             nslog::nslog("[App] Biometric lock: prompting Face ID on startup");
-            std::thread::spawn(move || {
-                let ok = crate::shared::biometric::authenticate();
-                if ok {
-                    nslog::nslog("[App] Biometric lock: Face ID success");
-                    day::reactive::on_main(|| {
-                        let s = crate::app::AppState::ambient();
-                        s.is_authenticated.set(true);
-                    });
-                } else {
-                    nslog::nslog("[App] Biometric lock: Face ID failed");
-                }
-            });
+            crate::shared::biometric::authenticate_async();
         }
 
         build_nav(primary)

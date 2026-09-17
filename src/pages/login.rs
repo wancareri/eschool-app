@@ -194,18 +194,8 @@ fn auth_form(state: AppState) -> impl Piece {
                             if state.loading.get() { return; }
                             BIOMETRIC_FAILED.store(false, Ordering::Relaxed);
                             // Face ID just verifies identity — token is already stored
-                            std::thread::spawn(move || {
-                                let ok = biometric::authenticate();
-                                if ok {
-                                    // Token exists, just unlock the app
-                                    day::reactive::on_main(|| {
-                                        let s = AppState::ambient();
-                                        s.is_authenticated.set(true);
-                                    });
-                                } else {
-                                    BIOMETRIC_FAILED.store(true, Ordering::Relaxed);
-                                }
-                            });
+                            // authenticate_async posts to main thread, non-blocking
+                            crate::shared::biometric::authenticate_async();
                         })
                         .id("biometric-btn")
                         .padding(Insets { top: 0.0, leading: 20.0, bottom: 0.0, trailing: 20.0 }),
