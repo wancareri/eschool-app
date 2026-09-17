@@ -179,12 +179,15 @@ fn dev_settings(state: AppState) -> impl Piece {
                 button("Обновить токен")
                     .action(move || {
                         nslog::nslog("[Dev] Manual token refresh...");
-                        let msg: String = match features::auth::try_refresh_token() {
-                            Some(_) => "Refresh OK".into(),
-                            None => "Refresh FAILED".into(),
-                        };
-                        nslog::nslog(&format!("[Dev] {msg}"));
-                        log_doc.set(StyledText::plain(nslog::get_logs()));
+                        let log_setter = log_doc.setter();
+                        std::thread::spawn(move || {
+                            let msg: String = match features::auth::try_refresh_token() {
+                                Some(_) => "Refresh OK".into(),
+                                None => "Refresh FAILED".into(),
+                            };
+                            nslog::nslog(&format!("[Dev] {msg}"));
+                            log_setter.set(StyledText::plain(nslog::get_logs()));
+                        });
                     }),
 
                 button("Очистить кэш")

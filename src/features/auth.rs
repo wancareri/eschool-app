@@ -16,32 +16,47 @@ const PASSWORD_KEY: &str = "auth.password";
 const REMEMBER_KEY: &str = "auth.remember_me";
 
 pub fn login(state: AppState, username: &str, password: &str, remember: bool) {
-    state.loading.set(true);
-    state.error_msg.set(String::new());
+    let set_loading = state.loading.setter();
+    let set_error = state.error_msg.setter();
+    let set_authenticated = state.is_authenticated.setter();
 
-    let auth = eschool_api::auth::Auth::new();
-    match auth.login_blocking(username, password) {
-        Ok(token) => {
-            secure::save(TOKEN_KEY, &token.access_token);
-            secure::save(REFRESH_KEY, &token.refresh_token);
-            if remember {
-                secure::save(USERNAME_KEY, username);
-                secure::save(PASSWORD_KEY, password);
-                secure::save(REMEMBER_KEY, "true");
-            } else {
-                secure::delete(USERNAME_KEY);
-                secure::delete(PASSWORD_KEY);
-                secure::save(REMEMBER_KEY, "false");
+    let u = username.to_string();
+    let p = password.to_string();
+    let r = remember;
+
+    set_loading.set(true);
+    set_error.set(String::new());
+
+    std::thread::spawn(move || {
+        let auth = eschool_api::auth::Auth::new();
+        match auth.login_blocking(&u, &p) {
+            Ok(token) => {
+                secure::save(TOKEN_KEY, &token.access_token);
+                secure::save(REFRESH_KEY, &token.refresh_token);
+                if r {
+                    secure::save(USERNAME_KEY, &u);
+                    secure::save(PASSWORD_KEY, &p);
+                    secure::save(REMEMBER_KEY, "true");
+                } else {
+                    secure::delete(USERNAME_KEY);
+                    secure::delete(PASSWORD_KEY);
+                    secure::save(REMEMBER_KEY, "false");
+                }
+                set_authenticated.set(true);
+                set_loading.set(false);
+                nslog::nslog("[Auth] Login OK, triggering load_all...");
+                day::reactive::on_main(|| {
+                    use day::prelude::Ambient;
+                    let s = crate::app::AppState::ambient();
+                    super::diary::load_all(s);
+                });
             }
-            state.is_authenticated.set(true);
-            state.loading.set(false);
-            super::diary::load_all(state);
+            Err(e) => {
+                set_error.set(format!("Ошибка входа: {e}"));
+                set_loading.set(false);
+            }
         }
-        Err(e) => {
-            state.error_msg.set(format!("Ошибка входа: {e}"));
-            state.loading.set(false);
-        }
-    }
+    });
 }
 
 pub fn logout(state: AppState) {
