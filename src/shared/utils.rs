@@ -17,11 +17,11 @@ pub fn weekday_name(dow: u32) -> &'static str {
     }
 }
 
-/// Render a timestamp (epoch millis) as "DD.MM".
+/// Render a timestamp (epoch millis) as "D.MM".
 pub fn format_date_short(ts: u64) -> String {
     let epoch_days = (ts / 86_400_000) as i64;
     let d = day_piece_datetime::DayDate::from_epoch_days(epoch_days);
-    format!("{:02}.{:02}", d.day, d.month)
+    format!("{}.{:02}", d.day, d.month)
 }
 
 /// Full header: "Понедельник, 07.09".

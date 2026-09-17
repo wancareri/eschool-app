@@ -211,7 +211,7 @@ fn week_header(state: AppState) -> impl Piece {
             let idx = state.current_week_index.get();
             if idx > 0 { features::diary::load_week(state, idx - 1); }
         }).id("wk-prev"),
-        label(move || state.current_week.get())
+        label(move || strip_week_summary(&state.current_week.get()))
             .font(Font::Headline)
             .align(TextAlign::Center)
             .grow(),
@@ -223,6 +223,35 @@ fn week_header(state: AppState) -> impl Piece {
     ))
     .spacing(12.0)
     .padding(Insets { top: 0.0, leading: 16.0, bottom: 6.0, trailing: 16.0 })
+}
+
+/// Strip leading zeros from week summary (e.g. "01 сентября" → "1 сентября")
+fn strip_week_summary(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let chars: Vec<char> = s.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+    while i < len {
+        if chars[i].is_ascii_digit() {
+            // Skip leading zeros in this number
+            let mut started = false;
+            while i < len && chars[i].is_ascii_digit() {
+                if chars[i] != '0' || started {
+                    started = true;
+                    result.push(chars[i]);
+                }
+                i += 1;
+            }
+            if !started {
+                // All zeros or single zero — keep one zero
+                result.push('0');
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    result
 }
 
 fn diary_list(state: AppState) -> impl Piece {
