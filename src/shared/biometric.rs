@@ -38,15 +38,14 @@ pub fn set_enabled(enabled: bool) {
     nslog::nslog(&format!("[Biometric] Set enabled: {enabled}"));
 }
 
-/// Trigger Face ID prompt. Non-blocking — posts to main thread.
-/// Result is delivered asynchronously via `on_main` which sets
-/// `is_authenticated` on success or `BIOMETRIC_OK` flag.
+/// Trigger Face ID prompt. Non-blocking — posts evaluatePolicy to main thread.
+/// Reply comes async on GCD queue, delivers result via on_main.
 pub fn authenticate_async() {
     #[cfg(target_os = "ios")]
     {
         nslog::nslog("[Biometric] authenticate_async: posting to main thread");
         day::reactive::on_main(|| {
-            nslog::nslog("[Biometric] authenticate_async: on_main executing");
+            nslog::nslog("[Biometric] on_main: creating LAContext");
             unsafe {
                 use objc2::runtime::Bool;
                 use objc2_local_authentication::{LAContext, LAPolicy};
@@ -54,28 +53,33 @@ pub fn authenticate_async() {
                 let ctx = LAContext::new();
                 let reason = objc2_foundation::NSString::from_str("Вход в приложение");
 
-                let block = block2::StackBlock::new(move |success: Bool, _error: *mut objc2_foundation::NSError| {
-                    let ok = success.as_bool();
-                    nslog::nslog(&format!("[Biometric] Reply block: success={ok}"));
-                    // Deliver result on main thread
-                    day::reactive::on_main(move || {
-                        nslog::nslog(&format!("[Biometric] Delivering result: {ok}"));
-                        BIOMETRIC_OK.store(ok, Ordering::Relaxed);
-                        if ok {
-                            use day::prelude::Ambient;
-                            let s = crate::app::AppState::ambient();
-                            s.is_authenticated.set(true);
-                        }
-                    });
-                });
+                // Box::leak keeps the block alive for the async reply.
+                // Without leaking, StackBlock would be dropped when this scope ends,
+                // but evaluatePolicy returns immediately and the reply comes later.
+                let block_ref: &block2::DynBlock<dyn Fn(Bool, *mut objc2_foundation::NSError)> =
+                    Box::leak(Box::new(block2::StackBlock::new(
+                        move |success: Bool, _error: *mut objc2_foundation::NSError| {
+                            let ok = success.as_bool();
+                            nslog::nslog(&format!("[Biometric] Reply: success={ok}"));
+                            day::reactive::on_main(move || {
+                                nslog::nslog(&format!("[Biometric] Delivering result: {ok}"));
+                                BIOMETRIC_OK.store(ok, Ordering::Relaxed);
+                                if ok {
+                                    use day::prelude::Ambient;
+                                    let s = crate::app::AppState::ambient();
+                                    s.is_authenticated.set(true);
+                                }
+                            });
+                        },
+                    )));
 
                 nslog::nslog("[Biometric] Calling evaluatePolicy...");
                 ctx.evaluatePolicy_localizedReason_reply(
                     LAPolicy::DeviceOwnerAuthenticationWithBiometrics,
                     &reason,
-                    &block,
+                    block_ref,
                 );
-                nslog::nslog("[Biometric] evaluatePolicy called, waiting for reply...");
+                nslog::nslog("[Biometric] evaluatePolicy returned");
             }
         });
     }
