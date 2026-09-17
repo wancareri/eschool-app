@@ -2,6 +2,10 @@
 //! iOS: Keychain (via `keyring` crate)
 //! Other platforms: `day::prefs` (plain text, fallback)
 
+use crate::shared::nslog;
+
+const SERVICE: &str = "by.eschool.app";
+
 /// Save a string to secure storage.
 pub fn save(key: &str, value: &str) {
     #[cfg(target_os = "ios")]
