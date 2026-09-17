@@ -3,7 +3,7 @@
 use crate::app::AppState;
 use crate::app::OfficialMark;
 use crate::features::auth;
-use eschool_api::client::async_client;
+use eschool_api::client::blocking;
 use eschool_api::client::endpoints;
 use eschool_api::entities::*;
 use crate::shared::nslog;
@@ -11,7 +11,7 @@ use crate::shared::nslog;
 /// Quarter ranges: weeks indices in all_weeks
 const QUARTER_RANGES: &[(usize, usize)] = &[(0, 9), (9, 18), (18, 27), (27, 36)];
 
-/// Load ALL school data asynchronously. Does NOT block the UI.
+/// Load ALL school data on a background thread. UI stays responsive.
 pub fn load_all(state: AppState) {
     nslog::nslog("[Diary] load_all starting");
     let token = match auth::get_token() {
@@ -23,49 +23,70 @@ pub fn load_all(state: AppState) {
     };
     nslog::nslog(&format!("[Diary] Token length: {}", token.len()));
 
-    state.loading.set(true);
-    state.error_msg.set(String::new());
+    let set_loading = state.loading.setter();
+    let set_error = state.error_msg.setter();
+    let set_full_name = state.full_name.setter();
+    let set_school_name = state.school_name.setter();
+    let set_class_label = state.class_label.setter();
+    let set_is_graduating = state.is_graduating.setter();
+    let set_all_weeks = state.all_weeks.setter();
+    let set_current_week_index = state.current_week_index.setter();
+    let set_current_week = state.current_week.setter();
+    let set_current_quarter = state.current_quarter.setter();
+    let set_bell_times = state.bell_times.setter();
+    let set_timetable_days = state.timetable_days.setter();
+    let set_subjects_teachers = state.subjects_teachers.setter();
+    let set_lessons = state.lessons.setter();
+    let set_quarter_all_marks = state.quarter_all_marks.setter();
+    let set_quarter_official_marks = state.quarter_official_marks.setter();
+    let set_lessons_loading = state.lessons_loading.setter();
+    let set_is_authenticated = state.is_authenticated.setter();
 
-    day::task(async move {
-        let mut client = async_client::build_client(&token);
+    set_loading.set(true);
+    set_error.set(String::new());
+
+    std::thread::spawn(move || {
+        let mut client = blocking::build_client(&token);
 
         // 1 — user info (with auto-refresh on 401)
         nslog::nslog("[Diary] Fetching /auth/me...");
-        let user = match async_client::api_get::<UserInfo>(&client, endpoints::AUTH_ME).await {
+        let user = match blocking::api_get::<UserInfo>(&client, endpoints::AUTH_ME) {
             Ok(u) => {
                 nslog::nslog(&format!("[Diary] Got user: {} ({})", u.full_name, u.school_name));
                 u
             }
             Err(e) if e.starts_with("HTTP 401") => {
-                nslog::nslog("[Diary] /auth/me returned 401, attempting token refresh...");
+                nslog::nslog("[Diary] /auth/me 401, refreshing...");
                 if let Some(refreshed) = auth::try_refresh_token() {
-                    client = async_client::build_client(&refreshed);
-                    match async_client::api_get::<UserInfo>(&client, endpoints::AUTH_ME).await {
+                    client = blocking::build_client(&refreshed);
+                    match blocking::api_get::<UserInfo>(&client, endpoints::AUTH_ME) {
                         Ok(u) => u,
                         Err(e) => {
-                            state.error_msg.set(format!("Auth error: {e}"));
-                            state.loading.set(false);
+                            set_error.set(format!("Auth error: {e}"));
+                            set_loading.set(false);
                             return;
                         }
                     }
                 } else {
-                    state.error_msg.set("Сессия истекла. Войдите снова.".into());
-                    state.loading.set(false);
-                    auth::logout(state);
+                    set_error.set("Сессия истекла. Войдите снова.".into());
+                    set_loading.set(false);
+                    // Inline logout using setters (AppState is !Send, can't move into thread)
+                    auth::logout_keys();
+                    set_is_authenticated.set(false);
                     return;
                 }
             }
             Err(e) => {
-                state.error_msg.set(format!("Auth error: {e}"));
-                state.loading.set(false);
+                set_error.set(format!("Auth error: {e}"));
+                set_loading.set(false);
                 return;
             }
         };
-        state.full_name.set(user.full_name.clone());
-        state.school_name.set(user.school_name.clone());
+        set_full_name.set(user.full_name.clone());
+        set_school_name.set(user.school_name.clone());
 
         // 2 — school year
-        let year = async_client::api_get::<SchoolYear>(&client, endpoints::SCHOOL_YEAR).await.ok();
+        let year = blocking::api_get::<SchoolYear>(&client, endpoints::SCHOOL_YEAR).ok();
         let school_period = year.as_ref().map(|y| y.uuid.clone());
 
         // 3 — classes
@@ -78,26 +99,26 @@ pub fn load_all(state: AppState) {
             "from": start_of_year,
             "to": end_of_year,
         });
-        let class_id = if let Ok(cbd) = async_client::api_post::<ClassesByDate>(
+        let class_id = if let Ok(cbd) = blocking::api_post::<ClassesByDate>(
             &client,
             &endpoints::classes(&user.school_id, &user.profile_id),
             &class_body,
-        ).await {
+        ) {
             if let Some(c) = cbd.classes.first() {
                 let id = c.uuid.clone();
-                state.class_label.set(format!("{}{}", c.level, c.label));
-                state.is_graduating.set(c.graduating.unwrap_or(false));
+                set_class_label.set(format!("{}{}", c.level, c.label));
+                set_is_graduating.set(c.graduating.unwrap_or(false));
                 id
             } else {
-                fallback_class_id(&client, &user.school_id, &user.profile_id, state).await
+                fallback_class_id(&client, &user.school_id, &user.profile_id)
             }
         } else {
-            fallback_class_id(&client, &user.school_id, &user.profile_id, state).await
+            fallback_class_id(&client, &user.school_id, &user.profile_id)
         };
 
         if class_id.is_empty() {
-            state.error_msg.set("Class not found — try opening diary.e-schools.by to sync".into());
-            state.loading.set(false);
+            set_error.set("Class not found — try opening diary.e-schools.by to sync".into());
+            set_loading.set(false);
             return;
         }
 
@@ -111,118 +132,103 @@ pub fn load_all(state: AppState) {
 
         // Initialize per-quarter storage
         {
-            let mut q_all = state.quarter_all_marks.get();
-            let mut q_off = state.quarter_official_marks.get();
+            let mut q_all: Vec<std::collections::HashMap<String, Vec<f64>>> = Vec::new();
+            let mut q_off: Vec<std::collections::HashMap<String, Vec<OfficialMark>>> = Vec::new();
             q_all.resize(4, std::collections::HashMap::new());
             q_off.resize(4, std::collections::HashMap::new());
-            state.quarter_all_marks.set(q_all);
-            state.quarter_official_marks.set(q_off);
+            set_quarter_all_marks.clone().set(q_all);
+            set_quarter_official_marks.clone().set(q_off);
         }
 
         // 4 — week activities → current week → lessons
-        load_weeks_and_current(state, &client, &user.school_id, &class_id, &user.profile_id).await;
+        nslog::nslog("[Diary] Loading week activities...");
+        set_lessons_loading.clone().set(true);
+        match blocking::api_get::<Vec<WeekActivity>>(&client, endpoints::WEEK_ACTIVITIES) {
+            Ok(weeks) => {
+                nslog::nslog(&format!("[Diary] Got {} weeks", weeks.len()));
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                let cur = weeks.iter().enumerate()
+                    .find(|(_, w)| w.start_ts <= now_ms && w.end_ts >= now_ms);
+
+                set_all_weeks.set(weeks.clone());
+
+                if let Some((idx, week)) = cur {
+                    let week_summary = week.summary.clone();
+                    set_current_week_index.set(idx as i32);
+                    set_current_week.set(week_summary);
+                    set_current_quarter.set(quarter_for_index(idx));
+
+                    // Load current week lessons
+                    let school_id = user.school_id.clone();
+                    let cid = class_id.clone();
+                    let pid = user.profile_id.clone();
+                    let week_uuid = week.uuid.clone();
+                    match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &cid, &pid, &week_uuid)) {
+                        Ok(raw) => {
+                            match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
+                                Ok(lessons) => { set_lessons.set(lessons); }
+                                Err(e) => nslog::nslog(&format!("[Diary] parse failed: {e}")),
+                            }
+                        }
+                        Err(e) => nslog::nslog(&format!("[Diary] lessons request failed: {e}")),
+                    }
+                }
+            }
+            Err(e) => nslog::nslog(&format!("[Diary] Week activities failed: {e}")),
+        }
+        set_lessons_loading.set(false);
 
         // 5 — bell schedule
-        load_bells(state, &client, &user.school_id).await;
+        nslog::nslog("[Diary] Loading bells...");
+        if let Ok(bells) = blocking::api_get::<Vec<BellSchedule>>(&client, &endpoints::bells(&user.school_id)) {
+            if let Some(schedule) = bells.first() {
+                if let Some(day) = schedule.days_of_week.first() {
+                    set_bell_times.set(day.time_of_bells.clone());
+                }
+            }
+        }
 
         // 6 — timetable
-        load_timetable(state, &client, &user.school_id, &class_id).await;
+        if let Ok(tables) = blocking::api_get::<Vec<Timetable>>(&client, &endpoints::timetable(&user.school_id, &class_id)) {
+            if let Some(t) = tables.first() {
+                set_timetable_days.set(t.days_of_week.clone());
+            }
+        }
 
         // 7 — subjects with teachers
-        load_teachers(state, &client, &user.school_id, &user.profile_id, &class_id).await;
+        nslog::nslog("[Diary] Loading teachers...");
+        if let Ok(subjects) = blocking::api_get::<Vec<SubjectWithTeacher>>(
+            &client,
+            &endpoints::subjects(&user.school_id, &user.profile_id, &class_id),
+        ) {
+            set_subjects_teachers.set(subjects);
+        }
 
-        state.loading.set(false);
+        set_loading.set(false);
         nslog::nslog("[Diary] load_all completed");
     });
 }
 
-async fn fallback_class_id(
-    client: &reqwest::Client,
+fn fallback_class_id(
+    client: &reqwest::blocking::Client,
     school_id: &str,
     profile_id: &str,
-    state: AppState,
 ) -> String {
-    if let Ok(classes) = async_client::api_get::<Vec<Class>>(
+    if let Ok(classes) = blocking::api_get::<Vec<Class>>(
         client,
         &endpoints::classes(school_id, profile_id),
-    ).await {
+    ) {
         if let Some(c) = classes.first() {
-            let id = c.uuid.clone();
-            state.class_label.set(format!("{}{}", c.level, c.label));
-            state.is_graduating.set(c.graduating.unwrap_or(false));
-            id
+            c.uuid.clone()
         } else {
             crate::shared::secure::load("auth.class_id").unwrap_or_default()
         }
     } else {
         crate::shared::secure::load("auth.class_id").unwrap_or_default()
     }
-}
-
-async fn load_weeks_and_current(
-    state: AppState,
-    client: &reqwest::Client,
-    _school_id: &str,
-    _class_id: &str,
-    _profile_id: &str,
-) {
-    state.lessons_loading.set(true);
-    match async_client::api_get::<Vec<WeekActivity>>(client, endpoints::WEEK_ACTIVITIES).await {
-        Ok(weeks) => {
-            nslog::nslog(&format!("[Diary] Got {} weeks", weeks.len()));
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            let cur = weeks.iter().enumerate()
-                .find(|(_, w)| w.start_ts <= now_ms && w.end_ts >= now_ms);
-
-            if let Some((idx, week)) = cur {
-                let _week_uuid = week.uuid.clone();
-                let week_summary = week.summary.clone();
-                state.all_weeks.set(weeks);
-                state.current_week_index.set(idx as i32);
-                state.current_week.set(week_summary);
-                state.current_quarter.set(quarter_for_index(idx));
-
-                // Load current week
-                load_week(state, idx as i32);
-            }
-        }
-        Err(e) => nslog::nslog(&format!("[Diary] Week activities failed: {e}")),
-    }
-    state.lessons_loading.set(false);
-}
-
-async fn load_bells(state: AppState, client: &reqwest::Client, school_id: &str) {
-    state.schedule_loading.set(true);
-    if let Ok(bells) = async_client::api_get::<Vec<BellSchedule>>(client, &endpoints::bells(school_id)).await {
-        if let Some(schedule) = bells.first() {
-            if let Some(day) = schedule.days_of_week.first() {
-                state.bell_times.set(day.time_of_bells.clone());
-            }
-        }
-    }
-    state.schedule_loading.set(false);
-}
-
-async fn load_timetable(state: AppState, client: &reqwest::Client, school_id: &str, class_id: &str) {
-    if let Ok(tables) = async_client::api_get::<Vec<Timetable>>(client, &endpoints::timetable(school_id, class_id)).await {
-        if let Some(t) = tables.first() {
-            state.timetable_days.set(t.days_of_week.clone());
-        }
-    }
-}
-
-async fn load_teachers(state: AppState, client: &reqwest::Client, school_id: &str, profile_id: &str, class_id: &str) {
-    state.teachers_loading.set(true);
-    if let Ok(subjects) = async_client::api_get::<Vec<SubjectWithTeacher>>(
-        client,
-        &endpoints::subjects(school_id, profile_id, class_id),
-    ).await {
-        state.subjects_teachers.set(subjects);
-    }
-    state.teachers_loading.set(false);
 }
 
 /// Load lessons for a specific week by index in all_weeks.
@@ -240,21 +246,29 @@ pub fn load_week(state: AppState, new_index: i32) {
     };
 
     let week = &weeks[idx];
-    state.current_week_index.set(idx as i32);
-    state.current_week.set(week.summary.clone());
-    state.current_quarter.set(quarter_for_index(idx));
-    state.lessons_loading.set(true);
-
-    let client = async_client::build_client(&token);
+    let week_summary = week.summary.clone();
     let week_uuid = week.uuid.clone();
 
-    day::task(async move {
-        match async_client::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &week_uuid)).await {
+    let set_current_week_index = state.current_week_index.setter();
+    let set_current_week = state.current_week.setter();
+    let set_current_quarter = state.current_quarter.setter();
+    let set_lessons = state.lessons.setter();
+    let set_lessons_loading = state.lessons_loading.setter();
+
+    set_current_week_index.set(idx as i32);
+    set_current_week.set(week_summary);
+    set_current_quarter.set(quarter_for_index(idx));
+    set_lessons_loading.set(true);
+
+    nslog::nslog(&format!("[Diary] load_week idx={idx} uuid={week_uuid}"));
+
+    std::thread::spawn(move || {
+        let client = blocking::build_client(&token);
+        match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &week_uuid)) {
             Ok(raw) => {
                 match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                     Ok(lessons) => {
-                        state.lessons.set(lessons);
-                        crate::shared::widget::update_widget_data(state);
+                        set_lessons.set(lessons);
                     }
                     Err(e) => {
                         nslog::nslog(&format!("[Diary] load_week parse failed: {e}"));
@@ -269,7 +283,7 @@ pub fn load_week(state: AppState, new_index: i32) {
             }
             Err(e) => nslog::nslog(&format!("[Diary] load_week request failed: {e}")),
         }
-        state.lessons_loading.set(false);
+        set_lessons_loading.set(false);
     });
 }
 
@@ -289,33 +303,46 @@ pub fn load_quarter(state: AppState, quarter: usize) {
         _ => return,
     };
 
-    state.current_quarter.set(quarter);
-    state.marks_loading.set(true);
+    let set_current_quarter = state.current_quarter.setter();
+    let set_marks_loading = state.marks_loading.setter();
+    let set_quarter_all_marks = state.quarter_all_marks.setter();
+    let set_quarter_official_marks = state.quarter_official_marks.setter();
+    let set_quarter_marks = state.quarter_marks.setter();
+    let set_official_marks = state.official_marks.setter();
 
-    // Pre-initialize this quarter's storage so the UI shows loading state
+    set_current_quarter.set(quarter);
+    set_marks_loading.set(true);
+
+    // Pre-initialize this quarter's storage
     {
-        let mut q_all = state.quarter_all_marks.get();
-        let mut q_off = state.quarter_official_marks.get();
+        let mut q_all: Vec<std::collections::HashMap<String, Vec<f64>>> = Vec::new();
+        let mut q_off: Vec<std::collections::HashMap<String, Vec<OfficialMark>>> = Vec::new();
         if q_all.len() <= quarter {
             q_all.resize(quarter + 1, std::collections::HashMap::new());
             q_off.resize(quarter + 1, std::collections::HashMap::new());
         }
-        state.quarter_all_marks.set(q_all);
-        state.quarter_official_marks.set(q_off);
+        set_quarter_all_marks.clone().set(q_all);
+        set_quarter_official_marks.clone().set(q_off);
     }
 
-    let client = async_client::build_client(&token);
     let actual_end = end.min(weeks.len());
     let week_uuids: Vec<String> = (start..actual_end)
         .filter_map(|idx| weeks.get(idx).map(|w| w.uuid.clone()))
         .collect();
 
-    day::task(async move {
+    nslog::nslog(&format!("[Diary] load_quarter q={} weeks={}", quarter + 1, week_uuids.len()));
+
+    // Pre-read current quarter storage (Setter has no .get())
+    let init_q_all = state.quarter_all_marks.get();
+    let init_q_off = state.quarter_official_marks.get();
+
+    std::thread::spawn(move || {
+        let client = blocking::build_client(&token);
         let mut all_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
         let mut all_official: std::collections::HashMap<String, Vec<OfficialMark>> = std::collections::HashMap::new();
 
         for week_uuid in &week_uuids {
-            match async_client::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, week_uuid)).await {
+            match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, week_uuid)) {
                 Ok(raw) => {
                     if let Ok(days) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                         for day in &days {
@@ -352,21 +379,21 @@ pub fn load_quarter(state: AppState, quarter: usize) {
 
         // Store per-quarter
         {
-            let mut q_all = state.quarter_all_marks.get();
-            let mut q_off = state.quarter_official_marks.get();
+            let mut q_all = init_q_all.clone();
+            let mut q_off = init_q_off.clone();
             if q_all.len() <= quarter {
                 q_all.resize(quarter + 1, std::collections::HashMap::new());
                 q_off.resize(quarter + 1, std::collections::HashMap::new());
             }
             q_all[quarter] = all_marks.clone();
             q_off[quarter] = all_official.clone();
-            state.quarter_all_marks.set(q_all);
-            state.quarter_official_marks.set(q_off);
+            set_quarter_all_marks.set(q_all);
+            set_quarter_official_marks.set(q_off);
         }
 
-        state.quarter_marks.set(all_marks);
-        state.official_marks.set(all_official);
-        state.marks_loading.set(false);
+        set_quarter_marks.set(all_marks);
+        set_official_marks.set(all_official);
+        set_marks_loading.set(false);
         nslog::nslog(&format!("[Diary] Quarter {} loaded", quarter + 1));
     });
 }
@@ -384,10 +411,17 @@ pub fn load_year(state: AppState) {
         _ => return,
     };
 
-    state.current_quarter.set(4);
-    state.marks_loading.set(true);
+    let set_current_quarter = state.current_quarter.setter();
+    let set_marks_loading = state.marks_loading.setter();
+    let set_quarter_all_marks = state.quarter_all_marks.setter();
+    let set_quarter_official_marks = state.quarter_official_marks.setter();
+    let set_year_quarter_data = state.year_quarter_data.setter();
+    let set_quarter_marks = state.quarter_marks.setter();
+    let set_official_marks = state.official_marks.setter();
 
-    let client = async_client::build_client(&token);
+    set_current_quarter.set(4);
+    set_marks_loading.set(true);
+
     let quarter_labels = ["I четверть", "II четверть", "III четверть", "IV четверть"];
 
     let mut q_weeks: Vec<Vec<String>> = Vec::new();
@@ -400,7 +434,10 @@ pub fn load_year(state: AppState) {
         q_weeks.push(uuids);
     }
 
-    day::task(async move {
+    nslog::nslog(&format!("[Diary] load_year total_weeks={}", q_weeks.iter().map(|v| v.len()).sum::<usize>()));
+
+    std::thread::spawn(move || {
+        let client = blocking::build_client(&token);
         let mut year_data: Vec<(String, std::collections::HashMap<String, Vec<f64>>)> = Vec::new();
         let mut all_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
         let mut all_official: std::collections::HashMap<String, Vec<OfficialMark>> = std::collections::HashMap::new();
@@ -413,7 +450,7 @@ pub fn load_year(state: AppState) {
             let mut q_off: std::collections::HashMap<String, Vec<OfficialMark>> = std::collections::HashMap::new();
 
             for week_uuid in &q_weeks[q] {
-                match async_client::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, week_uuid)).await {
+                match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, week_uuid)) {
                     Ok(raw) => {
                         if let Ok(days) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                             for day in &days {
@@ -460,13 +497,12 @@ pub fn load_year(state: AppState) {
             q_official_marks.push(q_off);
         }
 
-        state.quarter_all_marks.set(q_all_marks);
-        state.quarter_official_marks.set(q_official_marks);
-
-        state.year_quarter_data.set(year_data);
-        state.quarter_marks.set(all_marks);
-        state.official_marks.set(all_official);
-        state.marks_loading.set(false);
+        set_quarter_all_marks.set(q_all_marks);
+        set_quarter_official_marks.set(q_official_marks);
+        set_year_quarter_data.set(year_data);
+        set_quarter_marks.set(all_marks);
+        set_official_marks.set(all_official);
+        set_marks_loading.set(false);
         nslog::nslog("[Diary] Year loaded with per-quarter data");
     });
 }

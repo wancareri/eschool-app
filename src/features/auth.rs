@@ -45,12 +45,7 @@ pub fn login(state: AppState, username: &str, password: &str, remember: bool) {
 }
 
 pub fn logout(state: AppState) {
-    for key in [
-        TOKEN_KEY, REFRESH_KEY, SCHOOL_ID_KEY, PROFILE_ID_KEY, CLASS_ID_KEY, FULL_NAME_KEY,
-        SCHOOL_NAME_KEY, USERNAME_KEY, PASSWORD_KEY, REMEMBER_KEY,
-    ] {
-        secure::delete(key);
-    }
+    logout_keys();
     state.is_authenticated.set(false);
     state.remember_me.set(false);
     state.full_name.set(String::new());
@@ -60,6 +55,15 @@ pub fn logout(state: AppState) {
     state.bell_times.set(Vec::new());
     state.timetable_days.set(Vec::new());
     state.subjects_teachers.set(Vec::new());
+}
+
+pub fn logout_keys() {
+    for key in [
+        TOKEN_KEY, REFRESH_KEY, SCHOOL_ID_KEY, PROFILE_ID_KEY, CLASS_ID_KEY, FULL_NAME_KEY,
+        SCHOOL_NAME_KEY, USERNAME_KEY, PASSWORD_KEY, REMEMBER_KEY,
+    ] {
+        secure::delete(key);
+    }
 }
 
 pub fn save_token(state: AppState, access: &str, refresh: &str) {

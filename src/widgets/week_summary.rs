@@ -6,6 +6,7 @@ pub fn render(state: AppState) -> impl Piece {
         label("Неделя")
             .font(Font::Headline)
             .color(move || Color::hex(state.accent_color.get()))
+            .align(TextAlign::Center)
             .padding(Insets { top: 16.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
         row((
