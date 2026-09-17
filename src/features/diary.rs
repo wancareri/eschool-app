@@ -3,7 +3,7 @@
 use crate::app::AppState;
 use crate::app::OfficialMark;
 use crate::features::auth;
-use eschool_api::client::blocking;
+use eschool_api::client::async_client;
 use eschool_api::client::endpoints;
 use eschool_api::entities::*;
 use crate::shared::nslog;
@@ -21,16 +21,17 @@ pub fn load_all(state: AppState) {
             return;
         }
     };
+    nslog::nslog(&format!("[Diary] Token length: {}", token.len()));
 
     state.loading.set(true);
     state.error_msg.set(String::new());
 
     day::task(async move {
-        let mut client = blocking::build_client(&token);
+        let mut client = async_client::build_client(&token);
 
         // 1 — user info (with auto-refresh on 401)
         nslog::nslog("[Diary] Fetching /auth/me...");
-        let user = match blocking::api_get::<UserInfo>(&client, endpoints::AUTH_ME) {
+        let user = match async_client::api_get::<UserInfo>(&client, endpoints::AUTH_ME).await {
             Ok(u) => {
                 nslog::nslog(&format!("[Diary] Got user: {} ({})", u.full_name, u.school_name));
                 u
@@ -38,8 +39,8 @@ pub fn load_all(state: AppState) {
             Err(e) if e.starts_with("HTTP 401") => {
                 nslog::nslog("[Diary] /auth/me returned 401, attempting token refresh...");
                 if let Some(refreshed) = auth::try_refresh_token() {
-                    client = blocking::build_client(&refreshed);
-                    match blocking::api_get::<UserInfo>(&client, endpoints::AUTH_ME) {
+                    client = async_client::build_client(&refreshed);
+                    match async_client::api_get::<UserInfo>(&client, endpoints::AUTH_ME).await {
                         Ok(u) => u,
                         Err(e) => {
                             state.error_msg.set(format!("Auth error: {e}"));
@@ -64,7 +65,7 @@ pub fn load_all(state: AppState) {
         state.school_name.set(user.school_name.clone());
 
         // 2 — school year
-        let year = blocking::api_get::<SchoolYear>(&client, endpoints::SCHOOL_YEAR).ok();
+        let year = async_client::api_get::<SchoolYear>(&client, endpoints::SCHOOL_YEAR).await.ok();
         let school_period = year.as_ref().map(|y| y.uuid.clone());
 
         // 3 — classes
@@ -77,21 +78,21 @@ pub fn load_all(state: AppState) {
             "from": start_of_year,
             "to": end_of_year,
         });
-        let class_id = if let Ok(cbd) = blocking::api_post::<ClassesByDate>(
+        let class_id = if let Ok(cbd) = async_client::api_post::<ClassesByDate>(
             &client,
             &endpoints::classes(&user.school_id, &user.profile_id),
             &class_body,
-        ) {
+        ).await {
             if let Some(c) = cbd.classes.first() {
                 let id = c.uuid.clone();
                 state.class_label.set(format!("{}{}", c.level, c.label));
                 state.is_graduating.set(c.graduating.unwrap_or(false));
                 id
             } else {
-                fallback_class_id(&client, &user.school_id, &user.profile_id, state)
+                fallback_class_id(&client, &user.school_id, &user.profile_id, state).await
             }
         } else {
-            fallback_class_id(&client, &user.school_id, &user.profile_id, state)
+            fallback_class_id(&client, &user.school_id, &user.profile_id, state).await
         };
 
         if class_id.is_empty() {
@@ -119,32 +120,32 @@ pub fn load_all(state: AppState) {
         }
 
         // 4 — week activities → current week → lessons
-        load_weeks_and_current(state, &client, &user.school_id, &class_id, &user.profile_id);
+        load_weeks_and_current(state, &client, &user.school_id, &class_id, &user.profile_id).await;
 
         // 5 — bell schedule
-        load_bells(state, &client, &user.school_id);
+        load_bells(state, &client, &user.school_id).await;
 
         // 6 — timetable
-        load_timetable(state, &client, &user.school_id, &class_id);
+        load_timetable(state, &client, &user.school_id, &class_id).await;
 
         // 7 — subjects with teachers
-        load_teachers(state, &client, &user.school_id, &user.profile_id, &class_id);
+        load_teachers(state, &client, &user.school_id, &user.profile_id, &class_id).await;
 
         state.loading.set(false);
         nslog::nslog("[Diary] load_all completed");
     });
 }
 
-fn fallback_class_id(
-    client: &reqwest::blocking::Client,
+async fn fallback_class_id(
+    client: &reqwest::Client,
     school_id: &str,
     profile_id: &str,
     state: AppState,
 ) -> String {
-    if let Ok(classes) = blocking::api_get::<Vec<Class>>(
+    if let Ok(classes) = async_client::api_get::<Vec<Class>>(
         client,
         &endpoints::classes(school_id, profile_id),
-    ) {
+    ).await {
         if let Some(c) = classes.first() {
             let id = c.uuid.clone();
             state.class_label.set(format!("{}{}", c.level, c.label));
@@ -158,15 +159,15 @@ fn fallback_class_id(
     }
 }
 
-fn load_weeks_and_current(
+async fn load_weeks_and_current(
     state: AppState,
-    client: &reqwest::blocking::Client,
+    client: &reqwest::Client,
     _school_id: &str,
     _class_id: &str,
     _profile_id: &str,
 ) {
     state.lessons_loading.set(true);
-    match blocking::api_get::<Vec<WeekActivity>>(client, endpoints::WEEK_ACTIVITIES) {
+    match async_client::api_get::<Vec<WeekActivity>>(client, endpoints::WEEK_ACTIVITIES).await {
         Ok(weeks) => {
             nslog::nslog(&format!("[Diary] Got {} weeks", weeks.len()));
             let now_ms = std::time::SystemTime::now()
@@ -193,9 +194,9 @@ fn load_weeks_and_current(
     state.lessons_loading.set(false);
 }
 
-fn load_bells(state: AppState, client: &reqwest::blocking::Client, school_id: &str) {
+async fn load_bells(state: AppState, client: &reqwest::Client, school_id: &str) {
     state.schedule_loading.set(true);
-    if let Ok(bells) = blocking::api_get::<Vec<BellSchedule>>(client, &endpoints::bells(school_id)) {
+    if let Ok(bells) = async_client::api_get::<Vec<BellSchedule>>(client, &endpoints::bells(school_id)).await {
         if let Some(schedule) = bells.first() {
             if let Some(day) = schedule.days_of_week.first() {
                 state.bell_times.set(day.time_of_bells.clone());
@@ -205,27 +206,26 @@ fn load_bells(state: AppState, client: &reqwest::blocking::Client, school_id: &s
     state.schedule_loading.set(false);
 }
 
-fn load_timetable(state: AppState, client: &reqwest::blocking::Client, school_id: &str, class_id: &str) {
-    if let Ok(tables) = blocking::api_get::<Vec<Timetable>>(client, &endpoints::timetable(school_id, class_id)) {
+async fn load_timetable(state: AppState, client: &reqwest::Client, school_id: &str, class_id: &str) {
+    if let Ok(tables) = async_client::api_get::<Vec<Timetable>>(client, &endpoints::timetable(school_id, class_id)).await {
         if let Some(t) = tables.first() {
             state.timetable_days.set(t.days_of_week.clone());
         }
     }
 }
 
-fn load_teachers(state: AppState, client: &reqwest::blocking::Client, school_id: &str, profile_id: &str, class_id: &str) {
+async fn load_teachers(state: AppState, client: &reqwest::Client, school_id: &str, profile_id: &str, class_id: &str) {
     state.teachers_loading.set(true);
-    if let Ok(subjects) = blocking::api_get::<Vec<SubjectWithTeacher>>(
+    if let Ok(subjects) = async_client::api_get::<Vec<SubjectWithTeacher>>(
         client,
         &endpoints::subjects(school_id, profile_id, class_id),
-    ) {
+    ).await {
         state.subjects_teachers.set(subjects);
     }
     state.teachers_loading.set(false);
 }
 
 /// Load lessons for a specific week by index in all_weeks.
-/// Now async — spawns a thread and updates state when done.
 pub fn load_week(state: AppState, new_index: i32) {
     let weeks = state.all_weeks.get();
     let idx = new_index as usize;
@@ -245,11 +245,11 @@ pub fn load_week(state: AppState, new_index: i32) {
     state.current_quarter.set(quarter_for_index(idx));
     state.lessons_loading.set(true);
 
-    let client = blocking::build_client(&token);
+    let client = async_client::build_client(&token);
     let week_uuid = week.uuid.clone();
 
     day::task(async move {
-        match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &week_uuid)) {
+        match async_client::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &week_uuid)).await {
             Ok(raw) => {
                 match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                     Ok(lessons) => {
@@ -273,7 +273,7 @@ pub fn load_week(state: AppState, new_index: i32) {
     });
 }
 
-/// Load all weeks for a quarter and accumulate marks. Now async.
+/// Load all weeks for a quarter and accumulate marks.
 pub fn load_quarter(state: AppState, quarter: usize) {
     if quarter > 3 { return; }
 
@@ -304,7 +304,7 @@ pub fn load_quarter(state: AppState, quarter: usize) {
         state.quarter_official_marks.set(q_off);
     }
 
-    let client = blocking::build_client(&token);
+    let client = async_client::build_client(&token);
     let actual_end = end.min(weeks.len());
     let week_uuids: Vec<String> = (start..actual_end)
         .filter_map(|idx| weeks.get(idx).map(|w| w.uuid.clone()))
@@ -315,7 +315,7 @@ pub fn load_quarter(state: AppState, quarter: usize) {
         let mut all_official: std::collections::HashMap<String, Vec<OfficialMark>> = std::collections::HashMap::new();
 
         for week_uuid in &week_uuids {
-            match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, week_uuid)) {
+            match async_client::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, week_uuid)).await {
                 Ok(raw) => {
                     if let Ok(days) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                         for day in &days {
@@ -327,7 +327,6 @@ pub fn load_quarter(state: AppState, quarter: usize) {
                                     all_marks.entry(slot.subject_title.clone())
                                         .or_default()
                                         .push(mark_val);
-                                    // Only include marks with a non-empty author (teacher-set)
                                     if let Some(ref lm) = slot.lesson_mark {
                                         let has_author = lm.author.as_ref()
                                             .map(|a| !a.is_empty())
@@ -365,7 +364,6 @@ pub fn load_quarter(state: AppState, quarter: usize) {
             state.quarter_official_marks.set(q_off);
         }
 
-        // Update current view signals
         state.quarter_marks.set(all_marks);
         state.official_marks.set(all_official);
         state.marks_loading.set(false);
@@ -373,7 +371,7 @@ pub fn load_quarter(state: AppState, quarter: usize) {
     });
 }
 
-/// Load all weeks for the entire year, storing marks per-quarter and total. Now async.
+/// Load all weeks for the entire year, storing marks per-quarter and total.
 pub fn load_year(state: AppState) {
     let weeks = state.all_weeks.get();
     if weeks.is_empty() { return; }
@@ -386,13 +384,12 @@ pub fn load_year(state: AppState) {
         _ => return,
     };
 
-    state.current_quarter.set(4); // 4 = year
+    state.current_quarter.set(4);
     state.marks_loading.set(true);
 
-    let client = blocking::build_client(&token);
+    let client = async_client::build_client(&token);
     let quarter_labels = ["I четверть", "II четверть", "III четверть", "IV четверть"];
 
-    // Collect week uuids per quarter
     let mut q_weeks: Vec<Vec<String>> = Vec::new();
     for q in 0..4 {
         let (start, end) = QUARTER_RANGES[q];
@@ -408,7 +405,6 @@ pub fn load_year(state: AppState) {
         let mut all_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
         let mut all_official: std::collections::HashMap<String, Vec<OfficialMark>> = std::collections::HashMap::new();
 
-        // Per-quarter storage
         let mut q_all_marks: Vec<std::collections::HashMap<String, Vec<f64>>> = Vec::new();
         let mut q_official_marks: Vec<std::collections::HashMap<String, Vec<OfficialMark>>> = Vec::new();
 
@@ -417,7 +413,7 @@ pub fn load_year(state: AppState) {
             let mut q_off: std::collections::HashMap<String, Vec<OfficialMark>> = std::collections::HashMap::new();
 
             for week_uuid in &q_weeks[q] {
-                match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, week_uuid)) {
+                match async_client::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, week_uuid)).await {
                     Ok(raw) => {
                         if let Ok(days) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                             for day in &days {
@@ -432,7 +428,6 @@ pub fn load_year(state: AppState) {
                                         all_marks.entry(slot.subject_title.clone())
                                             .or_default()
                                             .push(mark_val);
-                                        // Only include marks with a non-empty author (teacher-set)
                                         if let Some(ref lm) = slot.lesson_mark {
                                             let has_author = lm.author.as_ref()
                                                 .map(|a| !a.is_empty())
@@ -465,7 +460,6 @@ pub fn load_year(state: AppState) {
             q_official_marks.push(q_off);
         }
 
-        // Update per-quarter storage
         state.quarter_all_marks.set(q_all_marks);
         state.quarter_official_marks.set(q_official_marks);
 
