@@ -101,7 +101,15 @@ fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
 
 fn biometric_section(_state: AppState) -> impl Piece {
     let available = biometric::is_available();
-    let enabled = Signal::new(biometric::is_enabled());
+    let biometric_on = Signal::new(biometric::is_enabled());
+
+    // Persist toggle changes to keychain
+    day::reactive::watch(
+        move || biometric_on.get(),
+        |val, _| {
+            biometric::set_enabled(*val);
+        },
+    );
 
     form((
         section(
@@ -113,7 +121,7 @@ fn biometric_section(_state: AppState) -> impl Piece {
                             label("Вход по Face ID / Touch ID")
                                 .font(Font::Body)
                                 .grow(),
-                            toggle(enabled),
+                            toggle(biometric_on),
                         ))
                         .spacing(8.0)
                     },

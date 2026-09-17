@@ -1,6 +1,6 @@
 use crate::app::AppState;
 use crate::features;
-use crate::shared::colors;
+use crate::shared::{biometric, colors};
 use crate::res;
 use day::prelude::*;
 
@@ -177,6 +177,41 @@ fn auth_form(state: AppState) -> impl Piece {
         })
         .id("login-btn")
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 0.0, trailing: 20.0 }),
+
+        // Biometric login button
+        when(
+            move || biometric::is_available() && biometric::is_enabled() && {
+                crate::shared::secure::load("auth.token").is_some()
+            },
+            move || {
+                let error_biometric = Signal::new(String::new());
+                column((
+                    label("или").font(Font::Caption).secondary().align(TextAlign::Center),
+                    button("Войти по Face ID / Touch ID")
+                        .action(move || {
+                            error_biometric.set(String::new());
+                            if biometric::authenticate() {
+                                // Token already stored, just authenticate
+                                state.is_authenticated.set(true);
+                                features::diary::load_all(state);
+                            } else {
+                                error_biometric.set("Биометрия не прошла".into());
+                            }
+                        })
+                        .id("biometric-btn")
+                        .padding(Insets { top: 0.0, leading: 20.0, bottom: 0.0, trailing: 20.0 }),
+                    when(
+                        move || !error_biometric.get().is_empty(),
+                        move || label(error_biometric.get())
+                            .font(Font::Caption)
+                            .color(colors::ERROR)
+                            .align(TextAlign::Center),
+                    ),
+                ))
+                .spacing(8.0)
+            },
+        ),
+
         spacer(),
     ))
     .spacing(0.0)
