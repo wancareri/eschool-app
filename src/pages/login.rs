@@ -1,11 +1,8 @@
 use crate::app::AppState;
 use crate::features;
-use crate::shared::{biometric, colors};
+use crate::shared::{colors};
 use crate::res;
 use day::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-static BIOMETRIC_FAILED: AtomicBool = AtomicBool::new(false);
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
@@ -180,36 +177,6 @@ fn auth_form(state: AppState) -> impl Piece {
         })
         .id("login-btn")
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 0.0, trailing: 20.0 }),
-
-        // Biometric login button — show when biometric enabled + stored credentials exist
-        when(
-            move || biometric::is_available() && biometric::is_enabled() && {
-                features::auth::has_stored_credentials()
-            },
-            move || {
-                column((
-                    label("или").font(Font::Caption).secondary().align(TextAlign::Center),
-                    button("Войти по Face ID / Touch ID")
-                        .action(move || {
-                            if state.loading.get() { return; }
-                            BIOMETRIC_FAILED.store(false, Ordering::Relaxed);
-                            // Face ID just verifies identity — token is already stored
-                            // authenticate_async posts to main thread, non-blocking
-                            crate::shared::biometric::authenticate_async();
-                        })
-                        .id("biometric-btn")
-                        .padding(Insets { top: 0.0, leading: 20.0, bottom: 0.0, trailing: 20.0 }),
-                    when(
-                        move || BIOMETRIC_FAILED.load(Ordering::Relaxed),
-                        || label("Биометрия не прошла")
-                            .font(Font::Caption)
-                            .color(colors::ERROR)
-                            .align(TextAlign::Center),
-                    ),
-                ))
-                .spacing(8.0)
-            },
-        ),
 
         spacer(),
     ))

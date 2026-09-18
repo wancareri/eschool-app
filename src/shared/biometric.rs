@@ -1,10 +1,22 @@
 //! Biometric auth support — Face ID / Touch ID on iOS.
 
 use crate::shared::nslog;
-use std::sync::atomic::{AtomicBool, Ordering};
+use day::prelude::*;
+use std::sync::OnceLock;
 
 const BIOMETRIC_KEY: &str = "auth.biometric_enabled";
-pub static BIOMETRIC_OK: AtomicBool = AtomicBool::new(false);
+
+static BIOMETRIC_OK: OnceLock<Signal<bool>> = OnceLock::new();
+
+/// Reactive flag set by Face ID reply block — window_shell watches this.
+pub fn biometric_ok_signal() -> Signal<bool> {
+    BIOMETRIC_OK.get_or_init(|| Signal::new(false)).clone()
+}
+
+/// Set biometric result (call from main thread only).
+pub fn set_biometric_ok(ok: bool) {
+    biometric_ok_signal().set(ok);
+}
 
 /// Check if biometric auth is available on this device.
 pub fn is_available() -> bool {
@@ -61,9 +73,11 @@ pub fn authenticate_async() {
                         move |success: Bool, _error: *mut objc2_foundation::NSError| {
                             let ok = success.as_bool();
                             nslog::nslog(&format!("[Biometric] Reply: success={ok}"));
-                            // Set atomic flag directly — no on_main needed here.
-                            // The watch in window_shell detects the change on main thread.
-                            BIOMETRIC_OK.store(ok, Ordering::Relaxed);
+                            // Post to main thread — Signal::set must be called from main thread
+                            day::reactive::on_main(move || {
+                                nslog::nslog(&format!("[Biometric] Setting biometric_ok={ok}"));
+                                set_biometric_ok(ok);
+                            });
                         },
                     )));
 
