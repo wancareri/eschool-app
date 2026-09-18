@@ -45,17 +45,26 @@ fn window_shell(primary: bool) -> impl Piece {
     AppState::scoped(move |state| {
         day::window_title(move || res::str::app_title().format());
 
-        // Auto-lock: save background timestamp periodically
+        // Auto-lock: save background timestamp periodically + re-lock after 5 min
         #[cfg(target_os = "ios")]
         {
             use std::sync::atomic::{AtomicBool, Ordering};
             static BG_WATCHER_STARTED: AtomicBool = AtomicBool::new(false);
             if !BG_WATCHER_STARTED.swap(true, Ordering::Relaxed) {
                 nslog::nslog("[App] Starting background timestamp saver (30s)");
-                std::thread::spawn(|| {
+                let lock_sig = state.pin_lock_active.setter();
+                let auth_sig = state.is_authenticated.setter();
+                std::thread::spawn(move || {
                     loop {
                         std::thread::sleep(std::time::Duration::from_secs(30));
                         crate::shared::pin::save_last_background();
+                        if crate::shared::pin::is_enabled()
+                            && crate::shared::pin::should_auto_lock()
+                        {
+                            nslog::nslog("[PIN] Auto-lock triggered");
+                            auth_sig.set(false);
+                            lock_sig.set(true);
+                        }
                     }
                 });
             }

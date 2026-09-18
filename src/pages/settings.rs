@@ -103,32 +103,22 @@ fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
 
 fn pin_section(_state: AppState) -> impl Piece {
     let pin_enabled = Signal::new(pin::is_enabled());
-    let setup_mode = Signal::new(false);
-    let setup_step = Signal::new(0u8);
-    let setup_input = Signal::new(String::new());
-    let setup_confirm = Signal::new(String::new());
-    let setup_error = Signal::new(String::new());
+    let show_setup = Signal::new(false);
 
-    // When toggle turns ON → enter setup
+    // When toggle turns ON → show setup modal
     {
-        let setup = setup_mode.clone();
-        let step = setup_step.clone();
-        let inp = setup_input.clone();
-        let err = setup_error.clone();
+        let show = show_setup.clone();
         day::reactive::watch(
             move || pin_enabled.get(),
             move |on, old| {
                 if old == Some(&false) && *on {
-                    setup.set(true);
-                    step.set(0);
-                    inp.set(String::new());
-                    err.set(String::new());
+                    show.set(true);
                 }
             },
         );
     }
 
-    // When toggle turns OFF → delete PIN
+    // When toggle turns OFF → delete PIN (only if PIN exists)
     day::reactive::watch(
         move || pin_enabled.get(),
         move |on, old| {
@@ -152,60 +142,78 @@ fn pin_section(_state: AppState) -> impl Piece {
                     .spacing(8.0),
 
                     when(
-                        move || setup_mode.get(),
-                        move || {
-                            column((
-                                label(move || {
-                                    if setup_step.get() == 0 {
-                                        "Придумайте PIN-код (4 цифры)"
-                                    } else {
-                                        "Повторите PIN-код"
-                                    }
-                                })
-                                .font(Font::Caption)
-                                .secondary(),
-
-                                row((
-                                    setup_dot(0, setup_input),
-                                    setup_dot(1, setup_input),
-                                    setup_dot(2, setup_input),
-                                    setup_dot(3, setup_input),
-                                ))
-                                .spacing(12.0),
-
-                                when(
-                                    move || !setup_error.get().is_empty(),
-                                    move || label(move || setup_error.get())
-                                        .font(Font::Caption)
-                                        .color(colors::ERROR),
-                                ),
-
-                                setup_numpad(
-                                    setup_input,
-                                    setup_step,
-                                    setup_confirm,
-                                    setup_error,
-                                    setup_mode,
-                                ),
-
-                                button("Отмена")
-                                    .action(move || {
-                                        setup_mode.set(false);
-                                        pin_enabled.set(false);
-                                        setup_input.set(String::new());
-                                        setup_confirm.set(String::new());
-                                        setup_error.set(String::new());
-                                    })
-                                    .id("pin-setup-cancel"),
-                            ))
-                            .spacing(8.0)
-                        },
+                        move || pin::is_enabled(),
+                        || label("PIN-код активен")
+                            .font(Font::Caption)
+                            .secondary(),
                     ),
                 )
             ).title("Блокировка"),
         )),
+
+        // Modal overlay for PIN setup
+        {
+            let pe = pin_enabled;
+            when(
+                move || show_setup.get(),
+                move || pin_setup_modal(show_setup, pe),
+            )
+        },
     ))
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
+}
+
+fn pin_setup_modal(show_setup: Signal<bool>, pin_enabled: Signal<bool>) -> impl Piece {
+    let step = Signal::new(0u8);
+    let input = Signal::new(String::new());
+    let confirm = Signal::new(String::new());
+    let error = Signal::new(String::new());
+
+    row((
+        column((
+            label(move || {
+                if step.get() == 0 {
+                    "Придумайте PIN-код"
+                } else {
+                    "Повторите PIN-код"
+                }
+            })
+            .font(Font::Title3),
+
+            label("4 цифры")
+                .font(Font::Caption)
+                .secondary(),
+
+            row((
+                setup_dot(0, input),
+                setup_dot(1, input),
+                setup_dot(2, input),
+                setup_dot(3, input),
+            ))
+            .spacing(16.0),
+
+            when(
+                move || !error.get().is_empty(),
+                move || label(move || error.get())
+                    .font(Font::Caption)
+                    .color(colors::ERROR),
+            ),
+
+            setup_numpad(input, step, confirm, error, show_setup),
+
+            button("Отмена")
+                .action(move || {
+                    show_setup.set(false);
+                    pin_enabled.set(false);
+                })
+                .id("pin-modal-cancel"),
+        ))
+        .spacing(12.0)
+        .padding(Insets { top: 24.0, leading: 32.0, bottom: 24.0, trailing: 32.0 })
+        .any(),
+    ))
+    .grow()
+    .any()
 }
 
 fn setup_dot(index: usize, input: Signal<String>) -> impl Piece {
@@ -318,12 +326,21 @@ fn setup_numpad(
 fn biometric_section(_state: AppState) -> impl Piece {
     let available = biometric::is_available();
     let biometric_on = Signal::new(biometric::is_enabled());
+    let show_alert = Signal::new(false);
 
-    // Persist toggle changes to keychain
+    // Persist toggle changes only when PIN is enabled
     day::reactive::watch(
         move || biometric_on.get(),
-        |val, _| {
-            biometric::set_enabled(*val);
+        move |val, old| {
+            if old.is_some() {
+                if pin::is_enabled() {
+                    biometric::set_enabled(*val);
+                } else {
+                    // PIN not enabled — revert and show alert
+                    biometric_on.set(false);
+                    show_alert.set(true);
+                }
+            }
         },
     );
 
@@ -343,10 +360,33 @@ fn biometric_section(_state: AppState) -> impl Piece {
                     },
                 ),
                 when(
-                    move || !available,
+                    move || !available && pin::is_enabled(),
                     || label("Биометрия не поддерживается")
                         .font(Font::Body)
                         .secondary(),
+                ),
+                when(
+                    move || !pin::is_enabled() && available,
+                    || label("Сначала включите PIN-код")
+                        .font(Font::Caption)
+                        .secondary()
+                        .color(colors::WARNING),
+                ),
+
+                // Alert when trying to enable biometric without PIN
+                when(
+                    move || show_alert.get(),
+                    move || {
+                        column((
+                            label("Для использования биометрии сначала включите PIN-код")
+                                .font(Font::Caption)
+                                .color(colors::ERROR),
+                            button("Понятно")
+                                .action(move || show_alert.set(false))
+                                .id("bio-alert-ok"),
+                        ))
+                        .spacing(8.0)
+                    },
                 ),
             )
         ).title("Безопасность"),
