@@ -102,6 +102,7 @@ fn build_nav(primary: bool) -> impl Piece {
                 #[cfg(target_os = "ios")]
                 crate::shared::colors::apply_ios_tint(state.accent_color.get());
                 let sel = nav(section)
+                    .style(day::prelude::NavStyle::Tabs)
                     .title(move || {
                         if state.loading.get() {
                             format!("{}  ⏳", res::str::app_title().format())
@@ -109,7 +110,6 @@ fn build_nav(primary: bool) -> impl Piece {
                             res::str::app_title().format()
                         }
                     })
-                    .sidebar_toggle(true)
                     .item_icon(
                         crate::Section::Diary,
                         res::str::nav_diary(),
