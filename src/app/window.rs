@@ -56,7 +56,7 @@ fn window_shell(primary: bool) -> impl Piece {
             },
         );
 
-        // Watch biometric signal — set by Face ID reply block via on_main.
+        // Watch biometric signal — set by Setter from Face ID reply block
         day::reactive::watch(
             move || state.biometric_ok.get(),
             move |&ok, old| {
@@ -74,7 +74,7 @@ fn window_shell(primary: bool) -> impl Piece {
             && crate::shared::biometric::is_enabled()
         {
             nslog::nslog("[App] Biometric lock: prompting Face ID on startup");
-            crate::shared::biometric::authenticate_async();
+            crate::shared::biometric::authenticate_async(state);
         }
 
         build_nav(primary)

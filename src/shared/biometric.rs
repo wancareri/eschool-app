@@ -37,12 +37,13 @@ pub fn set_enabled(enabled: bool) {
 }
 
 /// Trigger Face ID prompt. Non-blocking — posts evaluatePolicy to main thread.
-/// Reply comes async on GCD queue, delivers result via on_main.
-pub fn authenticate_async() {
+/// Reply comes async on GCD queue, delivers result via setter.
+pub fn authenticate_async(state: crate::app::AppState) {
     #[cfg(target_os = "ios")]
     {
+        let set_biometric_ok = state.biometric_ok.setter();
         nslog::nslog("[Biometric] authenticate_async: posting to main thread");
-        day::reactive::on_main(|| {
+        day::reactive::on_main(move || {
             nslog::nslog("[Biometric] on_main: creating LAContext");
             unsafe {
                 use objc2::runtime::Bool;
@@ -52,20 +53,13 @@ pub fn authenticate_async() {
                 let reason = objc2_foundation::NSString::from_str("Вход в приложение");
 
                 // Box::leak keeps the block alive for the async reply.
-                // Without leaking, StackBlock would be dropped when this scope ends,
-                // but evaluatePolicy returns immediately and the reply comes later.
                 let block_ref: &block2::DynBlock<dyn Fn(Bool, *mut objc2_foundation::NSError)> =
                     Box::leak(Box::new(block2::StackBlock::new(
                         move |success: Bool, _error: *mut objc2_foundation::NSError| {
                             let ok = success.as_bool();
                             nslog::nslog(&format!("[Biometric] Reply: success={ok}"));
-                            // Post to main thread — Signal::set must be called from main thread
-                            day::reactive::on_main(move || {
-                                nslog::nslog(&format!("[Biometric] Setting biometric_ok={ok}"));
-                                use day::prelude::Ambient;
-                                let s = crate::app::AppState::ambient();
-                                s.biometric_ok.set(ok);
-                            });
+                            // Setter is Copy+Send — dispatches to main thread via on_main
+                            set_biometric_ok.set(ok);
                         },
                     )));
 
