@@ -6,28 +6,26 @@ use day::prelude::*;
 const PIN_LENGTH: usize = 4;
 
 pub fn render(state: AppState) -> impl Piece {
-
     column((
-        spacer(),
-        // Title
         label(move || res::str::app_title().format())
             .font(Font::LargeTitle),
+
         label("Введите PIN-код")
             .font(Font::Subheadline)
             .secondary()
             .padding(Insets { top: 4.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
-        spacer(),
 
         // PIN dots
         {
-            let state2 = state;
+            let s = state;
             row((
-                dot(0, state2),
-                dot(1, state2),
-                dot(2, state2),
-                dot(3, state2),
+                dot(0, s),
+                dot(1, s),
+                dot(2, s),
+                dot(3, s),
             ))
-            .spacing(16.0)
+            .spacing(20.0)
+            .padding(Insets { top: 24.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
         },
 
         // Error message
@@ -36,11 +34,8 @@ pub fn render(state: AppState) -> impl Piece {
             || label("Неверный PIN-код")
                 .font(Font::Caption)
                 .color(colors::ERROR)
-                .align(TextAlign::Center)
-                .padding(Insets { top: 8.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
+                .padding(Insets { top: 4.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
         ),
-
-        spacer(),
 
         // Numpad
         numpad(state),
@@ -49,23 +44,18 @@ pub fn render(state: AppState) -> impl Piece {
         when(
             move || biometric::is_available() && biometric::is_enabled(),
             move || {
-                column((
-                    spacer().frame(0.0, 16.0),
-                    button("Face ID / Touch ID")
-                        .action(move || {
-                            state.pin_error.set(false);
-                            state.pin_input.set(String::new());
-                            crate::shared::biometric::authenticate_async(state);
-                        })
-                        .id("pin-biometric-btn"),
-                ))
-                .spacing(0.0)
+                button("Face ID / Touch ID")
+                    .action(move || {
+                        state.pin_error.set(false);
+                        state.pin_input.set(String::new());
+                        crate::shared::biometric::authenticate_async(state);
+                    })
+                    .id("pin-biometric-btn")
+                    .padding(Insets { top: 20.0, leading: 0.0, bottom: 0.0, trailing: 0.0 })
             },
         ),
-
-        spacer(),
     ))
-    .spacing(0.0)
+    .spacing(8.0)
     .padding(Insets { top: 60.0, leading: 40.0, bottom: 40.0, trailing: 40.0 })
     .grow()
     .any()
@@ -83,6 +73,7 @@ fn dot(index: usize, state: AppState) -> impl Piece {
     })
     .action(|| {})
     .id(format!("dot-{index}"))
+    .frame(20.0, 20.0)
 }
 
 fn numpad(state: AppState) -> impl Piece {
@@ -118,7 +109,7 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
     let s = state;
 
     if key_str.is_empty() {
-        spacer().frame(72.0, 72.0).any()
+        spacer().frame(72.0, 52.0).any()
     } else if key_str == "⌫" {
         button("⌫")
             .action(move || {
@@ -129,6 +120,7 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                     s.pin_error.set(false);
                 }
             })
+            .frame(72.0, 52.0)
             .id("pin-backspace")
             .any()
     } else {
@@ -159,6 +151,7 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                     }
                 }
             })
+            .frame(72.0, 52.0)
             .id(format!("pin-key-{key_clone2}"))
             .any()
     }

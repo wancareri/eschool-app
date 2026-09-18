@@ -169,49 +169,49 @@ fn pin_setup_modal(show_setup: Signal<bool>, pin_enabled: Signal<bool>) -> impl 
     let confirm = Signal::new(String::new());
     let error = Signal::new(String::new());
 
-    row((
-        column((
-            label(move || {
-                if step.get() == 0 {
-                    "Придумайте PIN-код"
-                } else {
-                    "Повторите PIN-код"
-                }
-            })
-            .font(Font::Title3),
+    column((
+        label(move || {
+            if step.get() == 0 {
+                "Придумайте PIN-код"
+            } else {
+                "Повторите PIN-код"
+            }
+        })
+        .font(Font::Title3),
 
-            label("4 цифры")
-                .font(Font::Caption)
-                .secondary(),
+        label("4 цифры")
+            .font(Font::Caption)
+            .secondary()
+            .padding(Insets { top: 2.0, leading: 0.0, bottom: 8.0, trailing: 0.0 }),
 
-            row((
-                setup_dot(0, input),
-                setup_dot(1, input),
-                setup_dot(2, input),
-                setup_dot(3, input),
-            ))
-            .spacing(16.0),
-
-            when(
-                move || !error.get().is_empty(),
-                move || label(move || error.get())
-                    .font(Font::Caption)
-                    .color(colors::ERROR),
-            ),
-
-            setup_numpad(input, step, confirm, error, show_setup),
-
-            button("Отмена")
-                .action(move || {
-                    show_setup.set(false);
-                    pin_enabled.set(false);
-                })
-                .id("pin-modal-cancel"),
+        row((
+            setup_dot(0, input),
+            setup_dot(1, input),
+            setup_dot(2, input),
+            setup_dot(3, input),
         ))
-        .spacing(12.0)
-        .padding(Insets { top: 24.0, leading: 32.0, bottom: 24.0, trailing: 32.0 })
-        .any(),
+        .spacing(16.0)
+        .padding(Insets { top: 0.0, leading: 0.0, bottom: 12.0, trailing: 0.0 }),
+
+        when(
+            move || !error.get().is_empty(),
+            move || label(move || error.get())
+                .font(Font::Caption)
+                .color(colors::ERROR)
+                .padding(Insets { top: 0.0, leading: 0.0, bottom: 8.0, trailing: 0.0 }),
+        ),
+
+        setup_numpad(input, step, confirm, error, show_setup),
+
+        button("Отмена")
+            .action(move || {
+                show_setup.set(false);
+                pin_enabled.set(false);
+            })
+            .id("pin-modal-cancel"),
     ))
+    .spacing(8.0)
+    .padding(Insets { top: 24.0, leading: 32.0, bottom: 24.0, trailing: 32.0 })
     .grow()
     .any()
 }
@@ -245,14 +245,14 @@ fn setup_numpad(
             setup_key(s, k2),
             setup_key(s, k3),
         ))
-        .spacing(12.0)
+        .spacing(16.0)
     }
 
     fn setup_key(state: Signal<String>, key: String) -> impl Piece {
         let k = key.clone();
         let k2 = key.clone();
         if k.is_empty() {
-            spacer().frame(60.0, 44.0).any()
+            spacer().frame(64.0, 44.0).any()
         } else if k == "⌫" {
             button("⌫")
                 .action(move || {
@@ -262,6 +262,7 @@ fn setup_numpad(
                         state.set(v);
                     }
                 })
+                .frame(64.0, 44.0)
                 .id(format!("sk-{k2}"))
                 .any()
         } else {
@@ -274,6 +275,7 @@ fn setup_numpad(
                     v.push_str(&k);
                     state.set(v);
                 })
+                .frame(64.0, 44.0)
                 .id(format!("sk-{k2}"))
                 .any()
         }
@@ -286,7 +288,7 @@ fn setup_numpad(
         {
             let inp = input.clone();
             row((
-                spacer().frame(60.0, 44.0).any(),
+                spacer().frame(64.0, 44.0).any(),
                 setup_key(input, "0".into()),
                 {
                     button("✓")

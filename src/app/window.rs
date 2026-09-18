@@ -112,73 +112,75 @@ fn build_nav(primary: bool) -> impl Piece {
     let state = AppState::ambient();
     let section = Signal::new(crate::Section::Diary);
 
-    column((
-        // PIN lock screen → show before anything else
-        when(
-            move || state.pin_lock_active.get() && !state.is_authenticated.get(),
-            move || pages::pin_lock::render(state).any(),
-        ),
-        // Not authenticated → show login
-        when(
-            move || !state.is_authenticated.get() && !state.pin_lock_active.get(),
-            move || pages::login::render().any(),
-        ),
-        // Authenticated → always show nav (even while loading)
-        when(
-            move || state.is_authenticated.get() && {
-                let _ = state.accent_color.get();
-                true
-            },
-            move || {
-                let accent = Color::hex(state.accent_color.get());
-                #[cfg(target_os = "ios")]
-                crate::shared::colors::apply_ios_tint(state.accent_color.get());
-                let sel = nav(section)
-                    .style(day::prelude::NavStyle::Tabs)
-                    .title(move || {
-                        if state.loading.get() {
-                            format!("{}  ⏳", res::str::app_title().format())
-                        } else {
-                            res::str::app_title().format()
-                        }
-                    })
-                    .item_icon(
-                        crate::Section::Diary,
-                        res::str::nav_diary(),
-                        res::vectors::tab_diary,
-                        pages::diary::render,
-                    )
-                    .icon_tint(accent)
-                    .item_icon(
-                        crate::Section::Schedule,
-                        res::str::nav_schedule(),
-                        res::vectors::tab_schedule,
-                        pages::schedule::render,
-                    )
-                    .icon_tint(accent)
-                    .item_icon(
-                        crate::Section::Teachers,
-                        res::str::nav_teachers(),
-                        res::vectors::tab_teachers,
-                        pages::teachers::render,
-                    )
-                    .icon_tint(accent)
-                    .item_icon(
-                        crate::Section::Settings,
-                        res::str::nav_settings(),
-                        res::vectors::tab_settings,
-                        pages::settings::render,
-                    )
-                    .icon_tint(accent);
+    // PIN lock screen
+    let pin_lock_screen = when(
+        move || state.pin_lock_active.get() && !state.is_authenticated.get(),
+        move || pages::pin_lock::render(state).any(),
+    );
 
-                if primary {
-                    sel.id("nav").restore("app.section").any()
-                } else {
-                    sel.id("nav").local().any()
-                }
-            },
-        ),
-    ))
-    .grow()
-    .any()
+    // Login screen
+    let login_screen = when(
+        move || !state.is_authenticated.get() && !state.pin_lock_active.get(),
+        move || pages::login::render().any(),
+    );
+
+    // Main nav (tabs)
+    let nav_screen = when(
+        move || state.is_authenticated.get() && {
+            let _ = state.accent_color.get();
+            true
+        },
+        move || {
+            let accent = Color::hex(state.accent_color.get());
+            #[cfg(target_os = "ios")]
+            crate::shared::colors::apply_ios_tint(state.accent_color.get());
+            let sel = nav(section)
+                .style(day::prelude::NavStyle::Tabs)
+                .title(move || {
+                    if state.loading.get() {
+                        format!("{}  ⏳", res::str::app_title().format())
+                    } else {
+                        res::str::app_title().format()
+                    }
+                })
+                .item_icon(
+                    crate::Section::Diary,
+                    res::str::nav_diary(),
+                    res::vectors::tab_diary,
+                    pages::diary::render,
+                )
+                .icon_tint(accent)
+                .item_icon(
+                    crate::Section::Schedule,
+                    res::str::nav_schedule(),
+                    res::vectors::tab_schedule,
+                    pages::schedule::render,
+                )
+                .icon_tint(accent)
+                .item_icon(
+                    crate::Section::Teachers,
+                    res::str::nav_teachers(),
+                    res::vectors::tab_teachers,
+                    pages::teachers::render,
+                )
+                .icon_tint(accent)
+                .item_icon(
+                    crate::Section::Settings,
+                    res::str::nav_settings(),
+                    res::vectors::tab_settings,
+                    pages::settings::render,
+                )
+                .icon_tint(accent);
+
+            if primary {
+                sel.id("nav").restore("app.section").any()
+            } else {
+                sel.id("nav").local().any()
+            }
+        },
+    );
+
+    column((pin_lock_screen, login_screen, nav_screen))
+        .grow()
+        .any()
 }
