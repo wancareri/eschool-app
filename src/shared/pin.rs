@@ -6,6 +6,8 @@ use sha2::{Digest, Sha256};
 const PIN_HASH_KEY: &str = "auth.pin_hash";
 const PIN_SALT_KEY: &str = "auth.pin_salt";
 const PIN_ENABLED_KEY: &str = "auth.pin_enabled";
+const LAST_BG_KEY: &str = "app.last_background";
+const LOCK_TIMEOUT_SECS: u64 = 300; // 5 minutes
 
 /// Check if PIN lock is enabled.
 pub fn is_enabled() -> bool {
@@ -47,6 +49,37 @@ pub fn verify(pin: &str) -> bool {
     nslog::nslog(&format!("[PIN] Verify: {ok}"));
     ok
 }
+
+// ── Auto-lock ───────────────────────────────────────────────────────────
+
+/// Save current timestamp as "last active" (call when app enters background).
+pub fn save_last_background() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    day::prefs::set(LAST_BG_KEY, &now.to_string());
+    nslog::nslog(&format!("[PIN] Background saved: {now}"));
+}
+
+/// Check if auto-lock should trigger (>5 min since last background).
+pub fn should_auto_lock() -> bool {
+    let last = day::prefs::get(LAST_BG_KEY)
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let elapsed = now.saturating_sub(last);
+    let should_lock = elapsed > LOCK_TIMEOUT_SECS;
+    if should_lock {
+        nslog::nslog(&format!("[PIN] Auto-lock: elapsed {elapsed}s > {LOCK_TIMEOUT_SECS}s"));
+    }
+    should_lock
+}
+
+// ── Hashing ─────────────────────────────────────────────────────────────
 
 /// Generate a random 16-byte hex salt.
 fn random_salt() -> String {

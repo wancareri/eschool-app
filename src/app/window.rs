@@ -45,6 +45,22 @@ fn window_shell(primary: bool) -> impl Piece {
     AppState::scoped(move |state| {
         day::window_title(move || res::str::app_title().format());
 
+        // Auto-lock: save background timestamp periodically
+        #[cfg(target_os = "ios")]
+        {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static BG_WATCHER_STARTED: AtomicBool = AtomicBool::new(false);
+            if !BG_WATCHER_STARTED.swap(true, Ordering::Relaxed) {
+                nslog::nslog("[App] Starting background timestamp saver (30s)");
+                std::thread::spawn(|| {
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(30));
+                        crate::shared::pin::save_last_background();
+                    }
+                });
+            }
+        }
+
         // Reactive: trigger load_all when is_authenticated transitions to true
         day::reactive::watch(
             move || state.is_authenticated.get(),

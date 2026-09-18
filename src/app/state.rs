@@ -87,7 +87,8 @@ impl Ambient for AppState {
             && crate::shared::biometric::is_available()
             && crate::shared::biometric::is_enabled();
 
-        let pin_lock = has_token && crate::shared::pin::is_enabled();
+        let pin_lock = has_token && crate::shared::pin::is_enabled()
+            && crate::shared::pin::should_auto_lock();
         let lock_active = biometric_lock || pin_lock;
 
         let state = Self {
