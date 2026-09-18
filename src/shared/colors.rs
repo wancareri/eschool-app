@@ -48,10 +48,6 @@ pub fn apply_ios_tint(hex: u32) {
         let bar_btn_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UIBarButtonItem), appearance];
         let _: () = objc2::msg_send![&*bar_btn_appearance, setTintColor: &*color];
-        // UIButton.appearance().tintColor — buttons
-        let btn_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
-            objc2::msg_send![objc2::class!(UIButton), appearance];
-        let _: () = objc2::msg_send![&*btn_appearance, setTintColor: &*color];
     }
 }
 
