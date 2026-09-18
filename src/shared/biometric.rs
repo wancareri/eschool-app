@@ -38,10 +38,10 @@ pub fn set_enabled(enabled: bool) {
 
 /// Trigger Face ID prompt. Non-blocking — posts evaluatePolicy to main thread.
 /// Reply comes async on GCD queue, delivers result via setter.
-pub fn authenticate_async(state: crate::app::AppState) {
+pub fn authenticate_async(_state: crate::app::AppState) {
     #[cfg(target_os = "ios")]
     {
-        let set_biometric_ok = state.biometric_ok.setter();
+        let set_biometric_ok = _state.biometric_ok.setter();
         nslog::nslog("[Biometric] authenticate_async: posting to main thread");
         day::reactive::on_main(move || {
             nslog::nslog("[Biometric] on_main: creating LAContext");

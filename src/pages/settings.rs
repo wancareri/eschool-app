@@ -1,7 +1,7 @@
 use crate::app::AppState;
 use crate::features;
 use crate::res;
-use crate::shared::{biometric, colors, nslog};
+use crate::shared::{biometric, colors, nslog, pin};
 use day::prelude::*;
 use day_piece_texteditor::text_editor;
 
@@ -23,6 +23,8 @@ pub fn render() -> impl Piece {
         ),
 
         appearance_section(state),
+
+        pin_section(state),
 
         biometric_section(state),
 
@@ -97,6 +99,220 @@ fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
         colors::set_accent(hex);
         state.accent_color.set(hex);
     })
+}
+
+fn pin_section(_state: AppState) -> impl Piece {
+    let pin_enabled = Signal::new(pin::is_enabled());
+    let setup_mode = Signal::new(false);
+    let setup_step = Signal::new(0u8);
+    let setup_input = Signal::new(String::new());
+    let setup_confirm = Signal::new(String::new());
+    let setup_error = Signal::new(String::new());
+
+    // When toggle turns ON → enter setup
+    {
+        let setup = setup_mode.clone();
+        let step = setup_step.clone();
+        let inp = setup_input.clone();
+        let err = setup_error.clone();
+        day::reactive::watch(
+            move || pin_enabled.get(),
+            move |on, old| {
+                if old == Some(&false) && *on {
+                    setup.set(true);
+                    step.set(0);
+                    inp.set(String::new());
+                    err.set(String::new());
+                }
+            },
+        );
+    }
+
+    // When toggle turns OFF → delete PIN
+    day::reactive::watch(
+        move || pin_enabled.get(),
+        move |on, old| {
+            if old == Some(&true) && !*on {
+                pin::delete_pin();
+                nslog::nslog("[PIN] Disabled");
+            }
+        },
+    );
+
+    column((
+        form((
+            section(
+                (
+                    row((
+                        label("PIN-код при входе")
+                            .font(Font::Body)
+                            .grow(),
+                        toggle(pin_enabled),
+                    ))
+                    .spacing(8.0),
+
+                    when(
+                        move || setup_mode.get(),
+                        move || {
+                            column((
+                                label(move || {
+                                    if setup_step.get() == 0 {
+                                        "Придумайте PIN-код (4 цифры)"
+                                    } else {
+                                        "Повторите PIN-код"
+                                    }
+                                })
+                                .font(Font::Caption)
+                                .secondary(),
+
+                                row((
+                                    setup_dot(0, setup_input),
+                                    setup_dot(1, setup_input),
+                                    setup_dot(2, setup_input),
+                                    setup_dot(3, setup_input),
+                                ))
+                                .spacing(12.0),
+
+                                when(
+                                    move || !setup_error.get().is_empty(),
+                                    move || label(move || setup_error.get())
+                                        .font(Font::Caption)
+                                        .color(colors::ERROR),
+                                ),
+
+                                setup_numpad(
+                                    setup_input,
+                                    setup_step,
+                                    setup_confirm,
+                                    setup_error,
+                                    setup_mode,
+                                ),
+
+                                button("Отмена")
+                                    .action(move || {
+                                        setup_mode.set(false);
+                                        pin_enabled.set(false);
+                                        setup_input.set(String::new());
+                                        setup_confirm.set(String::new());
+                                        setup_error.set(String::new());
+                                    })
+                                    .id("pin-setup-cancel"),
+                            ))
+                            .spacing(8.0)
+                        },
+                    ),
+                )
+            ).title("Блокировка"),
+        )),
+    ))
+    .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
+}
+
+fn setup_dot(index: usize, input: Signal<String>) -> impl Piece {
+    button(move || {
+        if input.get().len() > index { "●" } else { "○" }
+    })
+    .action(|| {})
+    .id(format!("setup-dot-{index}"))
+}
+
+fn setup_numpad(
+    input: Signal<String>,
+    step: Signal<u8>,
+    confirm: Signal<String>,
+    error: Signal<String>,
+    setup_mode: Signal<bool>,
+) -> impl Piece {
+    fn key_row(
+        input: Signal<String>,
+        keys: &[&str],
+    ) -> impl Piece {
+        let k1 = keys[0].to_string();
+        let k2 = keys[1].to_string();
+        let k3 = keys[2].to_string();
+        let s = input;
+
+        row((
+            setup_key(s, k1),
+            setup_key(s, k2),
+            setup_key(s, k3),
+        ))
+        .spacing(12.0)
+    }
+
+    fn setup_key(state: Signal<String>, key: String) -> impl Piece {
+        let k = key.clone();
+        let k2 = key.clone();
+        if k.is_empty() {
+            spacer().frame(60.0, 44.0).any()
+        } else if k == "⌫" {
+            button("⌫")
+                .action(move || {
+                    let mut v = state.get();
+                    if !v.is_empty() {
+                        v.pop();
+                        state.set(v);
+                    }
+                })
+                .id(format!("sk-{k2}"))
+                .any()
+        } else {
+            button(k.clone())
+                .action(move || {
+                    let mut v = state.get();
+                    if v.len() >= 4 {
+                        return;
+                    }
+                    v.push_str(&k);
+                    state.set(v);
+                })
+                .id(format!("sk-{k2}"))
+                .any()
+        }
+    }
+
+    column((
+        key_row(input, &["1", "2", "3"]),
+        key_row(input, &["4", "5", "6"]),
+        key_row(input, &["7", "8", "9"]),
+        {
+            let inp = input.clone();
+            row((
+                spacer().frame(60.0, 44.0).any(),
+                setup_key(input, "0".into()),
+                {
+                    button("✓")
+                        .action(move || {
+                            let inp_val = inp.get();
+                            if inp_val.len() != 4 {
+                                error.set("Введите 4 цифры".into());
+                                return;
+                            }
+                            if step.get() == 0 {
+                                confirm.set(inp_val);
+                                inp.set(String::new());
+                                step.set(1);
+                                error.set(String::new());
+                            } else if inp_val == confirm.get() {
+                                pin::save_pin(&inp_val);
+                                setup_mode.set(false);
+                                inp.set(String::new());
+                                confirm.set(String::new());
+                                error.set(String::new());
+                                nslog::nslog("[PIN] Setup complete");
+                            } else {
+                                error.set("PIN-коды не совпадают".into());
+                                inp.set(String::new());
+                            }
+                        })
+                        .id("sk-confirm")
+                        .any()
+                },
+            ))
+            .spacing(12.0)
+        },
+    ))
+    .spacing(8.0)
 }
 
 fn biometric_section(_state: AppState) -> impl Piece {

@@ -25,6 +25,11 @@ pub struct AppState {
     pub remember_me: Signal<bool>,
     pub biometric_ok: Signal<bool>,
 
+    // ── PIN lock ────────────────────────────────────────────────────────
+    pub pin_lock_active: Signal<bool>,
+    pub pin_input: Signal<String>,
+    pub pin_error: Signal<bool>,
+
     // ── user ─────────────────────────────────────────────────────────────
     pub full_name: Signal<String>,
     pub school_name: Signal<String>,
@@ -82,13 +87,19 @@ impl Ambient for AppState {
             && crate::shared::biometric::is_available()
             && crate::shared::biometric::is_enabled();
 
+        let pin_lock = has_token && crate::shared::pin::is_enabled();
+        let lock_active = biometric_lock || pin_lock;
+
         let state = Self {
-            // If biometric lock is active, start unauthenticated (Face ID will unlock)
-            is_authenticated: Signal::new(has_token && !biometric_lock),
+            // Lock active → start unauthenticated (Face ID / PIN will unlock)
+            is_authenticated: Signal::new(has_token && !lock_active),
             loading: Signal::new(false),
             error_msg: Signal::new(String::new()),
             remember_me: Signal::new(remember),
             biometric_ok: Signal::new(false),
+            pin_lock_active: Signal::new(pin_lock),
+            pin_input: Signal::new(String::new()),
+            pin_error: Signal::new(false),
             full_name: Signal::new(secure::load(FULL_NAME_KEY).unwrap_or_default()),
             school_name: Signal::new(secure::load(SCHOOL_NAME_KEY).unwrap_or_default()),
             class_label: Signal::new(String::new()),
@@ -116,10 +127,12 @@ impl Ambient for AppState {
             log_version: Signal::new(0u64),
         };
 
-        if has_token && !biometric_lock {
+        if has_token && !lock_active {
             crate::features::diary::load_all(state);
         } else if biometric_lock {
             nslog::nslog("[App] Biometric lock active, waiting for Face ID");
+        } else if pin_lock {
+            nslog::nslog("[App] PIN lock active, waiting for PIN");
         }
         state
     }

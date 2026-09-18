@@ -62,12 +62,14 @@ fn window_shell(primary: bool) -> impl Piece {
             move |&ok, old| {
                 if ok && old != Some(&true) {
                     nslog::nslog("[App] biometric_ok became true, setting is_authenticated");
+                    state.pin_lock_active.set(false);
                     state.is_authenticated.set(true);
                 }
             },
         );
 
         // Biometric lock: if token exists + biometric enabled, prompt Face ID on startup
+        // Works for both pure biometric lock and PIN+biometric combo
         if !state.is_authenticated.get()
             && crate::shared::secure::load("auth.token").is_some()
             && crate::shared::biometric::is_available()
@@ -86,9 +88,14 @@ fn build_nav(primary: bool) -> impl Piece {
     let section = Signal::new(crate::Section::Diary);
 
     column((
+        // PIN lock screen → show before anything else
+        when(
+            move || state.pin_lock_active.get() && !state.is_authenticated.get(),
+            move || pages::pin_lock::render(state).any(),
+        ),
         // Not authenticated → show login
         when(
-            move || !state.is_authenticated.get(),
+            move || !state.is_authenticated.get() && !state.pin_lock_active.get(),
             move || pages::login::render().any(),
         ),
         // Authenticated → always show nav (even while loading)
