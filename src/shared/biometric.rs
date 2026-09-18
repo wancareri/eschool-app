@@ -1,22 +1,8 @@
 //! Biometric auth support — Face ID / Touch ID on iOS.
 
 use crate::shared::nslog;
-use day::prelude::*;
-use std::sync::OnceLock;
 
 const BIOMETRIC_KEY: &str = "auth.biometric_enabled";
-
-static BIOMETRIC_OK: OnceLock<Signal<bool>> = OnceLock::new();
-
-/// Reactive flag set by Face ID reply block — window_shell watches this.
-pub fn biometric_ok_signal() -> Signal<bool> {
-    BIOMETRIC_OK.get_or_init(|| Signal::new(false)).clone()
-}
-
-/// Set biometric result (call from main thread only).
-pub fn set_biometric_ok(ok: bool) {
-    biometric_ok_signal().set(ok);
-}
 
 /// Check if biometric auth is available on this device.
 pub fn is_available() -> bool {
@@ -76,7 +62,9 @@ pub fn authenticate_async() {
                             // Post to main thread — Signal::set must be called from main thread
                             day::reactive::on_main(move || {
                                 nslog::nslog(&format!("[Biometric] Setting biometric_ok={ok}"));
-                                set_biometric_ok(ok);
+                                use day::prelude::Ambient;
+                                let s = crate::app::AppState::ambient();
+                                s.biometric_ok.set(ok);
                             });
                         },
                     )));

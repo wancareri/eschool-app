@@ -23,6 +23,7 @@ pub struct AppState {
     pub loading: Signal<bool>,
     pub error_msg: Signal<String>,
     pub remember_me: Signal<bool>,
+    pub biometric_ok: Signal<bool>,
 
     // ── user ─────────────────────────────────────────────────────────────
     pub full_name: Signal<String>,
@@ -87,6 +88,7 @@ impl Ambient for AppState {
             loading: Signal::new(false),
             error_msg: Signal::new(String::new()),
             remember_me: Signal::new(remember),
+            biometric_ok: Signal::new(false),
             full_name: Signal::new(secure::load(FULL_NAME_KEY).unwrap_or_default()),
             school_name: Signal::new(secure::load(SCHOOL_NAME_KEY).unwrap_or_default()),
             class_label: Signal::new(String::new()),

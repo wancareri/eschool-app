@@ -57,18 +57,15 @@ fn window_shell(primary: bool) -> impl Piece {
         );
 
         // Watch biometric signal — set by Face ID reply block via on_main.
-        {
-            let sig = crate::shared::biometric::biometric_ok_signal();
-            day::reactive::watch(
-                move || sig.get(),
-                move |ok, old| {
-                    if ok && old != Some(&true) {
-                        nslog::nslog("[App] biometric_ok became true, setting is_authenticated");
-                        state.is_authenticated.set(true);
-                    }
-                },
-            );
-        }
+        day::reactive::watch(
+            move || state.biometric_ok.get(),
+            move |&ok, old| {
+                if ok && old != Some(&true) {
+                    nslog::nslog("[App] biometric_ok became true, setting is_authenticated");
+                    state.is_authenticated.set(true);
+                }
+            },
+        );
 
         // Biometric lock: if token exists + biometric enabled, prompt Face ID on startup
         if !state.is_authenticated.get()
