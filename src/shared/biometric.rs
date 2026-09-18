@@ -61,15 +61,9 @@ pub fn authenticate_async() {
                         move |success: Bool, _error: *mut objc2_foundation::NSError| {
                             let ok = success.as_bool();
                             nslog::nslog(&format!("[Biometric] Reply: success={ok}"));
-                            day::reactive::on_main(move || {
-                                nslog::nslog(&format!("[Biometric] Delivering result: {ok}"));
-                                BIOMETRIC_OK.store(ok, Ordering::Relaxed);
-                                if ok {
-                                    use day::prelude::Ambient;
-                                    let s = crate::app::AppState::ambient();
-                                    s.is_authenticated.set(true);
-                                }
-                            });
+                            // Set atomic flag directly — no on_main needed here.
+                            // The watch in window_shell detects the change on main thread.
+                            BIOMETRIC_OK.store(ok, Ordering::Relaxed);
                         },
                     )));
 

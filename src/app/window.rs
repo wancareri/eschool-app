@@ -56,6 +56,21 @@ fn window_shell(primary: bool) -> impl Piece {
             },
         );
 
+        // Watch BIOMETRIC_OK flag — set by Face ID reply block (runs on GCD queue).
+        // No on_main needed in the reply block: just set the atomic, this watch handles it.
+        {
+            use std::sync::atomic::Ordering;
+            day::reactive::watch(
+                move || crate::shared::biometric::BIOMETRIC_OK.load(Ordering::Relaxed),
+                move |ok, old| {
+                    if *ok && old != Some(&true) {
+                        nslog::nslog("[App] BIOMETRIC_OK became true, setting is_authenticated");
+                        state.is_authenticated.set(true);
+                    }
+                },
+            );
+        }
+
         // Biometric lock: if token exists + biometric enabled, prompt Face ID on startup
         if !state.is_authenticated.get()
             && crate::shared::secure::load("auth.token").is_some()
