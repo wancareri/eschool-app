@@ -7,13 +7,19 @@ const PIN_LENGTH: usize = 4;
 
 pub fn render(state: AppState) -> impl Piece {
     column((
-        label(move || res::str::app_title().format())
-            .font(Font::LargeTitle),
+        column((
+            label(move || res::str::app_title().format())
+                .font(Font::LargeTitle)
+                .align(TextAlign::Center),
 
-        label("Введите PIN-код")
-            .font(Font::Subheadline)
-            .secondary()
-            .padding(Insets { top: 4.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
+            label("Введите PIN-код")
+                .font(Font::Subheadline)
+                .secondary()
+                .align(TextAlign::Center)
+                .padding(Insets { top: 4.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
+        ))
+        .spacing(4.0)
+        .align(HAlign::Center),
 
         // PIN dots
         {
@@ -26,7 +32,8 @@ pub fn render(state: AppState) -> impl Piece {
             ))
             .spacing(20.0)
             .padding(Insets { top: 24.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
-        },
+        }
+        .align(VAlign::Center),
 
         // Error message
         when(
@@ -34,6 +41,7 @@ pub fn render(state: AppState) -> impl Piece {
             || label("Неверный PIN-код")
                 .font(Font::Caption)
                 .color(colors::ERROR)
+                .align(TextAlign::Center)
                 .padding(Insets { top: 4.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
         ),
 
@@ -84,6 +92,7 @@ fn numpad(state: AppState) -> impl Piece {
         numpad_row(state, &["", "0", "⌫"]),
     ))
     .spacing(12.0)
+    .align(HAlign::Center)
 }
 
 fn numpad_row(state: AppState, keys: &[&str]) -> impl Piece {

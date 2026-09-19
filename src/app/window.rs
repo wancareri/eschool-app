@@ -110,27 +110,15 @@ fn window_shell(primary: bool) -> impl Piece {
 
 fn build_nav(primary: bool) -> impl Piece {
     let state = AppState::ambient();
-    let section = Signal::new(crate::Section::Diary);
 
-    // PIN lock screen
-    let pin_lock_screen = when(
-        move || state.pin_lock_active.get() && !state.is_authenticated.get(),
-        move || pages::pin_lock::render(state).any(),
-    );
-
-    // Login screen
-    let login_screen = when(
-        move || !state.is_authenticated.get() && !state.pin_lock_active.get(),
-        move || pages::login::render().any(),
-    );
-
-    // Main nav (tabs)
-    let nav_screen = when(
-        move || state.is_authenticated.get() && {
-            let _ = state.accent_color.get();
-            true
-        },
+    // Single when block: nav is root_view when authenticated, login/PIN otherwise.
+    // Eliminates the column wrapper so scroll_leaf sees a single-child chain
+    // (holder → ... → UITabBarController) and returns true, removing the safe-area
+    // bottom offset that caused the tab bar gap.
+    when(
+        move || state.is_authenticated.get(),
         move || {
+            let section = Signal::new(crate::Section::Diary);
             let accent = Color::hex(state.accent_color.get());
             #[cfg(target_os = "ios")]
             crate::shared::colors::apply_ios_tint(state.accent_color.get());
@@ -178,9 +166,14 @@ fn build_nav(primary: bool) -> impl Piece {
                 sel.id("nav").local().any()
             }
         },
-    );
-
-    column((pin_lock_screen, login_screen, nav_screen))
-        .grow()
-        .any()
+    )
+    .otherwise(move || {
+        if state.pin_lock_active.get() {
+            pages::pin_lock::render(state).any()
+        } else {
+            pages::login::render().any()
+        }
+    })
+    .grow()
+    .any()
 }

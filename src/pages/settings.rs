@@ -130,6 +130,15 @@ fn pin_section(_state: AppState) -> impl Piece {
     );
 
     column((
+        // Modal overlay for PIN setup (above the form so it's always visible)
+        {
+            let pe = pin_enabled;
+            when(
+                move || show_setup.get(),
+                move || pin_setup_modal(show_setup, pe),
+            )
+        },
+
         form((
             section(
                 (
@@ -150,15 +159,6 @@ fn pin_section(_state: AppState) -> impl Piece {
                 )
             ).title("Блокировка"),
         )),
-
-        // Modal overlay for PIN setup
-        {
-            let pe = pin_enabled;
-            when(
-                move || show_setup.get(),
-                move || pin_setup_modal(show_setup, pe),
-            )
-        },
     ))
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
