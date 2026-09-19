@@ -6,7 +6,7 @@ use crate::features::auth;
 use eschool_api::client::blocking;
 use eschool_api::client::endpoints;
 use eschool_api::entities::*;
-use crate::shared::nslog;
+use crate::shared::{cache, nslog};
 
 /// Quarter ranges: weeks indices in all_weeks
 const QUARTER_RANGES: &[(usize, usize)] = &[(0, 9), (9, 18), (18, 27), (27, 36)];
@@ -44,6 +44,47 @@ pub fn load_all(state: AppState) {
 
     set_loading.set(true);
     set_error.set(String::new());
+
+    // Load cached data immediately so UI shows stale data while refreshing
+    if let Some(cached_weeks) = cache::load_json::<Vec<WeekActivity>>("all_weeks") {
+        nslog::nslog("[Cache] Loading cached weeks");
+        set_all_weeks.set(cached_weeks.clone());
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        if let Some((idx, w)) = cached_weeks.iter().enumerate()
+            .find(|(_, w)| w.start_ts <= now_ms && w.end_ts >= now_ms)
+        {
+            set_current_week_index.set(idx as i32);
+            set_current_week.set(w.summary.clone());
+            set_current_quarter.set(quarter_for_index(idx));
+        }
+    }
+    if let Some(cached_lessons) = cache::load_json::<Vec<DaySchedule>>("lessons") {
+        nslog::nslog("[Cache] Loading cached lessons");
+        set_lessons.set(cached_lessons);
+    }
+    if let Some(cached_bells) = cache::load_json::<Vec<BellTime>>("bell_times") {
+        nslog::nslog("[Cache] Loading cached bells");
+        set_bell_times.set(cached_bells);
+    }
+    if let Some(cached_timetable) = cache::load_json::<Vec<TimetableDay>>("timetable_days") {
+        nslog::nslog("[Cache] Loading cached timetable");
+        set_timetable_days.set(cached_timetable);
+    }
+    if let Some(cached_teachers) = cache::load_json::<Vec<SubjectWithTeacher>>("subjects_teachers") {
+        nslog::nslog("[Cache] Loading cached teachers");
+        set_subjects_teachers.set(cached_teachers);
+    }
+    if let Some(cached_q_all) = cache::load_json::<Vec<std::collections::HashMap<String, Vec<f64>>>>("quarter_all_marks") {
+        set_quarter_all_marks.clone().set(cached_q_all);
+    }
+    if let Some(cached_q_off) = cache::load_json::<Vec<std::collections::HashMap<String, Vec<OfficialMark>>>>("quarter_official_marks") {
+        set_quarter_official_marks.clone().set(cached_q_off);
+    }
+    if let Some(name) = cache::load("user_full_name") { set_full_name.set(name); }
+    if let Some(school) = cache::load("user_school_name") { set_school_name.set(school); }
 
     std::thread::spawn(move || {
         let mut client = blocking::build_client(&token);
@@ -84,6 +125,8 @@ pub fn load_all(state: AppState) {
         };
         set_full_name.set(user.full_name.clone());
         set_school_name.set(user.school_name.clone());
+        cache::save("user_full_name", &user.full_name);
+        cache::save("user_school_name", &user.school_name);
 
         // 2 — school year
         let year = blocking::api_get::<SchoolYear>(&client, endpoints::SCHOOL_YEAR).ok();
@@ -154,6 +197,7 @@ pub fn load_all(state: AppState) {
                     .find(|(_, w)| w.start_ts <= now_ms && w.end_ts >= now_ms);
 
                 set_all_weeks.set(weeks.clone());
+                cache::save_json("all_weeks", &weeks);
 
                 if let Some((idx, week)) = cur {
                     let week_summary = week.summary.clone();
@@ -167,9 +211,12 @@ pub fn load_all(state: AppState) {
                     let pid = user.profile_id.clone();
                     let week_uuid = week.uuid.clone();
                     match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &cid, &pid, &week_uuid)) {
-                        Ok(raw) => {
+                            Ok(raw) => {
                             match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
-                                Ok(lessons) => { set_lessons.set(lessons); }
+                                Ok(lessons) => {
+                                    set_lessons.set(lessons.clone());
+                                    cache::save_json("lessons", &lessons);
+                                }
                                 Err(e) => nslog::nslog(&format!("[Diary] parse failed: {e}")),
                             }
                         }
@@ -187,6 +234,7 @@ pub fn load_all(state: AppState) {
             if let Some(schedule) = bells.first() {
                 if let Some(day) = schedule.days_of_week.first() {
                     set_bell_times.set(day.time_of_bells.clone());
+                    cache::save_json("bell_times", &day.time_of_bells);
                 }
             }
         }
@@ -195,6 +243,7 @@ pub fn load_all(state: AppState) {
         if let Ok(tables) = blocking::api_get::<Vec<Timetable>>(&client, &endpoints::timetable(&user.school_id, &class_id)) {
             if let Some(t) = tables.first() {
                 set_timetable_days.set(t.days_of_week.clone());
+                cache::save_json("timetable_days", &t.days_of_week);
             }
         }
 
@@ -204,7 +253,8 @@ pub fn load_all(state: AppState) {
             &client,
             &endpoints::subjects(&user.school_id, &user.profile_id, &class_id),
         ) {
-            set_subjects_teachers.set(subjects);
+            set_subjects_teachers.set(subjects.clone());
+            cache::save_json("subjects_teachers", &subjects);
         }
 
         set_loading.set(false);
@@ -387,8 +437,10 @@ pub fn load_quarter(state: AppState, quarter: usize) {
             }
             q_all[quarter] = all_marks.clone();
             q_off[quarter] = all_official.clone();
-            set_quarter_all_marks.set(q_all);
-            set_quarter_official_marks.set(q_off);
+        set_quarter_all_marks.set(q_all.clone());
+        set_quarter_official_marks.set(q_off.clone());
+        cache::save_json("quarter_all_marks", &q_all);
+        cache::save_json("quarter_official_marks", &q_off);
         }
 
         set_quarter_marks.set(all_marks);
@@ -497,11 +549,13 @@ pub fn load_year(state: AppState) {
             q_official_marks.push(q_off);
         }
 
-        set_quarter_all_marks.set(q_all_marks);
-        set_quarter_official_marks.set(q_official_marks);
+        set_quarter_all_marks.set(q_all_marks.clone());
+        set_quarter_official_marks.set(q_official_marks.clone());
         set_year_quarter_data.set(year_data);
         set_quarter_marks.set(all_marks);
         set_official_marks.set(all_official);
+        cache::save_json("quarter_all_marks", &q_all_marks);
+        cache::save_json("quarter_official_marks", &q_official_marks);
         set_marks_loading.set(false);
         nslog::nslog("[Diary] Year loaded with per-quarter data");
     });

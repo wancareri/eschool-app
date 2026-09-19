@@ -1,4 +1,5 @@
 pub mod biometric;
+pub mod cache;
 pub mod colors;
 pub mod i18n;
 pub mod locale;

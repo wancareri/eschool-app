@@ -5,7 +5,7 @@ use eschool_api::entities::*;
 use crate::shared::{nslog, secure};
 
 /// An official mark set by a teacher.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OfficialMark {
     pub value: f64,
     pub kind: String,
