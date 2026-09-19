@@ -2,6 +2,7 @@
 //! iOS: Keychain (via `keyring` crate)
 //! Other platforms: `day::prefs` (plain text, fallback)
 
+#[allow(unused_imports)]
 use crate::shared::nslog;
 
 const SERVICE: &str = "by.eschool.app";

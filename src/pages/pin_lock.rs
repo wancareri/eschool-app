@@ -32,8 +32,8 @@ pub fn render(state: AppState) -> impl Piece {
             ))
             .spacing(20.0)
             .padding(Insets { top: 24.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
-        }
-        .align(VAlign::Center),
+            .align(VAlign::Center)
+        },
 
         // Error message
         when(
@@ -64,7 +64,13 @@ pub fn render(state: AppState) -> impl Piece {
         ),
     ))
     .spacing(8.0)
-    .padding(Insets { top: 60.0, leading: 40.0, bottom: 40.0, trailing: 40.0 })
+    .align(HAlign::Center)
+    .padding(Insets {
+        top: 80.0,
+        leading: 40.0,
+        bottom: 40.0,
+        trailing: 40.0,
+    })
     .grow()
     .any()
 }

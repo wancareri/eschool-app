@@ -111,10 +111,6 @@ fn window_shell(primary: bool) -> impl Piece {
 fn build_nav(primary: bool) -> impl Piece {
     let state = AppState::ambient();
 
-    // Single when block: nav is root_view when authenticated, login/PIN otherwise.
-    // Eliminates the column wrapper so scroll_leaf sees a single-child chain
-    // (holder → ... → UITabBarController) and returns true, removing the safe-area
-    // bottom offset that caused the tab bar gap.
     when(
         move || state.is_authenticated.get(),
         move || {
@@ -124,13 +120,7 @@ fn build_nav(primary: bool) -> impl Piece {
             crate::shared::colors::apply_ios_tint(state.accent_color.get());
             let sel = nav(section)
                 .style(day::prelude::NavStyle::Tabs)
-                .title(move || {
-                    if state.loading.get() {
-                        format!("{}  ⏳", res::str::app_title().format())
-                    } else {
-                        res::str::app_title().format()
-                    }
-                })
+                .title(move || res::str::app_title().format())
                 .item_icon(
                     crate::Section::Diary,
                     res::str::nav_diary(),
@@ -160,11 +150,25 @@ fn build_nav(primary: bool) -> impl Piece {
                 )
                 .icon_tint(accent);
 
-            if primary {
+            let nav = if primary {
                 sel.id("nav").restore("app.section").any()
             } else {
                 sel.id("nav").local().any()
-            }
+            };
+
+            // Floating loading indicator in bottom-left corner
+            nav.overlay_aligned(
+                Alignment::BottomLeading,
+                when(
+                    move || state.loading.get(),
+                    || row((
+                        label("⟳").font(Font::Caption).secondary(),
+                        label("Обновление...").font(Font::Caption2).secondary(),
+                    ))
+                    .spacing(4.0)
+                    .padding(Insets { top: 6.0, leading: 12.0, bottom: 54.0, trailing: 0.0 }),
+                ),
+            )
         },
     )
     .otherwise(move || {
