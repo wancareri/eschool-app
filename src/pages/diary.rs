@@ -1,9 +1,8 @@
-use crate::app::AppState;
+use crate::app::{AppState, OfficialMark};
 use crate::features;
 use eschool_api::entities::*;
 use crate::shared::{colors, utils};
 use crate::widgets;
-use crate::widgets::stat_block;
 use crate::res;
 use day::prelude::*;
 use day_piece_pullrefresh::pull_to_refresh;
@@ -286,247 +285,101 @@ fn summary_view(state: AppState) -> impl Piece {
         })
         .font(Font::Headline).color(move || Color::hex(state.accent_color.get()))
         .align(TextAlign::Center)
-        .padding(Insets { top: 16.0, leading: PAD, bottom: 6.0, trailing: PAD }),
+        .padding(Insets { top: 16.0, leading: PAD, bottom: 10.0, trailing: PAD }),
 
-        when(move || state.current_quarter.get() != 4 && {
-            let off = state.official_marks.get();
-            off.values().any(|v| !v.is_empty())
-        }, move || quarter_stats(state)),
-        when(move || state.current_quarter.get() == 4, move || year_stats(state)),
+        summary_header(state),
 
-        section_header(state, "Оценки по предметам"),
+        divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
 
-        when(move || state.current_quarter.get() == 4 && !state.year_quarter_data.get().is_empty(),
-            move || year_quarter_subjects(state)),
-        when(move || state.current_quarter.get() != 4,
-            move || subject_list(state)),
+        when(move || state.current_quarter.get() != 4, move || quarter_summary_subjects(state)),
+        when(move || state.current_quarter.get() == 4, move || year_summary_subjects(state)),
     ))
     .spacing(0.0)
     .grow()
 }
 
-fn section_header(state: AppState, text: &'static str) -> impl Piece {
-    label(text)
-        .font(Font::Title3).color(move || Color::hex(state.accent_color.get()))
-        .align(TextAlign::Center)
-        .padding(Insets { top: 10.0, leading: PAD, bottom: 6.0, trailing: PAD })
-}
-
-// ── Quarter stats ──────────────────────────────────────────────────────
-
-fn quarter_stats(state: AppState) -> impl Piece {
+fn summary_header(state: AppState) -> impl Piece {
     row((
-        stat_block::render(state, "Четверть", move || {
-            let labels = ["I", "II", "III", "IV"];
-            format!("{} четверть", labels[state.current_quarter.get()])
-        }),
-        stat_block::render(state, "Предметов", move || {
-            // Count ALL subjects from subjects_teachers
-            let teachers = state.subjects_teachers.get();
-            let marks = state.quarter_marks.get();
-            let mut count = teachers.len();
-            for name in marks.keys() {
-                if !teachers.iter().any(|t| t.subject_title == *name) {
-                    count += 1;
-                }
-            }
-            count.to_string()
-        }),
-        stat_block::render(state, "Средний балл", move || {
-            let marks = state.quarter_marks.get();
-            let total: usize = marks.values().map(|v| v.len()).sum();
-            if total == 0 { "—".into() }
-            else { format!("{:.2}", marks.values().flat_map(|v| v.iter()).sum::<f64>() / total as f64) }
-        }),
-    ))
-    .spacing(8.0)
-    .padding(Insets { top: 0.0, leading: PAD, bottom: 12.0, trailing: PAD })
-}
-
-fn year_stats(state: AppState) -> impl Piece {
-    column((
-        row((
-            stat_block::render(state, "Предметов", move || {
-                // Count ALL subjects from subjects_teachers
-                let teachers = state.subjects_teachers.get();
-                let marks = state.quarter_marks.get();
-                let mut count = teachers.len();
-                // Add any extra from marks not in teachers
-                for name in marks.keys() {
-                    if !teachers.iter().any(|t| t.subject_title == *name) {
-                        count += 1;
-                    }
-                }
-                count.to_string()
-            }),
-            stat_block::render(state, "Оценок", move || {
-                state.quarter_marks.get().values().map(|v| v.len()).sum::<usize>().to_string()
-            }),
-        ))
-        .spacing(8.0)
-        .padding(Insets { top: 0.0, leading: PAD, bottom: 8.0, trailing: PAD }),
-
-        year_avg_row(state, "Средний (все оценки)", move || {
-            let marks = state.quarter_marks.get();
-            let total: usize = marks.values().map(|v| v.len()).sum();
-            if total == 0 { return "—".into(); }
-            format!("{:.2}", marks.values().flat_map(|v| v.iter()).sum::<f64>() / total as f64)
-        }),
-        year_avg_row(state, "Средний (по четвертям)", move || {
-            let yqd = state.year_quarter_data.get();
-            if yqd.is_empty() { return "—".into(); }
-            let q_avgs: Vec<f64> = yqd.iter().map(|(_, m)| {
-                let t: usize = m.values().map(|v| v.len()).sum();
-                if t == 0 { 0.0 } else { m.values().flat_map(|v| v.iter()).sum::<f64>() / t as f64 }
-            }).filter(|a| *a > 0.0).collect();
-            if q_avgs.is_empty() { "—".into() } else { format!("{:.2}", q_avgs.iter().sum::<f64>() / q_avgs.len() as f64) }
-        }),
-        year_avg_row(state, "Средний (взвешенный)", move || {
-            let yqd = state.year_quarter_data.get();
-            if yqd.is_empty() { return "—".into(); }
-            let (mut ws, mut tm) = (0.0, 0usize);
-            for (_, m) in yqd.iter() { tm += m.values().map(|v| v.len()).sum::<usize>(); ws += m.values().flat_map(|v| v.iter()).sum::<f64>(); }
-            if tm == 0 { "—".into() } else { format!("{:.2}", ws / tm as f64) }
-        }),
-    ))
-    .spacing(0.0)
-    .padding(Insets { top: 0.0, leading: 0.0, bottom: 12.0, trailing: 0.0 })
-}
-
-fn year_avg_row(state: AppState, lbl: &'static str, value: impl Fn() -> String + 'static) -> impl Piece {
-    row((
-        day::prelude::label(lbl).font(Font::Body).grow(),
-        day::prelude::label(value).font(Font::Headline).color(move || Color::hex(state.accent_color.get())),
+        label("Предмет").font(Font::Caption).secondary().grow(),
+        label("Выст.").font(Font::Caption).secondary().frame(50.0, 0.0).align(TextAlign::Center),
+        label("Вых.").font(Font::Caption).secondary().frame(50.0, 0.0).align(TextAlign::Center),
+        when(
+            move || state.current_quarter.get() == 4,
+            move || row((
+                label("I").font(Font::Caption).secondary().frame(38.0, 0.0).align(TextAlign::Center),
+                label("II").font(Font::Caption).secondary().frame(38.0, 0.0).align(TextAlign::Center),
+                label("III").font(Font::Caption).secondary().frame(38.0, 0.0).align(TextAlign::Center),
+                label("IV").font(Font::Caption).secondary().frame(38.0, 0.0).align(TextAlign::Center),
+            )).spacing(4.0),
+        ),
     ))
     .spacing(8.0)
     .padding(Insets { top: 4.0, leading: PAD, bottom: 4.0, trailing: PAD })
 }
 
-// ── Calculated: year per-quarter subjects ───────────────────────────────
+fn official_avg(marks: &std::collections::HashMap<String, Vec<OfficialMark>>, subject: &str) -> Option<f64> {
+    marks.get(subject).and_then(|vals| {
+        if vals.is_empty() { None }
+        else { Some(vals.iter().map(|m| m.value).sum::<f64>() / vals.len() as f64) }
+    })
+}
 
-fn year_quarter_subjects(state: AppState) -> impl Piece {
+fn marks_avg(marks: &std::collections::HashMap<String, Vec<f64>>, subject: &str) -> Option<f64> {
+    marks.get(subject).and_then(|vals| {
+        if vals.is_empty() { None }
+        else { Some(vals.iter().sum::<f64>() / vals.len() as f64) }
+    })
+}
+
+fn mark_label(avg: Option<f64>) -> (String, bool) {
+    match avg {
+        Some(v) => (format!("{:.1}", v), v >= 4.0),
+        None => ("—".into(), false),
+    }
+}
+
+// ── Quarter summary subjects ───────────────────────────────────────────
+
+fn quarter_summary_subjects(state: AppState) -> impl Piece {
     each(
         items(
             move || {
-                // Start with ALL subjects from subjects_teachers
                 let teachers = state.subjects_teachers.get();
                 let marks = state.quarter_marks.get();
-                let mut subject_names: Vec<String> = teachers.iter()
+                let mut names: Vec<String> = teachers.iter()
                     .map(|t| t.subject_title.clone())
                     .collect();
                 for name in marks.keys() {
-                    if !subject_names.contains(name) {
-                        subject_names.push(name.clone());
+                    if !names.contains(name) {
+                        names.push(name.clone());
                     }
                 }
-                subject_names.dedup();
-                subject_names.sort();
-                subject_names
+                names.dedup();
+                names.sort();
+                names
             },
             |s: &String| s.clone(),
         ),
         move |item| {
             let subj_name = item.get();
-            year_subject_row(state, subj_name).any()
-        },
-    )
-}
+            let sj = subj_name.clone();
+            let sj2 = subj_name.clone();
 
-fn year_subject_row(state: AppState, subject: String) -> impl Piece {
-    let sj = subject.clone();
-    let sj2 = subject.clone();
-
-    column((
-        row((
-            label(subject).font(Font::Headline).grow(),
-            label(move || {
-                let marks = state.quarter_marks.get();
-                if let Some(vals) = marks.get(&*sj) {
-                    if vals.is_empty() { "—".into() }
-                    else { format!("{:.2}", vals.iter().sum::<f64>() / vals.len() as f64) }
-                } else { "—".into() }
-            }).font(Font::Headline).color(move || Color::hex(state.accent_color.get())),
-        ))
-        .spacing(8.0)
-        .padding(Insets { top: 6.0, leading: PAD, bottom: 2.0, trailing: PAD }),
-        quarter_avg_row(state, sj2),
-        divider(),
-    )).spacing(0.0)
-}
-
-fn quarter_avg_row(state: AppState, subject: String) -> impl Piece {
-    let s = state;
-    let sj = subject;
-    row((
-        quarter_cell(s, sj.clone(), 0),
-        quarter_cell(s, sj.clone(), 1),
-        quarter_cell(s, sj.clone(), 2),
-        quarter_cell(s, sj, 3),
-    ))
-    .spacing(4.0)
-    .padding(Insets { top: 0.0, leading: 20.0, bottom: 6.0, trailing: 20.0 })
-}
-
-fn quarter_cell(state: AppState, subject: String, q: usize) -> impl Piece {
-    let ql = ["I", "II", "III", "IV"][q].to_string();
-    column((
-        day::prelude::label(ql).font(Font::Caption).secondary().align(TextAlign::Center),
-        day::prelude::label(move || {
-            let yqd = state.year_quarter_data.get();
-            if let Some((_, m)) = yqd.get(q) {
-                if let Some(v) = m.get(&*subject) {
-                    if v.is_empty() { "—".into() } else { format!("{:.1}", v.iter().sum::<f64>() / v.len() as f64) }
-                } else { "—".into() }
-            } else { "—".into() }
-        }).font(Font::Body).align(TextAlign::Center),
-    ))
-    .spacing(2.0).grow()
-}
-
-// ── Calculated: quarter subject list ───────────────────────────────────
-
-fn subject_list(state: AppState) -> impl Piece {
-    each(
-        items(
-            move || {
-                // Start with ALL subjects from subjects_teachers
-                let teachers = state.subjects_teachers.get();
-                let marks = state.quarter_marks.get();
-                let mut subject_names: Vec<String> = teachers.iter()
-                    .map(|t| t.subject_title.clone())
-                    .collect();
-                // Add any subjects from marks that aren't in teachers (shouldn't happen, but safety)
-                for name in marks.keys() {
-                    if !subject_names.contains(name) {
-                        subject_names.push(name.clone());
-                    }
-                }
-                subject_names.dedup();
-                subject_names.sort();
-                subject_names
-            },
-            |s: &String| s.clone(),
-        ),
-        move |item| {
-            let subj_name = item.get();
-            let s2 = subj_name.clone();
             row((
                 label(subj_name).font(Font::Body).grow(),
+
                 {
-                    let marks = state.quarter_marks.get();
-                    match marks.get(&*s2) {
-                        Some(vals) if !vals.is_empty() => {
-                            let avg = vals.iter().sum::<f64>() / vals.len() as f64;
-                            label(format!("{:.1}", avg)).font(Font::Headline)
-                                .color(if avg >= 4.0 { colors::SUCCESS } else if avg >= 3.0 { colors::WARNING } else { colors::ERROR })
-                        }
-                        _ => label("—").font(Font::Headline).secondary(),
-                    }
+                    let off = state.official_marks.get();
+                    let (text, ok) = mark_label(official_avg(&off, &sj));
+                    label(text).font(Font::Headline).frame(50.0, 0.0).align(TextAlign::Center)
+                        .color(if ok { colors::SUCCESS } else { colors::SECONDARY })
                 },
+
                 {
                     let marks = state.quarter_marks.get();
-                    let count = marks.get(&s2).map(|v| v.len()).unwrap_or(0);
-                    label(format!("({})", count)).font(Font::Caption).secondary()
+                    let (text, ok) = mark_label(marks_avg(&marks, &sj2));
+                    let c = if ok { colors::SUCCESS } else if text != "—" { colors::WARNING } else { colors::SECONDARY };
+                    label(text).font(Font::Headline).frame(50.0, 0.0).align(TextAlign::Center).color(c)
                 },
             ))
             .spacing(8.0)
@@ -534,6 +387,91 @@ fn subject_list(state: AppState) -> impl Piece {
             .any()
         },
     )
+}
+
+// ── Year summary subjects ──────────────────────────────────────────────
+
+fn year_summary_subjects(state: AppState) -> impl Piece {
+    each(
+        items(
+            move || {
+                let teachers = state.subjects_teachers.get();
+                let marks = state.quarter_marks.get();
+                let mut names: Vec<String> = teachers.iter()
+                    .map(|t| t.subject_title.clone())
+                    .collect();
+                for name in marks.keys() {
+                    if !names.contains(name) {
+                        names.push(name.clone());
+                    }
+                }
+                names.dedup();
+                names.sort();
+                names
+            },
+            |s: &String| s.clone(),
+        ),
+        move |item| {
+            let subj_name = item.get();
+            let sj = subj_name.clone();
+            let sj2 = subj_name.clone();
+            let sj3 = subj_name.clone();
+
+            column((
+                row((
+                    label(subj_name).font(Font::Body).grow(),
+
+                    {
+                        let off = state.official_marks.get();
+                        let (text, ok) = mark_label(official_avg(&off, &sj));
+                        label(text).font(Font::Headline).frame(50.0, 0.0).align(TextAlign::Center)
+                            .color(if ok { colors::SUCCESS } else { colors::SECONDARY })
+                    },
+
+                    {
+                        let marks = state.quarter_marks.get();
+                        let (text, ok) = mark_label(marks_avg(&marks, &sj2));
+                        let c = if ok { colors::SUCCESS } else if text != "—" { colors::WARNING } else { colors::SECONDARY };
+                        label(text).font(Font::Headline).frame(50.0, 0.0).align(TextAlign::Center).color(c)
+                    },
+
+                    year_quarter_cells(state, sj3),
+                ))
+                .spacing(8.0)
+                .padding(Insets { top: 6.0, leading: PAD, bottom: 2.0, trailing: PAD }),
+
+                divider(),
+            ))
+            .spacing(0.0)
+            .any()
+        },
+    )
+}
+
+fn year_quarter_cells(state: AppState, subject: String) -> impl Piece {
+    let s = state;
+    let sj = subject;
+    row((
+        year_q_cell(s, sj.clone(), 0),
+        year_q_cell(s, sj.clone(), 1),
+        year_q_cell(s, sj.clone(), 2),
+        year_q_cell(s, sj, 3),
+    ))
+    .spacing(4.0)
+}
+
+fn year_q_cell(state: AppState, subject: String, q: usize) -> impl Piece {
+    column((
+        day::prelude::label(move || {
+            let yqd = state.year_quarter_data.get();
+            if let Some((_, m)) = yqd.get(q) {
+                if let Some(v) = m.get(&*subject) {
+                    if v.is_empty() { "—".into() } else { format!("{:.1}", v.iter().sum::<f64>() / v.len() as f64) }
+                } else { "—".into() }
+            } else { "—".into() }
+        }).font(Font::Caption).align(TextAlign::Center),
+    ))
+    .frame(38.0, 0.0)
 }
 
 // ── Structs ────────────────────────────────────────────────────────────
