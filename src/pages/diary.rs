@@ -233,8 +233,9 @@ fn pager_drag(
                 axis.set(None);
                 let idx = state.current_week_index.get();
                 let total = state.all_weeks.get().len() as i32;
-                if was_horiz && dx.abs() >= SWIPE_THRESHOLD {
-                    if dx < 0.0 && idx + 1 < total {
+                let actual_dx = strip_tx.get() + w;
+                if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
+                    if actual_dx < 0.0 && idx + 1 < total {
                         features::diary::load_week(state, idx + 1);
                         strip_tx.set(strip_tx.get() + w);
                         with_animation(AnimSpec::ease_out(200), || {
@@ -242,7 +243,7 @@ fn pager_drag(
                         });
                         return;
                     }
-                    if dx > 0.0 && idx > 0 {
+                    if actual_dx > 0.0 && idx > 0 {
                         features::diary::load_week(state, idx - 1);
                         strip_tx.set(strip_tx.get() - w);
                         with_animation(AnimSpec::ease_out(200), || {
@@ -472,8 +473,9 @@ fn summary_drag(
                 let was_horiz = axis.get() == Some(true);
                 axis.set(None);
                 let q = state.current_quarter.get();
-                if was_horiz && dx.abs() >= SWIPE_THRESHOLD {
-                    if dx < 0.0 && q < 4 {
+                let actual_dx = strip_tx.get() + w;
+                if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
+                    if actual_dx < 0.0 && q < 4 {
                         select_quarter(state, q + 1);
                         strip_tx.set(strip_tx.get() + w);
                         with_animation(AnimSpec::ease_out(200), || {
@@ -481,7 +483,7 @@ fn summary_drag(
                         });
                         return;
                     }
-                    if dx > 0.0 && q > 0 {
+                    if actual_dx > 0.0 && q > 0 {
                         select_quarter(state, q - 1);
                         strip_tx.set(strip_tx.get() - w);
                         with_animation(AnimSpec::ease_out(200), || {
