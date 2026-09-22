@@ -16,10 +16,16 @@ pub fn render(state: AppState, date: u64, number: u32) -> impl Piece {
             column((
                 label(move || find_field(state, date, number, |s| s.subject_title.clone()))
                     .font(Font::Body),
-                label(move || find_field(state, date, number, |s| {
-                    let t = &s.start_time;
-                    t.get(..5).unwrap_or(t).to_string()
-                }))
+                label(move || {
+                    let time = find_field(state, date, number, |s| {
+                        let t = &s.start_time;
+                        t.get(..5).unwrap_or(t).to_string()
+                    });
+                    let topic = find_field(state, date, number, |s| {
+                        s.topic.clone().unwrap_or_default()
+                    });
+                    if topic.is_empty() { time } else { format!("{time} · {topic}") }
+                })
                 .font(Font::Caption)
                 .secondary(),
             ))
@@ -45,6 +51,23 @@ pub fn render(state: AppState, date: u64, number: u32) -> impl Piece {
         ))
         .spacing(12.0)
         .padding(Insets { top: 8.0, leading: 16.0, bottom: 0.0, trailing: 20.0 }),
+        when(
+            move || find_field_bool(state, date, number, |s| {
+                s.lesson_mark.as_ref()
+                    .and_then(|m| m.comment.as_ref())
+                    .map_or(false, |c| !c.is_empty())
+            }),
+            move || {
+                label(move || find_field(state, date, number, |s| {
+                    s.lesson_mark.as_ref()
+                        .and_then(|m| m.comment.clone())
+                        .unwrap_or_default()
+                }))
+                .font(Font::Caption)
+                .color(colors::SECONDARY)
+                .padding(Insets { top: 2.0, leading: HW_LEFT, bottom: 2.0, trailing: 20.0 })
+            },
+        ),
         when(
             move || find_field_bool(state, date, number, |s| {
                 s.homework.as_ref().map_or(false, |h| !h.is_empty())
