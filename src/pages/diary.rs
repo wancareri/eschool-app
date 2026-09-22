@@ -63,6 +63,7 @@ pub fn render() -> impl Piece {
         ),
     ))
     .spacing(0.0)
+    .background(Color::CLEAR)
     .grow())
     .grow())
     .on_refresh(move || {
@@ -307,7 +308,6 @@ fn week_view(state: AppState) -> impl Piece {
         ),
     ))
     .spacing(0.0)
-    .grow()
 }
 
 fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
@@ -329,7 +329,6 @@ fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
     ))
     .spacing(0.0)
     .width(w)
-    .grow()
 }
 
 fn week_header(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) -> impl Piece {
@@ -545,7 +544,6 @@ fn summary_view(state: AppState) -> impl Piece {
         ),
     ))
     .spacing(0.0)
-    .grow()
 }
 
 fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
