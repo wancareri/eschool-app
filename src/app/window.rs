@@ -120,7 +120,13 @@ fn build_nav(primary: bool) -> impl Piece {
             crate::shared::colors::apply_ios_tint(state.accent_color.get());
             let sel = nav(section)
                 .style(day::prelude::NavStyle::Tabs)
-                .title(move || res::str::app_title().format())
+                .title(move || {
+                    if state.loading.get() {
+                        format!("{}  ⏳", res::str::app_title().format())
+                    } else {
+                        res::str::app_title().format()
+                    }
+                })
                 .item_icon(
                     crate::Section::Diary,
                     res::str::nav_diary(),
@@ -150,25 +156,11 @@ fn build_nav(primary: bool) -> impl Piece {
                 )
                 .icon_tint(accent);
 
-            let nav = if primary {
+            if primary {
                 sel.id("nav").restore("app.section").any()
             } else {
                 sel.id("nav").local().any()
-            };
-
-            // Floating loading indicator in bottom-left corner
-            nav.overlay_aligned(
-                Alignment::BottomLeading,
-                when(
-                    move || state.loading.get(),
-                    || row((
-                        label("⟳").font(Font::Caption).secondary(),
-                        label("Обновление...").font(Font::Caption2).secondary(),
-                    ))
-                    .spacing(4.0)
-                    .padding(Insets { top: 6.0, leading: 12.0, bottom: 54.0, trailing: 0.0 }),
-                ),
-            )
+            }
         },
     )
     .otherwise(move || {
