@@ -303,7 +303,6 @@ fn week_view(state: AppState) -> impl Piece {
                     .translation(strip_tx, 0.0),
                 ))
                 .on_drag(pager_drag(drag_tx, drag_width, drag_state))
-                .grow()
             },
         ),
     ))
@@ -539,7 +538,6 @@ fn summary_view(state: AppState) -> impl Piece {
                     .translation(strip_tx, 0.0),
                 ))
                 .on_drag(summary_drag(drag_tx, drag_width, drag_state))
-                .grow()
             },
         ),
     ))
