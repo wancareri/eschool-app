@@ -295,8 +295,8 @@ fn week_view(state: AppState) -> impl Piece {
                 }
             }
         })
-        .height(0.0)
-        .grow(),
+        .height(0.0),
+
         when(
             move || {
                 page_width.get();
@@ -394,7 +394,7 @@ fn strip_week_summary(s: &str) -> String {
             i += 1;
         }
     }
-    result
+    result.trim().to_string()
 }
 
 fn diary_list_with(
@@ -531,8 +531,8 @@ fn summary_view(state: AppState) -> impl Piece {
                 }
             }
         })
-        .height(0.0)
-        .grow(),
+        .height(0.0),
+
         when(
             move || {
                 page_width.get();

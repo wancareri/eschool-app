@@ -37,7 +37,7 @@ pub fn render() -> impl Piece {
     
     when(
         move || show_setup.get(),
-        move || row((spacer().grow(), pin_setup_modal(show_setup, pin_enabled), spacer().grow())).grow().any()
+        move || pin_setup_modal(show_setup, pin_enabled)
     ).otherwise(move || column((
         column((
             label(move || res::str::settings_title().format())
@@ -178,7 +178,7 @@ fn pin_setup_modal(show_setup: Signal<bool>, pin_enabled: Signal<bool>) -> impl 
     let confirm = Signal::new(String::new());
     let error = Signal::new(String::new());
 
-    column((
+    let c = column(( 
         column((
             label(move || res::str::app_title().format())
                 .font(Font::LargeTitle)
@@ -225,9 +225,11 @@ fn pin_setup_modal(show_setup: Signal<bool>, pin_enabled: Signal<bool>) -> impl 
     ))
     .spacing(8.0)
     .align(HAlign::Center)
-    .padding(Insets { top: 80.0, leading: 40.0, bottom: 40.0, trailing: 40.0 })
-    .grow()
-    .any()
+    .padding(Insets { top: 80.0, leading: 40.0, bottom: 40.0, trailing: 40.0 });
+    
+    // Wrap in a row to force horizontal centering
+    let c = column((c,)).grow();
+    row((spacer().grow(), c, spacer().grow())).grow().any()
 }
 
 fn setup_dot(index: usize, input: Signal<String>) -> impl Piece {
