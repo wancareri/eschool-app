@@ -7,8 +7,38 @@ use day_piece_texteditor::text_editor;
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
+    let current_tab = Signal::new(0usize);
+    let show_setup = Signal::new(false);
+    let pin_enabled = Signal::new(crate::shared::pin::is_enabled());
 
-    scroll(column((
+    // When toggle turns ON -> show setup modal
+    {
+        let show = show_setup.clone();
+        day::reactive::watch(
+            move || pin_enabled.get(),
+            move |on, old| {
+                if old == Some(&false) && *on {
+                    show.set(true);
+                }
+            },
+        );
+    }
+    // When toggle turns OFF -> delete PIN
+    day::reactive::watch(
+        move || pin_enabled.get(),
+        move |on, old| {
+            if old == Some(&true) && !*on {
+                crate::shared::pin::delete_pin();
+                crate::shared::nslog::nslog("[PIN] Disabled");
+            }
+        },
+    );
+
+    
+    when(
+        move || show_setup.get(),
+        move || pin_setup_modal(show_setup, pin_enabled)
+    ).otherwise(move || column((
         column((
             label(move || res::str::settings_title().format())
                 .font(Font::LargeTitle).align(TextAlign::Center),
@@ -17,29 +47,43 @@ pub fn render() -> impl Piece {
         .spacing(6.0)
         .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
 
-        when(
-            move || state.is_authenticated.get(),
-            move || profile_section(state),
-        ),
+        row((
+            button("Основные").action(move || current_tab.set(0)),
+            button("Безопасность").action(move || current_tab.set(1)),
+            button("DevTools").action(move || current_tab.set(2)),
+        ))
+        .spacing(12.0)
+        .padding(Insets { top: 8.0, leading: 20.0, bottom: 16.0, trailing: 20.0 }),
 
-        appearance_section(state),
+        scroll(column((
+            when(
+                move || current_tab.get() == 0,
+                move || column((
+                    when(move || state.is_authenticated.get(), move || profile_section(state)),
+                    appearance_section(state),
+                    system_settings(),
+                )).spacing(0.0).grow()
+            ),
+            
+            when(
+                move || current_tab.get() == 1,
+                move || column((
+                    pin_section(state, pin_enabled),
+                    biometric_section(state),
+                    when(move || state.is_authenticated.get(), move || logout_section(state)),
+                )).spacing(0.0).grow()
+            ),
 
-        pin_section(state),
-
-        biometric_section(state),
-
-        system_settings(),
-
-        dev_settings(state),
-
-        when(
-            move || state.is_authenticated.get(),
-            move || logout_section(state),
-        ),
-    ))
-    .spacing(0.0)
-    .grow())
-    .grow()
+            when(
+                move || current_tab.get() == 2,
+                move || dev_settings(state)
+            ),
+        ))
+        .spacing(0.0)
+        .grow())
+        .grow()
+    )))
+    .grow().any()
 }
 
 fn profile_section(state: AppState) -> impl Piece {
@@ -101,44 +145,8 @@ fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
     })
 }
 
-fn pin_section(_state: AppState) -> impl Piece {
-    let pin_enabled = Signal::new(pin::is_enabled());
-    let show_setup = Signal::new(false);
-
-    // When toggle turns ON → show setup modal
-    {
-        let show = show_setup.clone();
-        day::reactive::watch(
-            move || pin_enabled.get(),
-            move |on, old| {
-                if old == Some(&false) && *on {
-                    show.set(true);
-                }
-            },
-        );
-    }
-
-    // When toggle turns OFF → delete PIN (only if PIN exists)
-    day::reactive::watch(
-        move || pin_enabled.get(),
-        move |on, old| {
-            if old == Some(&true) && !*on {
-                pin::delete_pin();
-                nslog::nslog("[PIN] Disabled");
-            }
-        },
-    );
-
+fn pin_section(_state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
     column((
-        // Modal overlay for PIN setup (above the form so it's always visible)
-        {
-            let pe = pin_enabled;
-            when(
-                move || show_setup.get(),
-                move || pin_setup_modal(show_setup, pe),
-            )
-        },
-
         form((
             section(
                 (
@@ -151,7 +159,7 @@ fn pin_section(_state: AppState) -> impl Piece {
                     .spacing(8.0),
 
                     when(
-                        move || pin::is_enabled(),
+                        move || crate::shared::pin::is_enabled(),
                         || label("PIN-код активен")
                             .font(Font::Caption)
                             .secondary(),
@@ -170,19 +178,20 @@ fn pin_setup_modal(show_setup: Signal<bool>, pin_enabled: Signal<bool>) -> impl 
     let error = Signal::new(String::new());
 
     column((
-        label(move || {
-            if step.get() == 0 {
-                "Придумайте PIN-код"
-            } else {
-                "Повторите PIN-код"
-            }
-        })
-        .font(Font::Title3),
-
-        label("4 цифры")
-            .font(Font::Caption)
+        column((
+            label(move || res::str::app_title().format())
+                .font(Font::LargeTitle)
+                .align(TextAlign::Center),
+            label(move || {
+                if step.get() == 0 { "Придумайте PIN-код" } else { "Повторите PIN-код" }
+            })
+            .font(Font::Subheadline)
             .secondary()
-            .padding(Insets { top: 2.0, leading: 0.0, bottom: 8.0, trailing: 0.0 }),
+            .align(TextAlign::Center)
+            .padding(Insets { top: 4.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
+        ))
+        .spacing(4.0)
+        .align(HAlign::Center),
 
         row((
             setup_dot(0, input),
@@ -190,28 +199,32 @@ fn pin_setup_modal(show_setup: Signal<bool>, pin_enabled: Signal<bool>) -> impl 
             setup_dot(2, input),
             setup_dot(3, input),
         ))
-        .spacing(16.0)
-        .padding(Insets { top: 0.0, leading: 0.0, bottom: 12.0, trailing: 0.0 }),
+        .spacing(20.0)
+        .padding(Insets { top: 24.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
+        .align(VAlign::Center),
 
         when(
             move || !error.get().is_empty(),
             move || label(move || error.get())
                 .font(Font::Caption)
                 .color(colors::ERROR)
-                .padding(Insets { top: 0.0, leading: 0.0, bottom: 8.0, trailing: 0.0 }),
+                .align(TextAlign::Center)
+                .padding(Insets { top: 4.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
         ),
 
-        setup_numpad(input, step, confirm, error, show_setup),
-
+        setup_numpad(input, step, confirm, error, show_setup, pin_enabled),
+        
         button("Отмена")
             .action(move || {
                 show_setup.set(false);
                 pin_enabled.set(false);
             })
-            .id("pin-modal-cancel"),
+            .id("pin-modal-cancel")
+            .padding(Insets { top: 24.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
     ))
     .spacing(8.0)
-    .padding(Insets { top: 24.0, leading: 32.0, bottom: 24.0, trailing: 32.0 })
+    .align(HAlign::Center)
+    .padding(Insets { top: 80.0, leading: 40.0, bottom: 40.0, trailing: 40.0 })
     .grow()
     .any()
 }
@@ -222,6 +235,7 @@ fn setup_dot(index: usize, input: Signal<String>) -> impl Piece {
     })
     .action(|| {})
     .id(format!("setup-dot-{index}"))
+    .frame(20.0, 20.0)
 }
 
 fn setup_numpad(
@@ -230,29 +244,13 @@ fn setup_numpad(
     confirm: Signal<String>,
     error: Signal<String>,
     setup_mode: Signal<bool>,
+    pin_enabled: Signal<bool>,
 ) -> impl Piece {
-    fn key_row(
-        input: Signal<String>,
-        keys: &[&str],
-    ) -> impl Piece {
-        let k1 = keys[0].to_string();
-        let k2 = keys[1].to_string();
-        let k3 = keys[2].to_string();
-        let s = input;
-
-        row((
-            setup_key(s, k1),
-            setup_key(s, k2),
-            setup_key(s, k3),
-        ))
-        .spacing(16.0)
-    }
-
-    fn setup_key(state: Signal<String>, key: String) -> impl Piece {
+    fn setup_key(state: Signal<String>, key: String, confirm: Signal<String>, step: Signal<u8>, error: Signal<String>, setup_mode: Signal<bool>) -> impl Piece {
         let k = key.clone();
         let k2 = key.clone();
         if k.is_empty() {
-            spacer().frame(64.0, 44.0).any()
+            spacer().frame(72.0, 52.0).any()
         } else if k == "⌫" {
             button("⌫")
                 .action(move || {
@@ -260,69 +258,68 @@ fn setup_numpad(
                     if !v.is_empty() {
                         v.pop();
                         state.set(v);
+                        error.set("".into());
                     }
                 })
-                .frame(64.0, 44.0)
+                .frame(72.0, 52.0)
                 .id(format!("sk-{k2}"))
                 .any()
         } else {
             button(k.clone())
                 .action(move || {
                     let mut v = state.get();
-                    if v.len() >= 4 {
-                        return;
-                    }
+                    if v.len() >= 4 { return; }
                     v.push_str(&k);
-                    state.set(v);
+                    state.set(v.clone());
+                    error.set("".into());
+                    
+                    if v.len() == 4 {
+                        if step.get() == 0 {
+                            confirm.set(v);
+                            state.set(String::new());
+                            step.set(1);
+                        } else if v == confirm.get() {
+                            pin::save_pin(&v);
+                            setup_mode.set(false);
+                            state.set(String::new());
+                            confirm.set(String::new());
+                            nslog::nslog("[PIN] Setup complete");
+                        } else {
+                            error.set("PIN-коды не совпадают".into());
+                            state.set(String::new());
+                        }
+                    }
                 })
-                .frame(64.0, 44.0)
+                .frame(72.0, 52.0)
                 .id(format!("sk-{k2}"))
                 .any()
         }
     }
 
     column((
-        key_row(input, &["1", "2", "3"]),
-        key_row(input, &["4", "5", "6"]),
-        key_row(input, &["7", "8", "9"]),
-        {
-            let inp = input.clone();
-            row((
-                spacer().frame(64.0, 44.0).any(),
-                setup_key(input, "0".into()),
-                {
-                    button("✓")
-                        .action(move || {
-                            let inp_val = inp.get();
-                            if inp_val.len() != 4 {
-                                error.set("Введите 4 цифры".into());
-                                return;
-                            }
-                            if step.get() == 0 {
-                                confirm.set(inp_val);
-                                inp.set(String::new());
-                                step.set(1);
-                                error.set(String::new());
-                            } else if inp_val == confirm.get() {
-                                pin::save_pin(&inp_val);
-                                setup_mode.set(false);
-                                inp.set(String::new());
-                                confirm.set(String::new());
-                                error.set(String::new());
-                                nslog::nslog("[PIN] Setup complete");
-                            } else {
-                                error.set("PIN-коды не совпадают".into());
-                                inp.set(String::new());
-                            }
-                        })
-                        .id("sk-confirm")
-                        .any()
-                },
-            ))
-            .spacing(12.0)
-        },
+        row((
+            setup_key(input.clone(), "1".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
+            setup_key(input.clone(), "2".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
+            setup_key(input.clone(), "3".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
+        )).spacing(16.0),
+        row((
+            setup_key(input.clone(), "4".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
+            setup_key(input.clone(), "5".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
+            setup_key(input.clone(), "6".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
+        )).spacing(16.0),
+        row((
+            setup_key(input.clone(), "7".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
+            setup_key(input.clone(), "8".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
+            setup_key(input.clone(), "9".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
+        )).spacing(16.0),
+        row((
+            setup_key(input.clone(), "".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
+            setup_key(input.clone(), "0".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
+            setup_key(input.clone(), "⌫".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
+        )).spacing(16.0),
     ))
-    .spacing(8.0)
+    .spacing(12.0)
+    .align(HAlign::Center)
 }
 
 fn biometric_section(_state: AppState) -> impl Piece {

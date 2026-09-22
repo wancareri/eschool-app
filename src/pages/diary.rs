@@ -70,7 +70,8 @@ pub fn render() -> impl Piece {
         ),
     ))
     .spacing(0.0)
-    .grow()))
+    .grow())
+    .grow())
     .on_refresh(move || {
         let state = AppState::ambient();
         if state.is_authenticated.get() {
@@ -353,10 +354,11 @@ fn week_header(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) 
             .action(move || pager_go(s1, pw1, st1, -1))
             .id("wk-prev")
             .frame(44.0, 36.0),
+        spacer().grow(),
         label(move || strip_week_summary(&state.current_week.get()))
             .font(Font::Headline)
-            .align(TextAlign::Center)
-            .grow(),
+            .align(TextAlign::Center),
+        spacer().grow(),
         button(">")
             .action(move || pager_go(s2, pw2, st2, 1))
             .id("wk-next")
@@ -430,7 +432,7 @@ fn day_card_with(
         })
         .font(Font::Headline)
         .color(move || Color::hex(state.accent_color.get()))
-        .padding(Insets { top: 16.0, leading: PAD, bottom: 6.0, trailing: PAD }),
+        .padding(Insets { top: 16.0, leading: PAD, bottom: 6.0, trailing: PAD }).align(TextAlign::Leading),
         each(
             items(get_slots, |s: &LessonSlot| s.number),
             move |slot| {
@@ -569,7 +571,37 @@ fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
         .font(Font::Headline)
         .color(move || Color::hex(state.accent_color.get()))
         .align(TextAlign::Center)
-        .padding(Insets { top: 16.0, leading: PAD, bottom: 10.0, trailing: PAD }),
+        .padding(Insets { top: 16.0, leading: PAD, bottom: 2.0, trailing: PAD }),
+        
+        {
+            let s = state;
+            label(move || {
+                let q = (s.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+                let off: std::collections::HashMap<String, Vec<OfficialMark>> = if offset == 0 {
+                    s.official_marks.get()
+                } else {
+                    s.quarter_official_marks.get().get(q).cloned().unwrap_or_default()
+                };
+                let mut sum = 0.0;
+                let mut count = 0;
+                for marks in off.values() {
+                    for m in marks {
+                        sum += m.value;
+                        count += 1;
+                    }
+                }
+                if count > 0 {
+                    format!("Средний балл: {:.2}", sum / count as f64)
+                } else {
+                    "Средний балл: —".to_string()
+                }
+            })
+            .font(Font::Subheadline)
+            .secondary()
+            .align(TextAlign::Center)
+            .padding(Insets { top: 0.0, leading: PAD, bottom: 10.0, trailing: PAD })
+        },
+        
         summary_header_for(header_state, offset),
         divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
         when(
