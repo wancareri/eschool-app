@@ -4,6 +4,21 @@ use day::prelude::*;
 use eschool_api::entities::*;
 use crate::shared::{nslog, secure};
 
+/// Connection status for the Telegram-style indicator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnStatus {
+    /// No activity — hide indicator
+    Idle,
+    /// Connecting / loading data
+    Connecting,
+    /// Successfully connected (show briefly, then fade)
+    Connected,
+    /// Working offline from cache
+    Offline,
+    /// Error occurred
+    Error,
+}
+
 /// An official mark set by a teacher.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OfficialMark {
@@ -69,6 +84,9 @@ pub struct AppState {
     // ── teachers ─────────────────────────────────────────────────────────
     pub subjects_teachers: Signal<Vec<SubjectWithTeacher>>,
     pub teachers_loading: Signal<bool>,
+
+    // ── connection status ──────────────────────────────────────────────────
+    pub conn_status: Signal<ConnStatus>,
 }
 
 impl Ambient for AppState {
@@ -126,6 +144,7 @@ impl Ambient for AppState {
             schedule_loading: Signal::new(false),
             subjects_teachers: Signal::new(Vec::new()),
             teachers_loading: Signal::new(false),
+            conn_status: Signal::new(ConnStatus::Idle),
             log_version: Signal::new(0u64),
         };
 

@@ -18,13 +18,18 @@ pub fn render() -> impl Piece {
     let refreshing = Signal::new(false);
 
     pull_to_refresh(refreshing, scroll(column((
-        column((
-            label(move || res::str::diary_title().format())
-                .font(Font::LargeTitle)
-                .align(TextAlign::Center),
-        ))
-        .spacing(6.0)
-        .padding(Insets { top: 16.0, leading: PAD, bottom: 4.0, trailing: PAD }),
+        zstack((
+            column((
+                label(move || res::str::diary_title().format())
+                    .font(Font::LargeTitle)
+                    .align(TextAlign::Center),
+            ))
+            .spacing(6.0)
+            .padding(Insets { top: 16.0, leading: PAD, bottom: 4.0, trailing: PAD }),
+            
+            // Connection indicator overlay in top-left
+            widgets::conn_status::render(),
+        )),
 
         when(
             move || state.is_authenticated.get(),
@@ -46,20 +51,8 @@ pub fn render() -> impl Piece {
             )).grow(),
         ),
 
-        // Initial load_all spinner — shown on top of content
-        when(
-            move || state.is_authenticated.get() && state.loading.get() && state.lessons.get().is_empty(),
-            || row((spacer().grow(), spinner(), label("  Загрузка данных…").font(Font::Caption).secondary(), spacer().grow()))
-                .padding(Insets { top: 24.0, leading: PAD, bottom: 24.0, trailing: PAD }),
-        ),
-
-        // Quarter/year marks loading spinner
-        when(
-            move || state.is_authenticated.get() && state.marks_loading.get(),
-            || row((spacer().grow(), spinner(), label("  Загрузка оценок…").font(Font::Caption).secondary(), spacer().grow()))
-                .padding(Insets { top: 8.0, leading: PAD, bottom: 8.0, trailing: PAD }),
-        ),
-
+        // Old spinners removed. The connection status indicator now handles this:
+        
         when(
             move || state.is_authenticated.get() && !show_summary.get(),
             move || week_view(state),
@@ -278,11 +271,6 @@ fn week_view(state: AppState) -> impl Piece {
     let header_width = page_width;
     let header_tx = strip_tx;
     column((
-        when(
-            move || state.lessons_loading.get(),
-            || row((spacer().grow(), spinner(), label("  Загрузка…").font(Font::Caption).secondary(), spacer().grow()))
-                .padding(Insets { top: 8.0, leading: PAD, bottom: 8.0, trailing: PAD }),
-        ),
         week_header(header_state, header_width, header_tx),
         canvas(move |_draw, size| {
             let w = size.width;
@@ -341,6 +329,7 @@ fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
     ))
     .spacing(0.0)
     .width(w)
+    .grow()
 }
 
 fn week_header(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) -> impl Piece {

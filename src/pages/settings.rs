@@ -48,7 +48,7 @@ pub fn render() -> impl Piece {
         .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
 
         picker(
-            vec!["Основные", "Безопасность", "DevTools"],
+            vec!["Основные", "Оформление", "Безопасность", "DevTools"],
             current_tab.clone(),
         )
         .segmented()
@@ -59,22 +59,28 @@ pub fn render() -> impl Piece {
                 move || current_tab.get() == 0,
                 move || column((
                     when(move || state.is_authenticated.get(), move || profile_section(state)),
+                    when(move || state.is_authenticated.get(), move || logout_section(state)),
+                )).spacing(0.0).grow()
+            ),
+
+            when(
+                move || current_tab.get() == 1,
+                move || column((
                     appearance_section(state),
                     system_settings(),
                 )).spacing(0.0).grow()
             ),
             
             when(
-                move || current_tab.get() == 1,
+                move || current_tab.get() == 2,
                 move || column((
                     pin_section(state, pin_enabled),
                     biometric_section(state),
-                    when(move || state.is_authenticated.get(), move || logout_section(state)),
                 )).spacing(0.0).grow()
             ),
 
             when(
-                move || current_tab.get() == 2,
+                move || current_tab.get() == 3,
                 move || dev_settings(state)
             ),
         ))

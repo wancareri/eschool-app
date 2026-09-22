@@ -42,6 +42,7 @@ pub fn load_all(state: AppState) {
     let set_quarter_official_marks = state.quarter_official_marks.setter();
     let set_lessons_loading = state.lessons_loading.setter();
     let set_is_authenticated = state.is_authenticated.setter();
+    let set_conn = state.conn_status.setter();
 
     set_loading.set(true);
     set_error.set(String::new());
@@ -94,7 +95,16 @@ pub fn load_all(state: AppState) {
     if let Some(name) = cache::load("user_full_name") { set_full_name.set(name); }
     if let Some(school) = cache::load("user_school_name") { set_school_name.set(school); }
 
+    // If we loaded any cached data, show "offline" status until network confirms
+    if cached_cur_idx.is_some() {
+        set_conn.set(crate::app::ConnStatus::Offline);
+    } else {
+        set_conn.set(crate::app::ConnStatus::Connecting);
+    }
+
+    let set_conn2 = state.conn_status.setter();
     std::thread::spawn(move || {
+        set_conn2.set(crate::app::ConnStatus::Connecting);
         let mut client = blocking::build_client(&token);
 
         // 1 — user info (with auto-refresh on 401)
@@ -113,12 +123,14 @@ pub fn load_all(state: AppState) {
                         Err(e) => {
                             set_error.set(format!("Auth error: {e}"));
                             set_loading.set(false);
+                            set_conn2.set(crate::app::ConnStatus::Error);
                             return;
                         }
                     }
                 } else {
                     set_error.set("Сессия истекла. Войдите снова.".into());
                     set_loading.set(false);
+                    set_conn2.set(crate::app::ConnStatus::Error);
                     // Inline logout using setters (AppState is !Send, can't move into thread)
                     auth::logout_keys();
                     set_is_authenticated.set(false);
@@ -128,6 +140,7 @@ pub fn load_all(state: AppState) {
             Err(e) => {
                 set_error.set(format!("Auth error: {e}"));
                 set_loading.set(false);
+                set_conn2.set(crate::app::ConnStatus::Error);
                 return;
             }
         };
@@ -170,6 +183,7 @@ pub fn load_all(state: AppState) {
         if class_id.is_empty() {
             set_error.set("Class not found — try opening diary.e-schools.by to sync".into());
             set_loading.set(false);
+            set_conn2.set(crate::app::ConnStatus::Error);
             return;
         }
 
@@ -274,7 +288,12 @@ pub fn load_all(state: AppState) {
         }
 
         set_loading.set(false);
+        set_conn2.set(crate::app::ConnStatus::Connected);
         nslog::nslog("[Diary] load_all completed");
+
+        // Auto-hide the "Connected" indicator after 2 seconds
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        set_conn2.set(crate::app::ConnStatus::Idle);
     });
 }
 
@@ -328,13 +347,17 @@ pub fn load_week(state: AppState, new_index: i32) {
     // Instant-serve from week_cache when present
     let cached = state.week_cache.get().get(&(idx as i32)).cloned();
     let mut need_fetch = true;
+    let set_conn = state.conn_status.setter();
+    
     if let Some(lessons) = cached {
         set_lessons.set(lessons);
         set_lessons_loading.set(false);
+        set_conn.set(crate::app::ConnStatus::Offline);
         need_fetch = false;
         nslog::nslog(&format!("[Diary] load_week idx={idx} served from cache"));
     } else {
         set_lessons_loading.set(true);
+        set_conn.set(crate::app::ConnStatus::Connecting);
         nslog::nslog(&format!("[Diary] load_week idx={idx} uuid={week_uuid}"));
     }
 
@@ -380,18 +403,27 @@ pub fn load_week(state: AppState, new_index: i32) {
                         }
                         Err(e) => {
                             nslog::nslog(&format!("[Diary] load_week parse failed: {e}"));
-                            let col = e.column();
-                            if col > 0 && col < raw.len() {
-                                let start = col.saturating_sub(200);
-                                let end = (col + 200).min(raw.len());
-                                nslog::nslog(&format!("[Diary] JSON around col {}: ...{}...", col, &raw[start..end]));
-                            }
+                            day::reactive::on_main(|| { AppState::ambient().conn_status.setter().set(crate::app::ConnStatus::Error); });
                         }
                     }
                 }
-                Err(e) => nslog::nslog(&format!("[Diary] load_week request failed: {e}")),
+                Err(e) => {
+                    nslog::nslog(&format!("[Diary] load_week request failed: {e}"));
+                    day::reactive::on_main(|| { AppState::ambient().conn_status.setter().set(crate::app::ConnStatus::Error); });
+                }
             }
-            day::reactive::on_main(|| { AppState::ambient().lessons_loading.setter().set(false); });
+            day::reactive::on_main(|| { 
+                let state = AppState::ambient();
+                state.lessons_loading.setter().set(false);
+                if state.conn_status.get() == crate::app::ConnStatus::Connecting {
+                    let set_c = state.conn_status.setter();
+                    set_c.set(crate::app::ConnStatus::Connected);
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        set_c.set(crate::app::ConnStatus::Idle);
+                    });
+                }
+            });
         }
 
         // Quiet neighbor prefetch
@@ -435,9 +467,11 @@ pub fn load_quarter(state: AppState, quarter: usize) {
     let set_quarter_official_marks = state.quarter_official_marks.setter();
     let set_quarter_marks = state.quarter_marks.setter();
     let set_official_marks = state.official_marks.setter();
+    let set_conn = state.conn_status.setter();
 
     set_current_quarter.set(quarter);
     set_marks_loading.set(true);
+    set_conn.set(crate::app::ConnStatus::Connecting);
 
     // Pre-initialize this quarter's storage
     {
@@ -521,7 +555,20 @@ pub fn load_quarter(state: AppState, quarter: usize) {
 
         set_quarter_marks.set(all_marks);
         set_official_marks.set(all_official);
-        set_marks_loading.set(false);
+        
+        day::reactive::on_main(|| {
+            let state = AppState::ambient();
+            state.marks_loading.setter().set(false);
+            if state.conn_status.get() == crate::app::ConnStatus::Connecting {
+                let set_c = state.conn_status.setter();
+                set_c.set(crate::app::ConnStatus::Connected);
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    set_c.set(crate::app::ConnStatus::Idle);
+                });
+            }
+        });
+        
         nslog::nslog(&format!("[Diary] Quarter {} loaded", quarter + 1));
     });
 }
@@ -546,9 +593,11 @@ pub fn load_year(state: AppState) {
     let set_year_quarter_data = state.year_quarter_data.setter();
     let set_quarter_marks = state.quarter_marks.setter();
     let set_official_marks = state.official_marks.setter();
+    let set_conn = state.conn_status.setter();
 
     set_current_quarter.set(4);
     set_marks_loading.set(true);
+    set_conn.set(crate::app::ConnStatus::Connecting);
 
     let quarter_labels = ["I четверть", "II четверть", "III четверть", "IV четверть"];
 
@@ -632,7 +681,20 @@ pub fn load_year(state: AppState) {
         set_official_marks.set(all_official);
         cache::save_json("quarter_all_marks", &q_all_marks);
         cache::save_json("quarter_official_marks", &q_official_marks);
-        set_marks_loading.set(false);
+        
+        day::reactive::on_main(|| {
+            let state = AppState::ambient();
+            state.marks_loading.setter().set(false);
+            if state.conn_status.get() == crate::app::ConnStatus::Connecting {
+                let set_c = state.conn_status.setter();
+                set_c.set(crate::app::ConnStatus::Connected);
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    set_c.set(crate::app::ConnStatus::Idle);
+                });
+            }
+        });
+        
         nslog::nslog("[Diary] Year loaded with per-quarter data");
     });
 }

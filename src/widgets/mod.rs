@@ -1,4 +1,5 @@
 pub mod bell_row;
+pub mod conn_status;
 pub mod header;
 pub mod lesson_row;
 pub mod quarter_stats;
