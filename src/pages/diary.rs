@@ -137,45 +137,6 @@ fn year_btn(state: AppState) -> impl Piece {
     .id("q-year")
 }
 
-fn swipe_drag(
-    offset_x: Signal<f64>,
-    map_dx: impl Fn(f64) -> f64 + 'static,
-    on_swipe: impl Fn(f64) + 'static,
-) -> impl Fn(Drag) + 'static {
-    // None = undecided, Some(true) = horizontal, Some(false) = vertical (ignore)
-    let axis: Signal<Option<bool>> = Signal::new(None);
-    move |drag: Drag| {
-        let dx = drag.translation.x;
-        let dy = drag.translation.y;
-        match drag.phase {
-            DragPhase::Began => {
-                axis.set(None);
-                offset_x.set(0.0);
-            }
-            DragPhase::Changed => {
-                let mut horiz = axis.get();
-                if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
-                    horiz = Some(dx.abs() >= dy.abs());
-                    axis.set(horiz);
-                }
-                if horiz == Some(true) {
-                    offset_x.set(map_dx(dx));
-                }
-            }
-            DragPhase::Ended => {
-                let was_horiz = axis.get() == Some(true);
-                axis.set(None);
-                if was_horiz && dx.abs() >= SWIPE_THRESHOLD {
-                    on_swipe(dx);
-                }
-                with_animation(AnimSpec::ease_out(200), || {
-                    offset_x.set(0.0);
-                });
-            }
-        }
-    }
-}
-
 fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
     let s1 = state;
     let s2 = state;
@@ -210,76 +171,196 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
 
 // ── Week view ──────────────────────────────────────────────────────────
 
+fn lessons_at(state: AppState, offset: i32) -> Vec<DaySchedule> {
+    if offset == 0 {
+        state.lessons.get()
+    } else {
+        let idx = state.current_week_index.get() + offset;
+        state.week_cache.get().get(&idx).cloned().unwrap_or_default()
+    }
+}
+
+fn pager_go(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>, dir: i32) {
+    let idx = state.current_week_index.get();
+    let total = state.all_weeks.get().len() as i32;
+    let new_idx = idx + dir;
+    if new_idx < 0 || new_idx >= total {
+        return;
+    }
+    let w = page_width.get();
+    features::diary::load_week(state, new_idx);
+    if dir > 0 {
+        strip_tx.set(strip_tx.get() + w);
+    } else {
+        strip_tx.set(strip_tx.get() - w);
+    }
+    with_animation(AnimSpec::ease_out(200), || {
+        strip_tx.set(-w);
+    });
+}
+
+fn pager_drag(
+    strip_tx: Signal<f64>,
+    page_width: Signal<f64>,
+    state: AppState,
+) -> impl Fn(Drag) + 'static {
+    let axis: Signal<Option<bool>> = Signal::new(None);
+    move |drag: Drag| {
+        let dx = drag.translation.x;
+        let dy = drag.translation.y;
+        let w = page_width.get();
+        match drag.phase {
+            DragPhase::Began => {
+                axis.set(None);
+                strip_tx.set(-w);
+            }
+            DragPhase::Changed => {
+                let mut horiz = axis.get();
+                if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
+                    horiz = Some(dx.abs() >= dy.abs());
+                    axis.set(horiz);
+                }
+                if horiz == Some(true) {
+                    let idx = state.current_week_index.get();
+                    let total = state.all_weeks.get().len() as i32;
+                    let mut x = dx;
+                    if idx <= 0 && x > 0.0 {
+                        x *= SWIPE_EDGE_DAMP;
+                    }
+                    if idx + 1 >= total && x < 0.0 {
+                        x *= SWIPE_EDGE_DAMP;
+                    }
+                    strip_tx.set(-w + x);
+                }
+            }
+            DragPhase::Ended => {
+                let was_horiz = axis.get() == Some(true);
+                axis.set(None);
+                let idx = state.current_week_index.get();
+                let total = state.all_weeks.get().len() as i32;
+                if was_horiz && dx.abs() >= SWIPE_THRESHOLD {
+                    if dx < 0.0 && idx + 1 < total {
+                        features::diary::load_week(state, idx + 1);
+                        strip_tx.set(strip_tx.get() + w);
+                        with_animation(AnimSpec::ease_out(200), || {
+                            strip_tx.set(-w);
+                        });
+                        return;
+                    }
+                    if dx > 0.0 && idx > 0 {
+                        features::diary::load_week(state, idx - 1);
+                        strip_tx.set(strip_tx.get() - w);
+                        with_animation(AnimSpec::ease_out(200), || {
+                            strip_tx.set(-w);
+                        });
+                        return;
+                    }
+                }
+                with_animation(AnimSpec::ease_out(200), || {
+                    strip_tx.set(-w);
+                });
+            }
+        }
+    }
+}
+
 fn week_view(state: AppState) -> impl Piece {
-    let offset_x = Signal::new(0.0f64);
-    let edge_state = state;
-    let swipe_state = state;
+    let page_width = Signal::new(400.0f64);
+    let strip_tx = Signal::new(-400.0f64);
+    let probe_width = page_width;
+    let probe_tx = strip_tx;
+    let strip_state = state;
+    let drag_state = state;
+    let drag_width = page_width;
+    let drag_tx = strip_tx;
+    let header_state = state;
+    let header_width = page_width;
+    let header_tx = strip_tx;
     column((
-        // Show spinner during week loading (alongside existing content)
         when(
             move || state.lessons_loading.get(),
             || row((spacer().grow(), spinner(), label("  Загрузка…").font(Font::Caption).secondary(), spacer().grow()))
                 .padding(Insets { top: 8.0, leading: PAD, bottom: 8.0, trailing: PAD }),
         ),
+        week_header(header_state, header_width, header_tx),
+        canvas(move |_draw, size| {
+            let w = size.width;
+            if w > 1.0 && (probe_width.get() - w).abs() > 0.5 {
+                let old_w = probe_width.get();
+                let tx = probe_tx.get();
+                probe_width.set(w);
+                if (tx + old_w).abs() < 2.0 {
+                    probe_tx.set(-w);
+                }
+            }
+        })
+        .height(0.0)
+        .grow(),
         when(
-            move || !state.lessons.get().is_empty() || !state.lessons_loading.get(),
             move || {
-                column((
-                    week_header(state),
-                    when(
-                        move || !state.lessons_loading.get(),
-                        move || widgets::week_summary::render(state),
-                    ),
-                    diary_list(state),
-                )).spacing(0.0)
+                page_width.get();
+                true
+            },
+            move || {
+                let w = page_width.get();
+                row((
+                    row((
+                        week_page(strip_state, -1, w),
+                        week_page(strip_state, 0, w),
+                        week_page(strip_state, 1, w),
+                    ))
+                    .translation(strip_tx, 0.0),
+                ))
+                .on_drag(pager_drag(drag_tx, drag_width, drag_state))
+                .grow()
             },
         ),
     ))
     .spacing(0.0)
     .grow()
-    // Swipe left → next week, right → previous week
-    .translation(offset_x, 0.0)
-    .on_drag(swipe_drag(
-        offset_x,
-        move |dx: f64| {
-            let idx = edge_state.current_week_index.get();
-            let total = edge_state.all_weeks.get().len() as i32;
-            let mut x = dx;
-            if idx <= 0 && x > 0.0 {
-                x *= SWIPE_EDGE_DAMP;
-            }
-            if idx + 1 >= total && x < 0.0 {
-                x *= SWIPE_EDGE_DAMP;
-            }
-            x
-        },
-        move |dx: f64| {
-            let idx = swipe_state.current_week_index.get();
-            let total = swipe_state.all_weeks.get().len() as i32;
-            if dx < 0.0 && idx + 1 < total {
-                features::diary::load_week(swipe_state, idx + 1);
-            } else if dx > 0.0 && idx > 0 {
-                features::diary::load_week(swipe_state, idx - 1);
-            }
-        },
-    ))
 }
 
-fn week_header(state: AppState) -> impl Piece {
+fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
+    let get_lessons = move || lessons_at(state, offset);
+    column((
+        when(
+            move || offset != 0 || !state.lessons_loading.get(),
+            move || widgets::week_summary::render(state, get_lessons),
+        ),
+        when(
+            move || get_lessons().is_empty() && offset != 0,
+            || label("Нет данных за этот период")
+                .font(Font::Body)
+                .secondary()
+                .align(TextAlign::Center)
+                .padding(Insets { top: 24.0, leading: PAD, bottom: 24.0, trailing: PAD }),
+        ),
+        diary_list_with(state, get_lessons),
+    ))
+    .spacing(0.0)
+    .width(w)
+}
+
+fn week_header(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) -> impl Piece {
+    let s1 = state;
+    let pw1 = page_width;
+    let st1 = strip_tx;
+    let s2 = state;
+    let pw2 = page_width;
+    let st2 = strip_tx;
     row((
-        button("<").action(move || {
-            let idx = state.current_week_index.get();
-            if idx > 0 { features::diary::load_week(state, idx - 1); }
-        }).id("wk-prev").frame(44.0, 36.0),
+        button("<")
+            .action(move || pager_go(s1, pw1, st1, -1))
+            .id("wk-prev")
+            .frame(44.0, 36.0),
         label(move || strip_week_summary(&state.current_week.get()))
             .font(Font::Headline)
             .align(TextAlign::Center)
             .grow(),
-        button(">").action(move || {
-            let idx = state.current_week_index.get();
-            let total = state.all_weeks.get().len() as i32;
-            if idx + 1 < total { features::diary::load_week(state, idx + 1); }
-        }).id("wk-next").frame(44.0, 36.0),
+        button(">")
+            .action(move || pager_go(s2, pw2, st2, 1))
+            .id("wk-next")
+            .frame(44.0, 36.0),
     ))
     .spacing(12.0)
     .padding(Insets { top: 0.0, leading: 16.0, bottom: 6.0, trailing: 16.0 })
@@ -314,36 +395,47 @@ fn strip_week_summary(s: &str) -> String {
     result
 }
 
-fn diary_list(state: AppState) -> impl Piece {
+fn diary_list_with(
+    state: AppState,
+    get_lessons: impl Fn() -> Vec<DaySchedule> + Copy + 'static,
+) -> impl Piece {
     each(
-        items(move || state.lessons.get(), |d: &DaySchedule| d.date),
+        items(move || get_lessons(), |d: &DaySchedule| d.date),
         move |day_slot| {
             let date = day_slot.key();
-            day_card(state, date).any()
+            day_card_with(state, get_lessons, date).any()
         },
     )
 }
 
-fn day_card(state: AppState, date: u64) -> impl Piece {
+fn day_card_with(
+    state: AppState,
+    get_lessons: impl Fn() -> Vec<DaySchedule> + Copy + 'static,
+    date: u64,
+) -> impl Piece {
+    let get_slots = move || {
+        get_lessons()
+            .into_iter()
+            .find(|d| d.date == date)
+            .map(|d| d.slots)
+            .unwrap_or_default()
+    };
     column((
         label(move || {
-            state.lessons.get().iter().find(|d| d.date == date)
+            get_lessons()
+                .iter()
+                .find(|d| d.date == date)
                 .map(|d| utils::format_date_header(d.day_of_week, d.date))
                 .unwrap_or_default()
         })
-        .font(Font::Headline).color(move || Color::hex(state.accent_color.get()))
+        .font(Font::Headline)
+        .color(move || Color::hex(state.accent_color.get()))
         .padding(Insets { top: 16.0, leading: PAD, bottom: 6.0, trailing: PAD }),
         each(
-            items(
-                move || {
-                    state.lessons.get().into_iter().find(|d| d.date == date)
-                        .map(|d| d.slots).unwrap_or_default()
-                },
-                |s: &LessonSlot| s.number,
-            ),
+            items(get_slots, |s: &LessonSlot| s.number),
             move |slot| {
                 let num = slot.key();
-                widgets::lesson_row::render(state, date, num).any()
+                widgets::lesson_row::render(get_lessons, date, num).any()
             },
         ),
     ))
@@ -353,101 +445,187 @@ fn day_card(state: AppState, date: u64) -> impl Piece {
 
 // ── Summary view ───────────────────────────────────────────────────────
 
+fn summary_drag(
+    strip_tx: Signal<f64>,
+    page_width: Signal<f64>,
+    state: AppState,
+) -> impl Fn(Drag) + 'static {
+    let axis: Signal<Option<bool>> = Signal::new(None);
+    move |drag: Drag| {
+        let dx = drag.translation.x;
+        let dy = drag.translation.y;
+        let w = page_width.get();
+        match drag.phase {
+            DragPhase::Began => {
+                axis.set(None);
+                strip_tx.set(-w);
+            }
+            DragPhase::Changed => {
+                let mut horiz = axis.get();
+                if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
+                    horiz = Some(dx.abs() >= dy.abs());
+                    axis.set(horiz);
+                }
+                if horiz == Some(true) {
+                    let q = state.current_quarter.get();
+                    let mut x = dx;
+                    if q <= 0 && x > 0.0 {
+                        x *= SWIPE_EDGE_DAMP;
+                    }
+                    if q >= 4 && x < 0.0 {
+                        x *= SWIPE_EDGE_DAMP;
+                    }
+                    strip_tx.set(-w + x);
+                }
+            }
+            DragPhase::Ended => {
+                let was_horiz = axis.get() == Some(true);
+                axis.set(None);
+                let q = state.current_quarter.get();
+                if was_horiz && dx.abs() >= SWIPE_THRESHOLD {
+                    if dx < 0.0 && q < 4 {
+                        select_quarter(state, q + 1);
+                        strip_tx.set(strip_tx.get() + w);
+                        with_animation(AnimSpec::ease_out(200), || {
+                            strip_tx.set(-w);
+                        });
+                        return;
+                    }
+                    if dx > 0.0 && q > 0 {
+                        select_quarter(state, q - 1);
+                        strip_tx.set(strip_tx.get() - w);
+                        with_animation(AnimSpec::ease_out(200), || {
+                            strip_tx.set(-w);
+                        });
+                        return;
+                    }
+                }
+                with_animation(AnimSpec::ease_out(200), || {
+                    strip_tx.set(-w);
+                });
+            }
+        }
+    }
+}
+
 fn summary_view(state: AppState) -> impl Piece {
-    let offset_x = Signal::new(0.0f64);
-    let edge_state = state;
-    let swipe_state = state;
+    let page_width = Signal::new(400.0f64);
+    let strip_tx = Signal::new(-400.0f64);
+    let probe_width = page_width;
+    let probe_tx = strip_tx;
+    let strip_state = state;
+    let drag_state = state;
+    let drag_width = page_width;
+    let drag_tx = strip_tx;
     column((
-        label(move || {
-            if state.current_quarter.get() == 4 { "Итоги года" } else { "Итоги четверти" }
+        canvas(move |_draw, size| {
+            let w = size.width;
+            if w > 1.0 && (probe_width.get() - w).abs() > 0.5 {
+                let old_w = probe_width.get();
+                let tx = probe_tx.get();
+                probe_width.set(w);
+                if (tx + old_w).abs() < 2.0 {
+                    probe_tx.set(-w);
+                }
+            }
         })
-        .font(Font::Headline).color(move || Color::hex(state.accent_color.get()))
-        .align(TextAlign::Center)
-        .padding(Insets { top: 16.0, leading: PAD, bottom: 10.0, trailing: PAD }),
-
-        summary_header(state),
-
-        divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
-
-        when(move || state.current_quarter.get() != 4, move || quarter_summary_subjects(state)),
-        when(move || state.current_quarter.get() == 4, move || year_summary_subjects(state)),
+        .height(0.0)
+        .grow(),
+        when(
+            move || {
+                page_width.get();
+                true
+            },
+            move || {
+                let w = page_width.get();
+                row((
+                    row((
+                        summary_page(strip_state, -1, w),
+                        summary_page(strip_state, 0, w),
+                        summary_page(strip_state, 1, w),
+                    ))
+                    .translation(strip_tx, 0.0),
+                ))
+                .on_drag(summary_drag(drag_tx, drag_width, drag_state))
+                .grow()
+            },
+        ),
     ))
     .spacing(0.0)
     .grow()
-    // Swipe left → next quarter/year, right → previous
-    .translation(offset_x, 0.0)
-    .on_drag(swipe_drag(
-        offset_x,
-        move |dx: f64| {
-            let q = edge_state.current_quarter.get();
-            let mut x = dx;
-            if q <= 0 && x > 0.0 {
-                x *= SWIPE_EDGE_DAMP;
-            }
-            if q >= 4 && x < 0.0 {
-                x *= SWIPE_EDGE_DAMP;
-            }
-            x
-        },
-        move |dx: f64| {
-            let q = swipe_state.current_quarter.get();
-            if dx < 0.0 && q < 4 {
-                select_quarter(swipe_state, q + 1);
-            } else if dx > 0.0 && q > 0 {
-                select_quarter(swipe_state, q - 1);
-            }
-        },
-    ))
 }
 
-fn summary_header(state: AppState) -> impl Piece {
+fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
+    let q = (state.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+    let title_state = state;
+    let header_state = state;
+    let qs_state = state;
+    let ys_state = state;
+    column((
+        label(move || {
+            let q = (title_state.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+            if q == 4 { "Итоги года" } else { "Итоги четверти" }
+        })
+        .font(Font::Headline)
+        .color(move || Color::hex(state.accent_color.get()))
+        .align(TextAlign::Center)
+        .padding(Insets { top: 16.0, leading: PAD, bottom: 10.0, trailing: PAD }),
+        summary_header_for(header_state, offset),
+        divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
+        when(
+            move || {
+                let q = (title_state.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+                q != 4
+            },
+            move || quarter_summary_at(qs_state, q, offset),
+        ),
+        when(
+            move || {
+                let q = (title_state.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+                q == 4
+            },
+            move || year_summary_at(ys_state),
+        ),
+    ))
+    .spacing(0.0)
+    .width(w)
+}
+
+fn summary_header_for(state: AppState, offset: i32) -> impl Piece {
     row((
         label("Предмет").font(Font::Caption).secondary().grow(),
         label("Выст.").font(Font::Caption).secondary().frame(50.0, 0.0).align(TextAlign::Center),
         label("Вых.").font(Font::Caption).secondary().frame(50.0, 0.0).align(TextAlign::Center),
         when(
-            move || state.current_quarter.get() == 4,
-            move || row((
+            move || {
+                let q = (state.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+                q == 4
+            },
+            || row((
                 label("I").font(Font::Caption).secondary().frame(38.0, 0.0).align(TextAlign::Center),
                 label("II").font(Font::Caption).secondary().frame(38.0, 0.0).align(TextAlign::Center),
                 label("III").font(Font::Caption).secondary().frame(38.0, 0.0).align(TextAlign::Center),
                 label("IV").font(Font::Caption).secondary().frame(38.0, 0.0).align(TextAlign::Center),
-            )).spacing(4.0),
+            ))
+            .spacing(4.0),
         ),
     ))
     .spacing(8.0)
     .padding(Insets { top: 4.0, leading: PAD, bottom: 4.0, trailing: PAD })
 }
 
-fn official_avg(marks: &std::collections::HashMap<String, Vec<OfficialMark>>, subject: &str) -> Option<f64> {
-    marks.get(subject).and_then(|vals| {
-        if vals.is_empty() { None }
-        else { Some(vals.iter().map(|m| m.value).sum::<f64>() / vals.len() as f64) }
-    })
-}
-
-fn marks_avg(marks: &std::collections::HashMap<String, Vec<f64>>, subject: &str) -> Option<f64> {
-    marks.get(subject).and_then(|vals| {
-        if vals.is_empty() { None }
-        else { Some(vals.iter().sum::<f64>() / vals.len() as f64) }
-    })
-}
-
-fn mark_label(avg: Option<f64>) -> (String, bool) {
-    match avg {
-        Some(v) => (format!("{:.1}", v), v >= 4.0),
-        None => ("—".into(), false),
-    }
-}
-
-// ── Quarter summary subjects ───────────────────────────────────────────
-
-fn quarter_summary_subjects(state: AppState) -> impl Piece {
+fn quarter_summary_at(state: AppState, q: usize, offset: i32) -> impl Piece {
+    let marks_state = state;
+    let off_state = state;
     each(
         items(
             move || {
                 let teachers = state.subjects_teachers.get();
-                let marks = state.quarter_marks.get();
+                let marks: std::collections::HashMap<String, Vec<f64>> = if offset == 0 {
+                    state.quarter_marks.get()
+                } else {
+                    state.quarter_all_marks.get().get(q).cloned().unwrap_or_default()
+                };
                 let mut names: Vec<String> = teachers.iter()
                     .map(|t| t.subject_title.clone())
                     .collect();
@@ -466,19 +644,24 @@ fn quarter_summary_subjects(state: AppState) -> impl Piece {
             let subj_name = item.get();
             let sj = subj_name.clone();
             let sj2 = subj_name.clone();
-
             row((
                 label(subj_name).font(Font::Body).grow(),
-
                 {
-                    let off = state.official_marks.get();
+                    let off: std::collections::HashMap<String, Vec<OfficialMark>> = if offset == 0 {
+                        off_state.official_marks.get()
+                    } else {
+                        off_state.quarter_official_marks.get().get(q).cloned().unwrap_or_default()
+                    };
                     let (text, ok) = mark_label(official_avg(&off, &sj));
                     label(text).font(Font::Headline).frame(50.0, 0.0).align(TextAlign::Center)
                         .color(if ok { colors::SUCCESS } else { colors::SECONDARY })
                 },
-
                 {
-                    let marks = state.quarter_marks.get();
+                    let marks: std::collections::HashMap<String, Vec<f64>> = if offset == 0 {
+                        marks_state.quarter_marks.get()
+                    } else {
+                        marks_state.quarter_all_marks.get().get(q).cloned().unwrap_or_default()
+                    };
                     let (text, ok) = mark_label(marks_avg(&marks, &sj2));
                     let c = if ok { colors::SUCCESS } else if text != "—" { colors::WARNING } else { colors::SECONDARY };
                     label(text).font(Font::Headline).frame(50.0, 0.0).align(TextAlign::Center).color(c)
@@ -491,9 +674,10 @@ fn quarter_summary_subjects(state: AppState) -> impl Piece {
     )
 }
 
-// ── Year summary subjects ──────────────────────────────────────────────
-
-fn year_summary_subjects(state: AppState) -> impl Piece {
+fn year_summary_at(state: AppState) -> impl Piece {
+    let marks_state = state;
+    let off_state = state;
+    let cell_state = state;
     each(
         items(
             move || {
@@ -518,36 +702,52 @@ fn year_summary_subjects(state: AppState) -> impl Piece {
             let sj = subj_name.clone();
             let sj2 = subj_name.clone();
             let sj3 = subj_name.clone();
-
             column((
                 row((
                     label(subj_name).font(Font::Body).grow(),
-
                     {
-                        let off = state.official_marks.get();
+                        let off = off_state.official_marks.get();
                         let (text, ok) = mark_label(official_avg(&off, &sj));
                         label(text).font(Font::Headline).frame(50.0, 0.0).align(TextAlign::Center)
                             .color(if ok { colors::SUCCESS } else { colors::SECONDARY })
                     },
-
                     {
-                        let marks = state.quarter_marks.get();
+                        let marks = marks_state.quarter_marks.get();
                         let (text, ok) = mark_label(marks_avg(&marks, &sj2));
                         let c = if ok { colors::SUCCESS } else if text != "—" { colors::WARNING } else { colors::SECONDARY };
                         label(text).font(Font::Headline).frame(50.0, 0.0).align(TextAlign::Center).color(c)
                     },
-
-                    year_quarter_cells(state, sj3),
+                    year_quarter_cells(cell_state, sj3),
                 ))
                 .spacing(8.0)
                 .padding(Insets { top: 6.0, leading: PAD, bottom: 2.0, trailing: PAD }),
-
                 divider(),
             ))
             .spacing(0.0)
             .any()
         },
     )
+}
+
+fn official_avg(marks: &std::collections::HashMap<String, Vec<OfficialMark>>, subject: &str) -> Option<f64> {
+    marks.get(subject).and_then(|vals| {
+        if vals.is_empty() { None }
+        else { Some(vals.iter().map(|m| m.value).sum::<f64>() / vals.len() as f64) }
+    })
+}
+
+fn marks_avg(marks: &std::collections::HashMap<String, Vec<f64>>, subject: &str) -> Option<f64> {
+    marks.get(subject).and_then(|vals| {
+        if vals.is_empty() { None }
+        else { Some(vals.iter().sum::<f64>() / vals.len() as f64) }
+    })
+}
+
+fn mark_label(avg: Option<f64>) -> (String, bool) {
+    match avg {
+        Some(v) => (format!("{:.1}", v), v >= 4.0),
+        None => ("—".into(), false),
+    }
 }
 
 fn year_quarter_cells(state: AppState, subject: String) -> impl Piece {

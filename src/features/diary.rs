@@ -3,6 +3,7 @@
 use crate::app::AppState;
 use crate::app::OfficialMark;
 use crate::features::auth;
+use day::prelude::Ambient;
 use eschool_api::client::blocking;
 use eschool_api::client::endpoints;
 use eschool_api::entities::*;
@@ -46,6 +47,7 @@ pub fn load_all(state: AppState) {
     set_error.set(String::new());
 
     // Load cached data immediately so UI shows stale data while refreshing
+    let mut cached_cur_idx: Option<i32> = None;
     if let Some(cached_weeks) = cache::load_json::<Vec<WeekActivity>>("all_weeks") {
         nslog::nslog("[Cache] Loading cached weeks");
         set_all_weeks.set(cached_weeks.clone());
@@ -59,11 +61,17 @@ pub fn load_all(state: AppState) {
             set_current_week_index.set(idx as i32);
             set_current_week.set(w.summary.clone());
             set_current_quarter.set(quarter_for_index(idx));
+            cached_cur_idx = Some(idx as i32);
         }
     }
     if let Some(cached_lessons) = cache::load_json::<Vec<DaySchedule>>("lessons") {
         nslog::nslog("[Cache] Loading cached lessons");
-        set_lessons.set(cached_lessons);
+        set_lessons.set(cached_lessons.clone());
+        if let Some(ci) = cached_cur_idx {
+            let mut wc = state.week_cache.get();
+            wc.insert(ci, cached_lessons);
+            state.week_cache.set(wc);
+        }
     }
     if let Some(cached_bells) = cache::load_json::<Vec<BellTime>>("bell_times") {
         nslog::nslog("[Cache] Loading cached bells");
@@ -211,11 +219,19 @@ pub fn load_all(state: AppState) {
                     let pid = user.profile_id.clone();
                     let week_uuid = week.uuid.clone();
                     match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &cid, &pid, &week_uuid)) {
-                            Ok(raw) => {
+                        Ok(raw) => {
                             match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                                 Ok(lessons) => {
                                     set_lessons.set(lessons.clone());
                                     cache::save_json("lessons", &lessons);
+                                    let ci = idx as i32;
+                                    let ls = lessons;
+                                    day::reactive::on_main(move || {
+                                        let state = AppState::ambient();
+                                        let mut wc = state.week_cache.get();
+                                        wc.insert(ci, ls);
+                                        state.week_cache.set(wc);
+                                    });
                                 }
                                 Err(e) => nslog::nslog(&format!("[Diary] parse failed: {e}")),
                             }
@@ -308,32 +324,92 @@ pub fn load_week(state: AppState, new_index: i32) {
     set_current_week_index.set(idx as i32);
     set_current_week.set(week_summary);
     set_current_quarter.set(quarter_for_index(idx));
-    set_lessons_loading.set(true);
 
-    nslog::nslog(&format!("[Diary] load_week idx={idx} uuid={week_uuid}"));
+    // Instant-serve from week_cache when present
+    let cached = state.week_cache.get().get(&(idx as i32)).cloned();
+    let mut need_fetch = true;
+    if let Some(lessons) = cached {
+        set_lessons.set(lessons);
+        set_lessons_loading.set(false);
+        need_fetch = false;
+        nslog::nslog(&format!("[Diary] load_week idx={idx} served from cache"));
+    } else {
+        set_lessons_loading.set(true);
+        nslog::nslog(&format!("[Diary] load_week idx={idx} uuid={week_uuid}"));
+    }
+
+    // Neighbor prefetch: idx±1 not already in cache
+    let mut prefetch: Vec<(i32, String)> = Vec::new();
+    {
+        let cache = state.week_cache.get();
+        for di in [-1i32, 1i32] {
+            let ni = idx as i32 + di;
+            if ni < 0 || ni as usize >= weeks.len() {
+                continue;
+            }
+            if cache.contains_key(&ni) {
+                continue;
+            }
+            if let Some(w) = weeks.get(ni as usize) {
+                prefetch.push((ni, w.uuid.clone()));
+            }
+        }
+    }
+
+    let cur_uuid = week_uuid;
+    let cur_i = idx as i32;
+    let need_current = need_fetch;
 
     std::thread::spawn(move || {
         let client = blocking::build_client(&token);
-        match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &week_uuid)) {
-            Ok(raw) => {
-                match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
-                    Ok(lessons) => {
-                        set_lessons.set(lessons);
-                    }
-                    Err(e) => {
-                        nslog::nslog(&format!("[Diary] load_week parse failed: {e}"));
-                        let col = e.column();
-                        if col > 0 && col < raw.len() {
-                            let start = col.saturating_sub(200);
-                            let end = (col + 200).min(raw.len());
-                            nslog::nslog(&format!("[Diary] JSON around col {}: ...{}...", col, &raw[start..end]));
+
+        if need_current {
+            match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &cur_uuid)) {
+                Ok(raw) => {
+                    match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
+                        Ok(lessons) => {
+                            set_lessons.set(lessons.clone());
+                            let ci = cur_i;
+                            let ls = lessons;
+                            day::reactive::on_main(move || {
+                                let state = AppState::ambient();
+                                let mut wc = state.week_cache.get();
+                                wc.insert(ci, ls);
+                                state.week_cache.set(wc);
+                            });
+                        }
+                        Err(e) => {
+                            nslog::nslog(&format!("[Diary] load_week parse failed: {e}"));
+                            let col = e.column();
+                            if col > 0 && col < raw.len() {
+                                let start = col.saturating_sub(200);
+                                let end = (col + 200).min(raw.len());
+                                nslog::nslog(&format!("[Diary] JSON around col {}: ...{}...", col, &raw[start..end]));
+                            }
                         }
                     }
                 }
+                Err(e) => nslog::nslog(&format!("[Diary] load_week request failed: {e}")),
             }
-            Err(e) => nslog::nslog(&format!("[Diary] load_week request failed: {e}")),
+            set_lessons_loading.set(false);
         }
-        set_lessons_loading.set(false);
+
+        // Quiet neighbor prefetch
+        for (ni, nuuid) in prefetch {
+            match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &nuuid)) {
+                Ok(raw) => {
+                    if let Ok(ls) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
+                        day::reactive::on_main(move || {
+                            let state = AppState::ambient();
+                            let mut wc = state.week_cache.get();
+                            wc.insert(ni, ls);
+                            state.week_cache.set(wc);
+                        });
+                    }
+                }
+                Err(e) => nslog::nslog(&format!("[Diary] prefetch {ni} failed: {e}")),
+            }
+        }
     });
 }
 

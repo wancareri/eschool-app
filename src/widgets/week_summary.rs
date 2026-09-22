@@ -1,7 +1,11 @@
 use crate::app::AppState;
+use eschool_api::entities::*;
 use day::prelude::*;
 
-pub fn render(state: AppState) -> impl Piece {
+pub fn render<F>(state: AppState, get_lessons: F) -> impl Piece
+where
+    F: Fn() -> Vec<DaySchedule> + Copy + 'static,
+{
     column((
         label("Неделя")
             .font(Font::Headline)
@@ -11,11 +15,11 @@ pub fn render(state: AppState) -> impl Piece {
 
         row((
             super::stat_block::render(state, "Уроков", move || {
-                let lessons = state.lessons.get();
+                let lessons = get_lessons();
                 lessons.iter().map(|d| d.slots.len()).sum::<usize>().to_string()
             }),
             super::stat_block::render(state, "Оценок", move || {
-                let lessons = state.lessons.get();
+                let lessons = get_lessons();
                 lessons.iter()
                     .flat_map(|d| &d.slots)
                     .filter(|s| s.lesson_mark.is_some())
@@ -23,7 +27,7 @@ pub fn render(state: AppState) -> impl Piece {
                     .to_string()
             }),
             super::stat_block::render(state, "Ср. балл", move || {
-                let lessons = state.lessons.get();
+                let lessons = get_lessons();
                 let marks: Vec<f64> = lessons.iter()
                     .flat_map(|d| &d.slots)
                     .filter_map(|s| s.lesson_mark.as_ref())

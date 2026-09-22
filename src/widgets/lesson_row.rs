@@ -1,4 +1,3 @@
-use crate::app::AppState;
 use eschool_api::entities::*;
 use crate::shared::{colors, utils};
 use day::prelude::*;
@@ -6,7 +5,10 @@ use day::prelude::*;
 const NUM_WIDTH: f64 = 28.0;
 const HW_LEFT: f64 = 16.0 + NUM_WIDTH + 12.0;
 
-pub fn render(state: AppState, date: u64, number: u32) -> impl Piece {
+pub fn render<F>(get_lessons: F, date: u64, number: u32) -> impl Piece
+where
+    F: Fn() -> Vec<DaySchedule> + Copy + 'static,
+{
     column((
         row((
             label(number.to_string())
@@ -14,14 +16,14 @@ pub fn render(state: AppState, date: u64, number: u32) -> impl Piece {
                 .color(colors::WHITE)
                 .frame(NUM_WIDTH, 20.0),
             column((
-                label(move || find_field(state, date, number, |s| s.subject_title.clone()))
+                label(move || find_field(get_lessons, date, number, |s| s.subject_title.clone()))
                     .font(Font::Body),
                 label(move || {
-                    let time = find_field(state, date, number, |s| {
+                    let time = find_field(get_lessons, date, number, |s| {
                         let t = &s.start_time;
                         t.get(..5).unwrap_or(t).to_string()
                     });
-                    let topic = find_field(state, date, number, |s| {
+                    let topic = find_field(get_lessons, date, number, |s| {
                         s.topic.clone().unwrap_or_default()
                     });
                     if topic.is_empty() { time } else { format!("{time} · {topic}") }
@@ -33,7 +35,7 @@ pub fn render(state: AppState, date: u64, number: u32) -> impl Piece {
             .align(HAlign::Leading)
             .grow(),
             label(move || {
-                find_field(state, date, number, |s| {
+                find_field(get_lessons, date, number, |s| {
                     s.lesson_mark.as_ref()
                         .and_then(|m| m.mark.clone())
                         .unwrap_or_else(|| "—".into())
@@ -41,7 +43,7 @@ pub fn render(state: AppState, date: u64, number: u32) -> impl Piece {
             })
             .font(Font::Title3)
             .color(move || {
-                let mark = find_field(state, date, number, |s| {
+                let mark = find_field(get_lessons, date, number, |s| {
                     s.lesson_mark.as_ref()
                         .and_then(|m| m.mark.clone())
                         .unwrap_or_default()
@@ -52,13 +54,13 @@ pub fn render(state: AppState, date: u64, number: u32) -> impl Piece {
         .spacing(12.0)
         .padding(Insets { top: 8.0, leading: 16.0, bottom: 0.0, trailing: 20.0 }),
         when(
-            move || find_field_bool(state, date, number, |s| {
+            move || find_field_bool(get_lessons, date, number, |s| {
                 s.lesson_mark.as_ref()
                     .and_then(|m| m.comment.as_ref())
                     .map_or(false, |c| !c.is_empty())
             }),
             move || {
-                label(move || find_field(state, date, number, |s| {
+                label(move || find_field(get_lessons, date, number, |s| {
                     s.lesson_mark.as_ref()
                         .and_then(|m| m.comment.clone())
                         .unwrap_or_default()
@@ -69,11 +71,11 @@ pub fn render(state: AppState, date: u64, number: u32) -> impl Piece {
             },
         ),
         when(
-            move || find_field_bool(state, date, number, |s| {
+            move || find_field_bool(get_lessons, date, number, |s| {
                 s.homework.as_ref().map_or(false, |h| !h.is_empty())
             }),
             move || {
-                label(move || find_field(state, date, number, |s| {
+                label(move || find_field(get_lessons, date, number, |s| {
                     s.homework.clone().unwrap_or_default()
                 }))
                 .font(Font::Caption)
@@ -82,12 +84,12 @@ pub fn render(state: AppState, date: u64, number: u32) -> impl Piece {
             },
         ),
         when(
-            move || find_field_bool(state, date, number, |s| {
+            move || find_field_bool(get_lessons, date, number, |s| {
                 s.message.as_ref().map_or(false, |m| !m.is_empty())
             }),
             move || {
                 label(move || {
-                    let msg = find_field(state, date, number, |s| {
+                    let msg = find_field(get_lessons, date, number, |s| {
                         s.message.clone().unwrap_or_default()
                     });
                     format!("ℹ {msg}")
@@ -108,25 +110,33 @@ fn find_lesson(lessons: &[DaySchedule], date: u64, number: u32) -> Option<&Lesso
         .and_then(|d| d.slots.iter().find(|s| s.number == number))
 }
 
-fn find_field(
-    state: AppState,
+fn find_field<F, G>(
+    get_lessons: F,
     date: u64,
     number: u32,
-    f: impl Fn(&LessonSlot) -> String,
-) -> String {
-    let lessons = state.lessons.get();
+    f: G,
+) -> String
+where
+    F: Fn() -> Vec<DaySchedule>,
+    G: Fn(&LessonSlot) -> String,
+{
+    let lessons = get_lessons();
     find_lesson(&lessons, date, number)
         .map(&f)
         .unwrap_or_default()
 }
 
-fn find_field_bool(
-    state: AppState,
+fn find_field_bool<F, G>(
+    get_lessons: F,
     date: u64,
     number: u32,
-    f: impl Fn(&LessonSlot) -> bool,
-) -> bool {
-    let lessons = state.lessons.get();
+    f: G,
+) -> bool
+where
+    F: Fn() -> Vec<DaySchedule>,
+    G: Fn(&LessonSlot) -> bool,
+{
+    let lessons = get_lessons();
     find_lesson(&lessons, date, number)
         .map(&f)
         .unwrap_or(false)
