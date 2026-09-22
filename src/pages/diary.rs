@@ -325,7 +325,7 @@ fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
     let get_lessons = move || lessons_at(state, offset);
     column((
         when(
-            move || offset != 0 || !state.lessons_loading.get(),
+            move || true,
             move || widgets::week_summary::render(state, get_lessons),
         ),
         when(

@@ -37,7 +37,7 @@ pub fn render() -> impl Piece {
     
     when(
         move || show_setup.get(),
-        move || pin_setup_modal(show_setup, pin_enabled)
+        move || row((spacer().grow(), pin_setup_modal(show_setup, pin_enabled), spacer().grow())).grow().any()
     ).otherwise(move || column((
         column((
             label(move || res::str::settings_title().format())
@@ -47,12 +47,13 @@ pub fn render() -> impl Piece {
         .spacing(6.0)
         .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
 
-        row((
+        column((
             button("Основные").action(move || current_tab.set(0)),
             button("Безопасность").action(move || current_tab.set(1)),
             button("DevTools").action(move || current_tab.set(2)),
         ))
         .spacing(12.0)
+        .align(HAlign::Leading)
         .padding(Insets { top: 8.0, leading: 20.0, bottom: 16.0, trailing: 20.0 }),
 
         scroll(column((
