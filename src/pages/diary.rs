@@ -8,6 +8,9 @@ use day::prelude::*;
 use day_piece_pullrefresh::pull_to_refresh;
 
 const PAD: f64 = 20.0;
+const SWIPE_THRESHOLD: f64 = 72.0;
+const SWIPE_AXIS_LOCK: f64 = 4.0;
+const SWIPE_EDGE_DAMP: f64 = 0.3;
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
@@ -91,6 +94,26 @@ fn quarter_tabs(state: AppState) -> impl Piece {
     .padding(Insets { top: 0.0, leading: 12.0, bottom: 8.0, trailing: 12.0 })
 }
 
+fn select_quarter(state: AppState, q: usize) {
+    if q == 4 {
+        features::diary::load_year(state);
+        return;
+    }
+    // Show existing per-quarter data immediately
+    let q_all = state.quarter_all_marks.get();
+    if let Some(marks) = q_all.get(q) {
+        if !marks.is_empty() {
+            state.quarter_marks.set(marks.clone());
+            let q_off = state.quarter_official_marks.get();
+            if let Some(off) = q_off.get(q) {
+                state.official_marks.set(off.clone());
+            }
+        }
+    }
+    state.current_quarter.set(q);
+    features::diary::load_quarter(state, q);
+}
+
 fn quarter_btn(state: AppState, lbl: &'static str, q: usize) -> impl Piece {
     let s1 = state;
     let s2 = state;
@@ -99,22 +122,7 @@ fn quarter_btn(state: AppState, lbl: &'static str, q: usize) -> impl Piece {
         let cur = s1.current_quarter.get();
         if cur == q && !s1.marks_loading.get() { format!("[{}]", l) } else { l.clone() }
     })
-    
-    .action(move || {
-        // Show existing per-quarter data immediately
-        let q_all = s2.quarter_all_marks.get();
-        if let Some(marks) = q_all.get(q) {
-            if !marks.is_empty() {
-                s2.quarter_marks.set(marks.clone());
-                let q_off = s2.quarter_official_marks.get();
-                if let Some(off) = q_off.get(q) {
-                    s2.official_marks.set(off.clone());
-                }
-            }
-        }
-        s2.current_quarter.set(q);
-        features::diary::load_quarter(s2, q);
-    })
+    .action(move || select_quarter(s2, q))
     .id(format!("q-{lbl}"))
 }
 
@@ -125,9 +133,47 @@ fn year_btn(state: AppState) -> impl Piece {
         let cur = s1.current_quarter.get();
         if cur == 4 && !s1.marks_loading.get() { String::from("[Год]") } else { String::from("Год") }
     })
-    
-    .action(move || { features::diary::load_year(s2); })
+    .action(move || select_quarter(s2, 4))
     .id("q-year")
+}
+
+fn swipe_drag(
+    offset_x: Signal<f64>,
+    map_dx: impl Fn(f64) -> f64 + 'static,
+    on_swipe: impl Fn(f64) + 'static,
+) -> impl Fn(Drag) + 'static {
+    // None = undecided, Some(true) = horizontal, Some(false) = vertical (ignore)
+    let axis: Signal<Option<bool>> = Signal::new(None);
+    move |drag: Drag| {
+        let dx = drag.translation.x;
+        let dy = drag.translation.y;
+        match drag.phase {
+            DragPhase::Began => {
+                axis.set(None);
+                offset_x.set(0.0);
+            }
+            DragPhase::Changed => {
+                let mut horiz = axis.get();
+                if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
+                    horiz = Some(dx.abs() >= dy.abs());
+                    axis.set(horiz);
+                }
+                if horiz == Some(true) {
+                    offset_x.set(map_dx(dx));
+                }
+            }
+            DragPhase::Ended => {
+                let was_horiz = axis.get() == Some(true);
+                axis.set(None);
+                if was_horiz && dx.abs() >= SWIPE_THRESHOLD {
+                    on_swipe(dx);
+                }
+                with_animation(AnimSpec::ease_out(200), || {
+                    offset_x.set(0.0);
+                });
+            }
+        }
+    }
 }
 
 fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
@@ -165,6 +211,9 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
 // ── Week view ──────────────────────────────────────────────────────────
 
 fn week_view(state: AppState) -> impl Piece {
+    let offset_x = Signal::new(0.0f64);
+    let edge_state = state;
+    let swipe_state = state;
     column((
         // Show spinner during week loading (alongside existing content)
         when(
@@ -188,6 +237,32 @@ fn week_view(state: AppState) -> impl Piece {
     ))
     .spacing(0.0)
     .grow()
+    // Swipe left → next week, right → previous week
+    .translation(offset_x, 0.0)
+    .on_drag(swipe_drag(
+        offset_x,
+        move |dx: f64| {
+            let idx = edge_state.current_week_index.get();
+            let total = edge_state.all_weeks.get().len() as i32;
+            let mut x = dx;
+            if idx <= 0 && x > 0.0 {
+                x *= SWIPE_EDGE_DAMP;
+            }
+            if idx + 1 >= total && x < 0.0 {
+                x *= SWIPE_EDGE_DAMP;
+            }
+            x
+        },
+        move |dx: f64| {
+            let idx = swipe_state.current_week_index.get();
+            let total = swipe_state.all_weeks.get().len() as i32;
+            if dx < 0.0 && idx + 1 < total {
+                features::diary::load_week(swipe_state, idx + 1);
+            } else if dx > 0.0 && idx > 0 {
+                features::diary::load_week(swipe_state, idx - 1);
+            }
+        },
+    ))
 }
 
 fn week_header(state: AppState) -> impl Piece {
@@ -279,6 +354,9 @@ fn day_card(state: AppState, date: u64) -> impl Piece {
 // ── Summary view ───────────────────────────────────────────────────────
 
 fn summary_view(state: AppState) -> impl Piece {
+    let offset_x = Signal::new(0.0f64);
+    let edge_state = state;
+    let swipe_state = state;
     column((
         label(move || {
             if state.current_quarter.get() == 4 { "Итоги года" } else { "Итоги четверти" }
@@ -296,6 +374,30 @@ fn summary_view(state: AppState) -> impl Piece {
     ))
     .spacing(0.0)
     .grow()
+    // Swipe left → next quarter/year, right → previous
+    .translation(offset_x, 0.0)
+    .on_drag(swipe_drag(
+        offset_x,
+        move |dx: f64| {
+            let q = edge_state.current_quarter.get();
+            let mut x = dx;
+            if q <= 0 && x > 0.0 {
+                x *= SWIPE_EDGE_DAMP;
+            }
+            if q >= 4 && x < 0.0 {
+                x *= SWIPE_EDGE_DAMP;
+            }
+            x
+        },
+        move |dx: f64| {
+            let q = swipe_state.current_quarter.get();
+            if dx < 0.0 && q < 4 {
+                select_quarter(swipe_state, q + 1);
+            } else if dx > 0.0 && q > 0 {
+                select_quarter(swipe_state, q - 1);
+            }
+        },
+    ))
 }
 
 fn summary_header(state: AppState) -> impl Piece {
