@@ -368,11 +368,11 @@ pub fn load_week(state: AppState, new_index: i32) {
                 Ok(raw) => {
                     match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                         Ok(lessons) => {
-                            set_lessons.set(lessons.clone());
                             let ci = cur_i;
                             let ls = lessons;
                             day::reactive::on_main(move || {
                                 let state = AppState::ambient();
+                                state.lessons.setter().set(ls.clone());
                                 let mut wc = state.week_cache.get();
                                 wc.insert(ci, ls);
                                 state.week_cache.set(wc);
@@ -391,7 +391,7 @@ pub fn load_week(state: AppState, new_index: i32) {
                 }
                 Err(e) => nslog::nslog(&format!("[Diary] load_week request failed: {e}")),
             }
-            set_lessons_loading.set(false);
+            day::reactive::on_main(|| { AppState::ambient().lessons_loading.setter().set(false); });
         }
 
         // Quiet neighbor prefetch

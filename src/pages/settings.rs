@@ -47,13 +47,10 @@ pub fn render() -> impl Piece {
         .spacing(6.0)
         .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
 
-        column((
-            button("Основные").action(move || current_tab.set(0)),
-            button("Безопасность").action(move || current_tab.set(1)),
-            button("DevTools").action(move || current_tab.set(2)),
-        ))
-        .spacing(12.0)
-        .align(HAlign::Leading)
+        picker(
+            vec!["Основные", "Безопасность", "DevTools"],
+            current_tab.clone(),
+        )
         .padding(Insets { top: 8.0, leading: 20.0, bottom: 16.0, trailing: 20.0 }),
 
         scroll(column((
