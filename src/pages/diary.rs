@@ -295,7 +295,8 @@ fn week_view(state: AppState) -> impl Piece {
                 }
             }
         })
-        .height(0.0),
+        .height(0.0)
+        .grow(),
 
         when(
             move || {
@@ -531,7 +532,8 @@ fn summary_view(state: AppState) -> impl Piece {
                 }
             }
         })
-        .height(0.0),
+        .height(0.0)
+        .grow(),
 
         when(
             move || {

@@ -51,6 +51,7 @@ pub fn render() -> impl Piece {
             vec!["Основные", "Безопасность", "DevTools"],
             current_tab.clone(),
         )
+        .segmented()
         .padding(Insets { top: 8.0, leading: 20.0, bottom: 16.0, trailing: 20.0 }),
 
         scroll(column((
