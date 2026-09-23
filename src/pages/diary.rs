@@ -17,11 +17,13 @@ const SWIPE_EDGE_DAMP: f64 = 0.3;
 fn get_screen_width() -> f64 {
     #[cfg(target_os = "ios")]
     {
+        use objc2::MainThreadMarker;
         use objc2_ui_kit::UIScreen;
-        if let Some(screen) = UIScreen::mainScreen() {
-            let bounds = unsafe { screen.bounds() };
+        if let Some(mtm) = MainThreadMarker::new() {
+            let screen = UIScreen::mainScreen(mtm);
+            let bounds = screen.bounds();
             if bounds.size.width > 50.0 {
-                return bounds.size.width;
+                return bounds.size.width as f64;
             }
         }
     }

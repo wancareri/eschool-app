@@ -2,7 +2,6 @@
 
 use crate::app::AppState;
 use crate::shared::{nslog, notifications};
-use day::prelude::Ambient;
 
 /// Check for new grades by comparing current state with stored marks.
 pub fn check_new_grades(state: AppState) {
