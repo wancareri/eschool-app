@@ -12,10 +12,99 @@ const SWIPE_THRESHOLD: f64 = 72.0;
 const SWIPE_AXIS_LOCK: f64 = 4.0;
 const SWIPE_EDGE_DAMP: f64 = 0.3;
 
+
+fn global_drag(
+    strip_tx: Signal<f64>,
+    page_width: Signal<f64>,
+    state: AppState,
+    show_summary: Signal<bool>,
+) -> impl Fn(Drag) + 'static {
+    let axis: Signal<Option<bool>> = Signal::new(None);
+    move |drag: Drag| {
+        let dx = drag.translation.x;
+        let dy = drag.translation.y;
+        let w = page_width.get();
+        match drag.phase {
+            DragPhase::Began => {
+                axis.set(None);
+                strip_tx.set(-w);
+            }
+            DragPhase::Changed => {
+                let mut horiz = axis.get();
+                if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
+                    horiz = Some(dx.abs() >= dy.abs());
+                    axis.set(horiz);
+                }
+                if horiz == Some(true) {
+                    let mut x = dx;
+                    if show_summary.get() {
+                        let q = state.current_quarter.get();
+                        if q == 0 && x > 0.0 { x *= SWIPE_EDGE_DAMP; }
+                        if q >= 4 && x < 0.0 { x *= SWIPE_EDGE_DAMP; }
+                    } else {
+                        let idx = state.current_week_index.get();
+                        let total = state.all_weeks.get().len() as i32;
+                        if idx <= 0 && x > 0.0 { x *= SWIPE_EDGE_DAMP; }
+                        if idx + 1 >= total && x < 0.0 { x *= SWIPE_EDGE_DAMP; }
+                    }
+                    strip_tx.set(-w + x);
+                }
+            }
+            DragPhase::Ended => {
+                let was_horiz = axis.get() == Some(true);
+                axis.set(None);
+                let actual_dx = strip_tx.get() + w;
+                if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
+                    if show_summary.get() {
+                        let q = state.current_quarter.get();
+                        if actual_dx < 0.0 && q + 1 <= 4 {
+                            select_quarter(state, q + 1);
+                            strip_tx.set(strip_tx.get() + w);
+                            with_animation(AnimSpec::ease_out(200), || { strip_tx.set(-w); });
+                            return;
+                        }
+                        if actual_dx > 0.0 && q > 0 {
+                            select_quarter(state, q - 1);
+                            strip_tx.set(strip_tx.get() - w);
+                            with_animation(AnimSpec::ease_out(200), || { strip_tx.set(-w); });
+                            return;
+                        }
+                    } else {
+                        let idx = state.current_week_index.get();
+                        let total = state.all_weeks.get().len() as i32;
+                        if actual_dx < 0.0 && idx + 1 < total {
+                            features::diary::load_week(state, idx + 1);
+                            strip_tx.set(strip_tx.get() + w);
+                            with_animation(AnimSpec::ease_out(200), || { strip_tx.set(-w); });
+                            return;
+                        }
+                        if actual_dx > 0.0 && idx > 0 {
+                            features::diary::load_week(state, idx - 1);
+                            strip_tx.set(strip_tx.get() - w);
+                            with_animation(AnimSpec::ease_out(200), || { strip_tx.set(-w); });
+                            return;
+                        }
+                    }
+                }
+                if was_horiz {
+                    with_animation(AnimSpec::ease_out(200), || { strip_tx.set(-w); });
+                }
+            }
+        }
+    }
+}
+
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let show_summary = Signal::new(false);
     let refreshing = Signal::new(false);
+    let page_width = Signal::new(400.0f64);
+    let strip_tx = Signal::new(-400.0f64);
+    let drag_tx = strip_tx.clone();
+    let drag_width = page_width.clone();
+    let drag_state = state.clone();
+    let show_summary_drag = show_summary.clone();
+
 
     pull_to_refresh(refreshing, scroll(column((
         zstack((
@@ -55,11 +144,11 @@ pub fn render() -> impl Piece {
         
         when(
             move || state.is_authenticated.get() && !show_summary.get(),
-            move || week_view(state),
+            move || week_view(state, page_width, strip_tx),
         ),
         when(
             move || state.is_authenticated.get() && show_summary.get(),
-            move || summary_view(state),
+            move || summary_view(state, page_width, strip_tx),
         ),
     ))
     .spacing(0.0)
@@ -72,6 +161,7 @@ pub fn render() -> impl Piece {
             features::diary::load_all(state);
         }
     })
+    .on_drag(global_drag(drag_tx, drag_width, drag_state, show_summary_drag))
     .grow()
 }
 
@@ -106,7 +196,7 @@ fn select_quarter(state: AppState, q: usize) {
         }
     }
     state.current_quarter.set(q);
-    features::diary::load_quarter(state, q);
+    select_quarter(state, q);
 }
 
 fn quarter_btn(state: AppState, lbl: &'static str, q: usize) -> impl Piece {
@@ -156,7 +246,7 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
         .action(move || {
             show_summary.set(true);
             let q = s3.current_quarter.get();
-            features::diary::load_quarter(s3, q);
+            select_quarter(s3, q);
         })
         .id("sub-summary"),
     ))
@@ -194,81 +284,12 @@ fn pager_go(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>, dir
     });
 }
 
-fn pager_drag(
-    strip_tx: Signal<f64>,
-    page_width: Signal<f64>,
-    state: AppState,
-) -> impl Fn(Drag) + 'static {
-    let axis: Signal<Option<bool>> = Signal::new(None);
-    move |drag: Drag| {
-        let dx = drag.translation.x;
-        let dy = drag.translation.y;
-        let w = page_width.get();
-        match drag.phase {
-            DragPhase::Began => {
-                axis.set(None);
-                strip_tx.set(-w);
-            }
-            DragPhase::Changed => {
-                let mut horiz = axis.get();
-                if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
-                    horiz = Some(dx.abs() >= dy.abs());
-                    axis.set(horiz);
-                }
-                if horiz == Some(true) {
-                    let idx = state.current_week_index.get();
-                    let total = state.all_weeks.get().len() as i32;
-                    let mut x = dx;
-                    if idx <= 0 && x > 0.0 {
-                        x *= SWIPE_EDGE_DAMP;
-                    }
-                    if idx + 1 >= total && x < 0.0 {
-                        x *= SWIPE_EDGE_DAMP;
-                    }
-                    strip_tx.set(-w + x);
-                }
-            }
-            DragPhase::Ended => {
-                let was_horiz = axis.get() == Some(true);
-                axis.set(None);
-                let idx = state.current_week_index.get();
-                let total = state.all_weeks.get().len() as i32;
-                let actual_dx = strip_tx.get() + w;
-                if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
-                    if actual_dx < 0.0 && idx + 1 < total {
-                        features::diary::load_week(state, idx + 1);
-                        strip_tx.set(strip_tx.get() + w);
-                        with_animation(AnimSpec::ease_out(200), || {
-                            strip_tx.set(-w);
-                        });
-                        return;
-                    }
-                    if actual_dx > 0.0 && idx > 0 {
-                        features::diary::load_week(state, idx - 1);
-                        strip_tx.set(strip_tx.get() - w);
-                        with_animation(AnimSpec::ease_out(200), || {
-                            strip_tx.set(-w);
-                        });
-                        return;
-                    }
-                }
-                with_animation(AnimSpec::ease_out(200), || {
-                    strip_tx.set(-w);
-                });
-            }
-        }
-    }
-}
 
-fn week_view(state: AppState) -> impl Piece {
-    let page_width = Signal::new(400.0f64);
-    let strip_tx = Signal::new(-400.0f64);
+
+fn week_view(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) -> impl Piece {
     let probe_width = page_width;
     let probe_tx = strip_tx;
     let strip_state = state;
-    let drag_state = state;
-    let drag_width = page_width;
-    let drag_tx = strip_tx;
     let header_state = state;
     let header_width = page_width;
     let header_tx = strip_tx;
@@ -303,7 +324,6 @@ fn week_view(state: AppState) -> impl Piece {
                     ))
                     .translation(strip_tx, 0.0),
                 ))
-                .on_drag(pager_drag(drag_tx, drag_width, drag_state))
             },
         ),
     ))
@@ -436,79 +456,12 @@ fn day_card_with(
 
 // ── Summary view ───────────────────────────────────────────────────────
 
-fn summary_drag(
-    strip_tx: Signal<f64>,
-    page_width: Signal<f64>,
-    state: AppState,
-) -> impl Fn(Drag) + 'static {
-    let axis: Signal<Option<bool>> = Signal::new(None);
-    move |drag: Drag| {
-        let dx = drag.translation.x;
-        let dy = drag.translation.y;
-        let w = page_width.get();
-        match drag.phase {
-            DragPhase::Began => {
-                axis.set(None);
-                strip_tx.set(-w);
-            }
-            DragPhase::Changed => {
-                let mut horiz = axis.get();
-                if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
-                    horiz = Some(dx.abs() >= dy.abs());
-                    axis.set(horiz);
-                }
-                if horiz == Some(true) {
-                    let q = state.current_quarter.get();
-                    let mut x = dx;
-                    if q <= 0 && x > 0.0 {
-                        x *= SWIPE_EDGE_DAMP;
-                    }
-                    if q >= 4 && x < 0.0 {
-                        x *= SWIPE_EDGE_DAMP;
-                    }
-                    strip_tx.set(-w + x);
-                }
-            }
-            DragPhase::Ended => {
-                let was_horiz = axis.get() == Some(true);
-                axis.set(None);
-                let q = state.current_quarter.get();
-                let actual_dx = strip_tx.get() + w;
-                if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
-                    if actual_dx < 0.0 && q < 4 {
-                        select_quarter(state, q + 1);
-                        strip_tx.set(strip_tx.get() + w);
-                        with_animation(AnimSpec::ease_out(200), || {
-                            strip_tx.set(-w);
-                        });
-                        return;
-                    }
-                    if actual_dx > 0.0 && q > 0 {
-                        select_quarter(state, q - 1);
-                        strip_tx.set(strip_tx.get() - w);
-                        with_animation(AnimSpec::ease_out(200), || {
-                            strip_tx.set(-w);
-                        });
-                        return;
-                    }
-                }
-                with_animation(AnimSpec::ease_out(200), || {
-                    strip_tx.set(-w);
-                });
-            }
-        }
-    }
-}
 
-fn summary_view(state: AppState) -> impl Piece {
-    let page_width = Signal::new(400.0f64);
-    let strip_tx = Signal::new(-400.0f64);
+
+fn summary_view(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) -> impl Piece {
     let probe_width = page_width;
     let probe_tx = strip_tx;
     let strip_state = state;
-    let drag_state = state;
-    let drag_width = page_width;
-    let drag_tx = strip_tx;
     column((
         canvas(move |_draw, size| {
             let w = size.width;
@@ -539,7 +492,6 @@ fn summary_view(state: AppState) -> impl Piece {
                     ))
                     .translation(strip_tx, 0.0),
                 ))
-                .on_drag(summary_drag(drag_tx, drag_width, drag_state))
             },
         ),
     ))
