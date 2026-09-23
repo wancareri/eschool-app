@@ -1,3 +1,4 @@
+use crate::shared::nslog;
 use crate::app::{AppState, OfficialMark};
 use crate::features;
 use eschool_api::entities::*;
@@ -214,6 +215,7 @@ fn pager_drag(
         let w = page_width.get();
         match drag.phase {
             DragPhase::Began => {
+                nslog::nslog("[Drag] Began");
                 axis.set(None);
                 strip_tx.set(-w);
             }
@@ -221,6 +223,7 @@ fn pager_drag(
                 let mut horiz = axis.get();
                 if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
                     horiz = Some(dx.abs() >= dy.abs());
+                    nslog::nslog(&format!("[Drag] Axis locked: horiz={:?} dx={} dy={}", horiz, dx, dy));
                     axis.set(horiz);
                 }
                 if horiz == Some(true) {
@@ -242,6 +245,7 @@ fn pager_drag(
                 let idx = state.current_week_index.get();
                 let total = state.all_weeks.get().len() as i32;
                 let actual_dx = strip_tx.get() + w;
+                nslog::nslog(&format!("[Drag] Ended: was_horiz={} actual_dx={} threshold={}", was_horiz, actual_dx, SWIPE_THRESHOLD));
                 if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
                     if actual_dx < 0.0 && idx + 1 < total {
                         features::diary::load_week(state, idx + 1);
@@ -282,6 +286,7 @@ fn summary_drag(
         let w = page_width.get();
         match drag.phase {
             DragPhase::Began => {
+                nslog::nslog("[Drag] Began");
                 axis.set(None);
                 strip_tx.set(-w);
             }
@@ -289,6 +294,7 @@ fn summary_drag(
                 let mut horiz = axis.get();
                 if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
                     horiz = Some(dx.abs() >= dy.abs());
+                    nslog::nslog(&format!("[Drag] Axis locked: horiz={:?} dx={} dy={}", horiz, dx, dy));
                     axis.set(horiz);
                 }
                 if horiz == Some(true) {
@@ -375,10 +381,12 @@ fn week_view(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) ->
                     .translation(strip_tx, 0.0),
                 ))
                 .on_drag(pager_drag(strip_tx.clone(), page_width.clone(), state.clone()))
+                .grow()
             },
         ),
     ))
     .spacing(0.0)
+    .grow()
 }
 
 fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
@@ -408,6 +416,7 @@ fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
     ))
     .spacing(0.0)
     .width(w)
+    .grow()
 }
 
 fn week_header(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) -> impl Piece {
