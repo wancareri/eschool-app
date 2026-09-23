@@ -54,16 +54,16 @@ download_artifact() {
     local output="$2"
 
     echo "Downloading $name..."
-    gh api "repos/$REPO/actions/runs?per_page=10&status=success" \
-        --jq '.workflow_runs[] | select(.conclusion == "success") | .id' 2>/dev/null | \
-    while read -r run_id; do
-        if gh api "repos/$REPO/actions/runs/$run_id/artifacts" \
-            --jq ".artifacts[] | select(.name == \"$name\") | .archive_download_url" 2>/dev/null | \
-           head -1 | grep -q .; then
-            local url
-            url=$(gh api "repos/$REPO/actions/runs/$run_id/artifacts" \
-                --jq ".artifacts[] | select(.name == \"$name\") | .archive_download_url" 2>/dev/null | head -1)
+    local run_ids
+    run_ids=$(gh api "repos/$REPO/actions/runs?per_page=10&status=success" \
+        --jq '.workflow_runs[] | select(.conclusion == "success") | .id' 2>/dev/null || true)
 
+    for run_id in $run_ids; do
+        local url
+        url=$(gh api "repos/$REPO/actions/runs/$run_id/artifacts" \
+            --jq ".artifacts[] | select(.name == \"$name\") | .archive_download_url" 2>/dev/null | head -1)
+
+        if [[ -n "$url" ]]; then
             # GitHub Artifacts API wraps everything in a zip — download to
             # a temp file, extract the real artifact, then clean up.
             local tmpzip
@@ -86,6 +86,7 @@ download_artifact() {
             return 0
         fi
     done
+
     echo "  ! Artifact '$name' not found"
     return 1
 }
@@ -147,7 +148,13 @@ for platform in "${PLATFORMS[@]}"; do
     artifact_name="${ARTIFACT_MAP[$platform]}"
     ext="${EXT_MAP[$platform]}"
     output="$OUTPUT_DIR/eschool-${platform}.${ext}"
-    download_artifact "$artifact_name" "$output" || true
+    if [[ "$platform" == "ios" ]]; then
+        download_artifact "ios-ipa-release" "$output" || \
+        download_artifact "ios-ipa" "$output" || \
+        download_artifact "ios-ipa-dev" "$output" || true
+    else
+        download_artifact "$artifact_name" "$output" || true
+    fi
 done
 
 echo ""
