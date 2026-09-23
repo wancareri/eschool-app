@@ -338,7 +338,15 @@ fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
             move || widgets::week_summary::render(state, get_lessons),
         ),
         when(
-            move || get_lessons().is_empty() && offset != 0,
+            move || get_lessons().is_empty() && offset == 0 && state.lessons_loading.get(),
+            || column((
+                spacer(),
+                spinner(),
+                spacer(),
+            )).height(300.0),
+        ),
+        when(
+            move || get_lessons().is_empty() && (!state.lessons_loading.get() || offset != 0),
             || label("Нет данных за этот период")
                 .font(Font::Body)
                 .secondary()

@@ -356,6 +356,7 @@ pub fn load_week(state: AppState, new_index: i32) {
         need_fetch = false;
         nslog::nslog(&format!("[Diary] load_week idx={idx} served from cache"));
     } else {
+        set_lessons.set(Vec::new());
         set_lessons_loading.set(true);
         set_conn.set(crate::app::ConnStatus::Connecting);
         nslog::nslog(&format!("[Diary] load_week idx={idx} uuid={week_uuid}"));
@@ -395,7 +396,9 @@ pub fn load_week(state: AppState, new_index: i32) {
                             let ls = lessons;
                             day::reactive::on_main(move || {
                                 let state = AppState::ambient();
-                                state.lessons.setter().set(ls.clone());
+                                if state.current_week_index.get() == ci {
+                                    state.lessons.setter().set(ls.clone());
+                                }
                                 let mut wc = state.week_cache.get();
                                 wc.insert(ci, ls);
                                 state.week_cache.set(wc);
@@ -433,6 +436,9 @@ pub fn load_week(state: AppState, new_index: i32) {
                     if let Ok(ls) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                         day::reactive::on_main(move || {
                             let state = AppState::ambient();
+                            if state.current_week_index.get() == ni {
+                                state.lessons.setter().set(ls.clone());
+                            }
                             let mut wc = state.week_cache.get();
                             wc.insert(ni, ls);
                             state.week_cache.set(wc);
