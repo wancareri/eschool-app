@@ -394,11 +394,6 @@ pub fn load_week(state: AppState, new_index: i32) {
         let _lock = fetch_lock().lock().unwrap();
         let client = blocking::build_client(&token);
 
-        let state = AppState::ambient();
-        if state.current_week_index.get() != cur_i {
-            return; // Abort if user navigated away while waiting for lock
-        }
-
         if need_current {
             match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &cur_uuid)) {
                 Ok(raw) => {
@@ -445,9 +440,6 @@ pub fn load_week(state: AppState, new_index: i32) {
         // Quiet neighbor prefetch
         for (ni, nuuid) in prefetch {
             let _plock = fetch_lock().lock().unwrap();
-            if AppState::ambient().current_week_index.get() != cur_i {
-                break;
-            }
             match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &nuuid)) {
                 Ok(raw) => {
                     if let Ok(ls) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
