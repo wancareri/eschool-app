@@ -69,8 +69,7 @@ pub fn render() -> impl Piece {
         ),
     ))
     .spacing(0.0)
-    .background(Color::CLEAR)
-    .grow())
+    .background(Color::CLEAR))
     .grow())
     .on_refresh(move || {
         let state = AppState::ambient();

@@ -148,6 +148,8 @@ impl Ambient for AppState {
             log_version: Signal::new(0u64),
         };
 
+        state.register_main();
+
         if has_token && !lock_active {
             crate::features::diary::load_all(state);
         } else if biometric_lock {
@@ -156,5 +158,19 @@ impl Ambient for AppState {
             nslog::nslog("[App] PIN lock active, waiting for PIN");
         }
         state
+    }
+}
+
+thread_local! {
+    static MAIN_APP_STATE: std::cell::Cell<Option<AppState>> = const { std::cell::Cell::new(None) };
+}
+
+impl AppState {
+    pub fn register_main(self) {
+        MAIN_APP_STATE.with(|c| c.set(Some(self)));
+    }
+
+    pub fn get_main() -> Option<AppState> {
+        MAIN_APP_STATE.with(|c| c.get())
     }
 }

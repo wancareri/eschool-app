@@ -43,6 +43,7 @@ pub fn root() -> impl Piece {
 
 fn window_shell(primary: bool) -> impl Piece {
     AppState::scoped(move |state| {
+        state.register_main();
         day::window_title(move || res::str::app_title().format());
 
         // Auto-lock: save background timestamp periodically + re-lock after 5 min

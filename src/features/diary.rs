@@ -8,12 +8,6 @@ use eschool_api::client::blocking;
 use eschool_api::client::endpoints;
 use eschool_api::entities::*;
 use crate::shared::{cache, nslog};
-use std::sync::Mutex;
-
-static GLOBAL_FETCH_LOCK: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
-fn fetch_lock() -> &'static Mutex<()> {
-    GLOBAL_FETCH_LOCK.get_or_init(|| Mutex::new(()))
-}
 
 /// Quarter ranges: weeks indices in all_weeks
 const QUARTER_RANGES: &[(usize, usize)] = &[(0, 9), (9, 18), (18, 27), (27, 36)];
@@ -247,10 +241,11 @@ pub fn load_all(state: AppState) {
                                     let ci = idx as i32;
                                     let ls = lessons;
                                     day::reactive::on_main(move || {
-                                        let state = AppState::ambient();
-                                        let mut wc = state.week_cache.get();
-                                        wc.insert(ci, ls);
-                                        state.week_cache.set(wc);
+                                        if let Some(state) = AppState::get_main() {
+                                            let mut wc = state.week_cache.get();
+                                            wc.insert(ci, ls);
+                                            state.week_cache.set(wc);
+                                        }
                                     });
                                 }
                                 Err(e) => nslog::nslog(&format!("[Diary] parse failed: {e}")),
@@ -389,9 +384,11 @@ pub fn load_week(state: AppState, new_index: i32) {
     let cur_uuid = week_uuid;
     let cur_i = idx as i32;
     let need_current = need_fetch;
+    let set_lessons = state.lessons.setter();
+    let set_lessons_loading = state.lessons_loading.setter();
+    let set_conn = state.conn_status.setter();
 
     std::thread::spawn(move || {
-        let _lock = fetch_lock().lock().unwrap();
         let client = blocking::build_client(&token);
 
         if need_current {
@@ -399,58 +396,64 @@ pub fn load_week(state: AppState, new_index: i32) {
                 Ok(raw) => {
                     match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                         Ok(lessons) => {
+                            nslog::nslog(&format!("[Diary] load_week idx={cur_i} OK ({} days)", lessons.len()));
                             let ci = cur_i;
-                            let ls = lessons;
+                            let ls = lessons.clone();
                             day::reactive::on_main(move || {
-                                let state = AppState::ambient();
-                                if state.current_week_index.get() == ci {
-                                    state.lessons.setter().set(ls.clone());
+                                if let Some(state) = AppState::get_main() {
+                                    if state.current_week_index.get() == ci {
+                                        state.lessons.setter().set(ls.clone());
+                                    }
+                                    let mut wc = state.week_cache.get();
+                                    wc.insert(ci, ls);
+                                    state.week_cache.set(wc);
+                                } else {
+                                    set_lessons.set(ls);
                                 }
-                                let mut wc = state.week_cache.get();
-                                wc.insert(ci, ls);
-                                state.week_cache.set(wc);
                             });
                         }
                         Err(e) => {
                             nslog::nslog(&format!("[Diary] load_week parse failed: {e}"));
-                            day::reactive::on_main(|| { AppState::ambient().conn_status.setter().set(crate::app::ConnStatus::Error); });
+                            set_conn.set(crate::app::ConnStatus::Error);
                         }
                     }
                 }
                 Err(e) => {
                     nslog::nslog(&format!("[Diary] load_week request failed: {e}"));
-                    day::reactive::on_main(|| { AppState::ambient().conn_status.setter().set(crate::app::ConnStatus::Error); });
+                    set_conn.set(crate::app::ConnStatus::Error);
                 }
             }
-            day::reactive::on_main(|| { 
-                let state = AppState::ambient();
-                state.lessons_loading.setter().set(false);
-                if state.conn_status.get() == crate::app::ConnStatus::Connecting {
-                    let set_c = state.conn_status.setter();
-                    set_c.set(crate::app::ConnStatus::Connected);
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_secs(2));
-                        set_c.set(crate::app::ConnStatus::Idle);
-                    });
+
+            day::reactive::on_main(move || {
+                set_lessons_loading.set(false);
+                if let Some(state) = AppState::get_main() {
+                    state.lessons_loading.setter().set(false);
+                    if state.conn_status.get() == crate::app::ConnStatus::Connecting {
+                        let set_c = state.conn_status.setter();
+                        set_c.set(crate::app::ConnStatus::Connected);
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_secs(2));
+                            set_c.set(crate::app::ConnStatus::Idle);
+                        });
+                    }
                 }
             });
         }
 
-        drop(_lock);
         // Quiet neighbor prefetch
         for (ni, nuuid) in prefetch {
-            let _plock = fetch_lock().lock().unwrap();
             match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &nuuid)) {
                 Ok(raw) => {
                     if let Ok(ls) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
                         day::reactive::on_main(move || {
-                            let state = AppState::ambient();
-                            if state.current_week_index.get() == ni {
-                                state.lessons.setter().set(ls.clone());
+                            if let Some(state) = AppState::get_main() {
+                                if state.current_week_index.get() == ni {
+                                    state.lessons.setter().set(ls.clone());
+                                }
+                                let mut wc = state.week_cache.get();
+                                wc.insert(ni, ls);
+                                state.week_cache.set(wc);
                             }
-                            let mut wc = state.week_cache.get();
-                            wc.insert(ni, ls);
-                            state.week_cache.set(wc);
                         });
                     }
                 }
@@ -572,15 +575,16 @@ pub fn load_quarter(state: AppState, quarter: usize) {
         set_official_marks.set(all_official);
         
         day::reactive::on_main(|| {
-            let state = AppState::ambient();
-            state.marks_loading.setter().set(false);
-            if state.conn_status.get() == crate::app::ConnStatus::Connecting {
-                let set_c = state.conn_status.setter();
-                set_c.set(crate::app::ConnStatus::Connected);
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(2));
-                    set_c.set(crate::app::ConnStatus::Idle);
-                });
+            if let Some(state) = AppState::get_main() {
+                state.marks_loading.setter().set(false);
+                if state.conn_status.get() == crate::app::ConnStatus::Connecting {
+                    let set_c = state.conn_status.setter();
+                    set_c.set(crate::app::ConnStatus::Connected);
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        set_c.set(crate::app::ConnStatus::Idle);
+                    });
+                }
             }
         });
         
@@ -698,15 +702,16 @@ pub fn load_year(state: AppState) {
         cache::save_json("quarter_official_marks", &q_official_marks);
         
         day::reactive::on_main(|| {
-            let state = AppState::ambient();
-            state.marks_loading.setter().set(false);
-            if state.conn_status.get() == crate::app::ConnStatus::Connecting {
-                let set_c = state.conn_status.setter();
-                set_c.set(crate::app::ConnStatus::Connected);
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(2));
-                    set_c.set(crate::app::ConnStatus::Idle);
-                });
+            if let Some(state) = AppState::get_main() {
+                state.marks_loading.setter().set(false);
+                if state.conn_status.get() == crate::app::ConnStatus::Connecting {
+                    let set_c = state.conn_status.setter();
+                    set_c.set(crate::app::ConnStatus::Connected);
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        set_c.set(crate::app::ConnStatus::Idle);
+                    });
+                }
             }
         });
         

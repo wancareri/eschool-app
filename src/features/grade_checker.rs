@@ -42,10 +42,13 @@ pub fn start_grade_checker() {
         loop {
             std::thread::sleep(std::time::Duration::from_secs(15 * 60));
 
-            let state = AppState::ambient();
-            if state.is_authenticated.get() && !state.all_marks.get().is_empty() {
-                check_new_grades(state);
-            }
+            day::reactive::on_main(|| {
+                if let Some(state) = AppState::get_main() {
+                    if state.is_authenticated.get() && !state.all_marks.get().is_empty() {
+                        check_new_grades(state);
+                    }
+                }
+            });
         }
     });
 }
