@@ -362,8 +362,7 @@ fn week_view(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) ->
                 }
             }
         })
-        .height(0.0)
-        .grow(),
+        .height(0.0),
 
         when(
             move || {
@@ -541,8 +540,7 @@ fn summary_view(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>)
                 }
             }
         })
-        .height(0.0)
-        .grow(),
+        .height(0.0),
 
         when(
             move || {
