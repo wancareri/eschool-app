@@ -112,7 +112,7 @@ fn select_quarter(state: AppState, q: usize) {
         }
     }
     state.current_quarter.set(q);
-    select_quarter(state, q);
+    features::diary::load_quarter(state, q);
 }
 
 fn quarter_btn(state: AppState, lbl: &'static str, q: usize) -> impl Piece {
