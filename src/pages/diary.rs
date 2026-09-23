@@ -1,4 +1,3 @@
-use crate::shared::nslog;
 use crate::app::{AppState, OfficialMark};
 use crate::features;
 use eschool_api::entities::*;
@@ -9,19 +8,33 @@ use day::prelude::*;
 use day_piece_pullrefresh::pull_to_refresh;
 
 const PAD: f64 = 20.0;
-const SWIPE_THRESHOLD: f64 = 30.0;
+const SWIPE_THRESHOLD: f64 = 80.0;
 const SWIPE_AXIS_LOCK: f64 = 4.0;
 const SWIPE_EDGE_DAMP: f64 = 0.3;
 
 
 
+fn get_screen_width() -> f64 {
+    #[cfg(target_os = "ios")]
+    {
+        use objc2_ui_kit::UIScreen;
+        if let Some(screen) = UIScreen::mainScreen() {
+            let bounds = unsafe { screen.bounds() };
+            if bounds.size.width > 50.0 {
+                return bounds.size.width;
+            }
+        }
+    }
+    390.0
+}
+
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let show_summary = Signal::new(false);
     let refreshing = Signal::new(false);
-    let page_width = Signal::new(400.0f64);
-    let strip_tx = Signal::new(-400.0f64);
-                
+    let initial_w = get_screen_width();
+    let page_width = Signal::new(initial_w);
+    let strip_tx = Signal::new(-initial_w);
 
     pull_to_refresh(refreshing, scroll(column((
         zstack((
@@ -37,34 +50,15 @@ pub fn render() -> impl Piece {
             widgets::conn_status::render(),
         )),
 
-        when(
-            move || state.is_authenticated.get(),
-            move || quarter_tabs(state),
-        ),
+        quarter_tabs(state),
+        sub_tabs(state, show_summary),
 
         when(
-            move || state.is_authenticated.get(),
-            move || sub_tabs(state, show_summary),
-        ),
-
-        when(
-            move || !state.is_authenticated.get(),
-            || column((
-                spacer(),
-                label("Войдите для просмотра дневника")
-                    .font(Font::Body).secondary().align(TextAlign::Center),
-                spacer(),
-            )).grow(),
-        ),
-
-        // Old spinners removed. The connection status indicator now handles this:
-        
-        when(
-            move || state.is_authenticated.get() && !show_summary.get(),
+            move || !show_summary.get(),
             move || week_view(state, page_width, strip_tx),
         ),
         when(
-            move || state.is_authenticated.get() && show_summary.get(),
+            move || show_summary.get(),
             move || summary_view(state, page_width, strip_tx),
         ),
     ))
@@ -188,14 +182,19 @@ fn pager_go(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>, dir
         return;
     }
     let w = page_width.get();
-    features::diary::load_week(state, new_idx);
-    if dir > 0 {
-        strip_tx.set(strip_tx.get() + w);
-    } else {
-        strip_tx.set(strip_tx.get() - w);
-    }
-    with_animation(AnimSpec::ease_out(200), || {
-        strip_tx.set(-w);
+    let target = if dir > 0 { -2.0 * w } else { 0.0 };
+    with_animation(AnimSpec::ease_out(250), move || {
+        strip_tx.set(target);
+    });
+    let set_strip = strip_tx.setter();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        day::reactive::on_main(move || {
+            if let Some(state) = AppState::get_main() {
+                features::diary::load_week(state, new_idx);
+            }
+            set_strip.set(-w);
+        });
     });
 }
 
@@ -213,7 +212,6 @@ fn pager_drag(
         let w = page_width.get();
         match drag.phase {
             DragPhase::Began => {
-                nslog::nslog("[Drag] Began");
                 axis.set(None);
                 strip_tx.set(-w);
             }
@@ -221,7 +219,6 @@ fn pager_drag(
                 let mut horiz = axis.get();
                 if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
                     horiz = Some(dx.abs() >= dy.abs());
-                    nslog::nslog(&format!("[Drag] Axis locked: horiz={:?} dx={} dy={}", horiz, dx, dy));
                     axis.set(horiz);
                 }
                 if horiz == Some(true) {
@@ -243,27 +240,42 @@ fn pager_drag(
                 let idx = state.current_week_index.get();
                 let total = state.all_weeks.get().len() as i32;
                 let actual_dx = strip_tx.get() + w;
-                nslog::nslog(&format!("[Drag] Ended: was_horiz={} actual_dx={} threshold={}", was_horiz, actual_dx, SWIPE_THRESHOLD));
                 if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
                     if actual_dx < 0.0 && idx + 1 < total {
-                        features::diary::load_week(state, idx + 1);
-                        strip_tx.set(strip_tx.get() + w);
-                        with_animation(AnimSpec::ease_out(200), || {
-                            strip_tx.set(-w);
+                        with_animation(AnimSpec::ease_out(250), move || {
+                            strip_tx.set(-2.0 * w);
+                        });
+                        let set_strip = strip_tx.setter();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(250));
+                            day::reactive::on_main(move || {
+                                if let Some(state) = AppState::get_main() {
+                                    features::diary::load_week(state, idx + 1);
+                                }
+                                set_strip.set(-w);
+                            });
                         });
                         return;
                     }
                     if actual_dx > 0.0 && idx > 0 {
-                        features::diary::load_week(state, idx - 1);
-                        strip_tx.set(strip_tx.get() - w);
-                        with_animation(AnimSpec::ease_out(200), || {
-                            strip_tx.set(-w);
+                        with_animation(AnimSpec::ease_out(250), move || {
+                            strip_tx.set(0.0);
+                        });
+                        let set_strip = strip_tx.setter();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(250));
+                            day::reactive::on_main(move || {
+                                if let Some(state) = AppState::get_main() {
+                                    features::diary::load_week(state, idx - 1);
+                                }
+                                set_strip.set(-w);
+                            });
                         });
                         return;
                     }
                 }
                 if was_horiz {
-                    with_animation(AnimSpec::ease_out(200), || {
+                    with_animation(AnimSpec::ease_out(200), move || {
                         strip_tx.set(-w);
                     });
                 }
@@ -284,7 +296,6 @@ fn summary_drag(
         let w = page_width.get();
         match drag.phase {
             DragPhase::Began => {
-                nslog::nslog("[Drag] Began");
                 axis.set(None);
                 strip_tx.set(-w);
             }
@@ -292,7 +303,6 @@ fn summary_drag(
                 let mut horiz = axis.get();
                 if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
                     horiz = Some(dx.abs() >= dy.abs());
-                    nslog::nslog(&format!("[Drag] Axis locked: horiz={:?} dx={} dy={}", horiz, dx, dy));
                     axis.set(horiz);
                 }
                 if horiz == Some(true) {
@@ -314,24 +324,40 @@ fn summary_drag(
                 let actual_dx = strip_tx.get() + w;
                 if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
                     if actual_dx < 0.0 && q + 1 <= 4 {
-                        select_quarter(state, q + 1);
-                        strip_tx.set(strip_tx.get() + w);
-                        with_animation(AnimSpec::ease_out(200), || {
-                            strip_tx.set(-w);
+                        with_animation(AnimSpec::ease_out(250), move || {
+                            strip_tx.set(-2.0 * w);
+                        });
+                        let set_strip = strip_tx.setter();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(250));
+                            day::reactive::on_main(move || {
+                                if let Some(state) = AppState::get_main() {
+                                    select_quarter(state, q + 1);
+                                }
+                                set_strip.set(-w);
+                            });
                         });
                         return;
                     }
                     if actual_dx > 0.0 && q > 0 {
-                        select_quarter(state, q - 1);
-                        strip_tx.set(strip_tx.get() - w);
-                        with_animation(AnimSpec::ease_out(200), || {
-                            strip_tx.set(-w);
+                        with_animation(AnimSpec::ease_out(250), move || {
+                            strip_tx.set(0.0);
+                        });
+                        let set_strip = strip_tx.setter();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(250));
+                            day::reactive::on_main(move || {
+                                if let Some(state) = AppState::get_main() {
+                                    select_quarter(state, q - 1);
+                                }
+                                set_strip.set(-w);
+                            });
                         });
                         return;
                     }
                 }
                 if was_horiz {
-                    with_animation(AnimSpec::ease_out(200), || {
+                    with_animation(AnimSpec::ease_out(200), move || {
                         strip_tx.set(-w);
                     });
                 }
@@ -386,20 +412,39 @@ fn week_view(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) ->
 
 fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
     let get_lessons = move || lessons_at(state, offset);
+    let target_idx = move || state.current_week_index.get() + offset;
+    let is_valid_week = move || {
+        let ti = target_idx();
+        let total = state.all_weeks.get().len() as i32;
+        ti >= 0 && ti < total
+    };
+    let is_loaded = move || {
+        let ti = target_idx();
+        let total = state.all_weeks.get().len() as i32;
+        if ti < 0 || ti >= total {
+            return true;
+        }
+        if offset == 0 {
+            !state.lessons.get().is_empty() || !state.lessons_loading.get()
+        } else {
+            state.week_cache.get().contains_key(&ti)
+        }
+    };
+
     column((
         when(
             move || true,
             move || widgets::week_summary::render(state, get_lessons),
         ),
         when(
-            move || get_lessons().is_empty() && offset == 0 && state.lessons_loading.get(),
+            move || is_valid_week() && !is_loaded(),
             || column((
                 spinner(),
             ))
             .padding(Insets { top: 80.0, leading: 0.0, bottom: 80.0, trailing: 0.0 }),
         ),
         when(
-            move || get_lessons().is_empty() && (!state.lessons_loading.get() || offset != 0),
+            move || is_loaded() && get_lessons().is_empty(),
             || label("Нет данных за этот период")
                 .font(Font::Body)
                 .secondary()
@@ -668,8 +713,8 @@ fn quarter_summary_at(state: AppState, q: usize, offset: i32) -> impl Piece {
                         names.push(name.clone());
                     }
                 }
-                names.dedup();
                 names.sort();
+                names.dedup();
                 names
             },
             |s: &String| s.clone(),
@@ -725,8 +770,8 @@ fn year_summary_at(state: AppState) -> impl Piece {
                         names.push(name.clone());
                     }
                 }
-                names.dedup();
                 names.sort();
+                names.dedup();
                 names
             },
             |s: &String| s.clone(),

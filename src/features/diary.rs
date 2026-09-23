@@ -3,7 +3,6 @@
 use crate::app::AppState;
 use crate::app::OfficialMark;
 use crate::features::auth;
-use day::prelude::Ambient;
 use eschool_api::client::blocking;
 use eschool_api::client::endpoints;
 use eschool_api::entities::*;
@@ -64,6 +63,10 @@ pub fn load_all(state: AppState) {
             set_current_quarter.set(quarter_for_index(idx));
             cached_cur_idx = Some(idx as i32);
         }
+    }
+    if let Some(cached_wc) = cache::load_json::<std::collections::HashMap<i32, Vec<DaySchedule>>>("week_cache") {
+        nslog::nslog(&format!("[Cache] Loading cached week_cache ({} weeks)", cached_wc.len()));
+        state.week_cache.set(cached_wc);
     }
     if let Some(cached_lessons) = cache::load_json::<Vec<DaySchedule>>("lessons") {
         nslog::nslog("[Cache] Loading cached lessons");
@@ -244,9 +247,31 @@ pub fn load_all(state: AppState) {
                                         if let Some(state) = AppState::get_main() {
                                             let mut wc = state.week_cache.get();
                                             wc.insert(ci, ls);
+                                            cache::save_json("week_cache", &wc);
                                             state.week_cache.set(wc);
                                         }
                                     });
+
+                                    // Prefetch neighbor weeks (idx - 1 and idx + 1) immediately on startup
+                                    for di in [-1i32, 1i32] {
+                                        let ni = idx as i32 + di;
+                                        if ni >= 0 && (ni as usize) < weeks.len() {
+                                            let nuuid = weeks[ni as usize].uuid.clone();
+                                            if let Ok(raw) = blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &cid, &pid, &nuuid)) {
+                                                if let Ok(nls) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
+                                                    nslog::nslog(&format!("[Diary] startup prefetch week idx={ni} OK ({} days)", nls.len()));
+                                                    day::reactive::on_main(move || {
+                                                        if let Some(state) = AppState::get_main() {
+                                                            let mut wc = state.week_cache.get();
+                                                            wc.insert(ni, nls);
+                                                            cache::save_json("week_cache", &wc);
+                                                            state.week_cache.set(wc);
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                                 Err(e) => nslog::nslog(&format!("[Diary] parse failed: {e}")),
                             }
@@ -406,6 +431,7 @@ pub fn load_week(state: AppState, new_index: i32) {
                                     }
                                     let mut wc = state.week_cache.get();
                                     wc.insert(ci, ls);
+                                    cache::save_json("week_cache", &wc);
                                     state.week_cache.set(wc);
                                 } else {
                                     set_lessons.set(ls);
@@ -452,6 +478,7 @@ pub fn load_week(state: AppState, new_index: i32) {
                                 }
                                 let mut wc = state.week_cache.get();
                                 wc.insert(ni, ls);
+                                cache::save_json("week_cache", &wc);
                                 state.week_cache.set(wc);
                             }
                         });
