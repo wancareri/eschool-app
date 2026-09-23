@@ -8,6 +8,12 @@ use eschool_api::client::blocking;
 use eschool_api::client::endpoints;
 use eschool_api::entities::*;
 use crate::shared::{cache, nslog};
+use std::sync::Mutex;
+
+static GLOBAL_FETCH_LOCK: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
+fn fetch_lock() -> &'static Mutex<()> {
+    GLOBAL_FETCH_LOCK.get_or_init(|| Mutex::new(()))
+}
 
 /// Quarter ranges: weeks indices in all_weeks
 const QUARTER_RANGES: &[(usize, usize)] = &[(0, 9), (9, 18), (18, 27), (27, 36)];
@@ -385,7 +391,13 @@ pub fn load_week(state: AppState, new_index: i32) {
     let need_current = need_fetch;
 
     std::thread::spawn(move || {
+        let _lock = fetch_lock().lock().unwrap();
         let client = blocking::build_client(&token);
+
+        let state = AppState::ambient();
+        if state.current_week_index.get() != cur_i {
+            return; // Abort if user navigated away while waiting for lock
+        }
 
         if need_current {
             match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &cur_uuid)) {
@@ -429,8 +441,13 @@ pub fn load_week(state: AppState, new_index: i32) {
             });
         }
 
+        drop(_lock);
         // Quiet neighbor prefetch
         for (ni, nuuid) in prefetch {
+            let _plock = fetch_lock().lock().unwrap();
+            if AppState::ambient().current_week_index.get() != cur_i {
+                break;
+            }
             match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &nuuid)) {
                 Ok(raw) => {
                     if let Ok(ls) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
