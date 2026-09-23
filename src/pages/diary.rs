@@ -38,41 +38,46 @@ pub fn render() -> impl Piece {
     let page_width = Signal::new(initial_w);
     let strip_tx = Signal::new(-initial_w);
 
-    pull_to_refresh(refreshing, scroll(column((
-        zstack((
+    zstack((
+        pull_to_refresh(refreshing, scroll(column((
             column((
                 label(move || res::str::diary_title().format())
                     .font(Font::LargeTitle)
                     .align(TextAlign::Center),
             ))
             .spacing(6.0)
-            .padding(Insets { top: 16.0, leading: PAD, bottom: 4.0, trailing: PAD }),
-            
-            // Connection indicator overlay in top-left
-            widgets::conn_status::render(),
-        )),
+            .padding(Insets { top: 16.0, leading: PAD, bottom: 4.0, trailing: PAD })
+            .width(initial_w),
 
-        quarter_tabs(state),
-        sub_tabs(state, show_summary),
+            quarter_tabs(state),
+            sub_tabs(state, show_summary),
 
-        when(
-            move || !show_summary.get(),
-            move || week_view(state, page_width, strip_tx),
-        ),
-        when(
-            move || show_summary.get(),
-            move || summary_view(state, page_width, strip_tx),
-        ),
+            when(
+                move || !show_summary.get(),
+                move || week_view(state, page_width, strip_tx),
+            ),
+            when(
+                move || show_summary.get(),
+                move || summary_view(state, page_width, strip_tx),
+            ),
+        ))
+        .spacing(0.0)
+        .width(initial_w)
+        .background(Color::CLEAR))
+        .grow())
+        .on_refresh(move || {
+            let state = AppState::ambient();
+            if state.is_authenticated.get() {
+                features::diary::load_all(state);
+            }
+        })
+        .grow(),
+
+        // Sticky status indicator in top-left corner
+        widgets::conn_status::render()
+            .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
     ))
-    .spacing(0.0)
-    .background(Color::CLEAR))
-    .grow())
-    .on_refresh(move || {
-        let state = AppState::ambient();
-        if state.is_authenticated.get() {
-            features::diary::load_all(state);
-        }
-    })
+    .align(Alignment::TopLeading)
     .grow()
 }
 
@@ -369,47 +374,28 @@ fn summary_drag(
 }
 
 fn week_view(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) -> impl Piece {
-    let probe_width = page_width;
-    let probe_tx = strip_tx;
     let strip_state = state;
     let header_state = state;
     let header_width = page_width;
     let header_tx = strip_tx;
+    let w = page_width.get();
     column((
         week_header(header_state, header_width, header_tx),
-        canvas(move |_draw, size| {
-            let w = size.width;
-            if w > 1.0 && (probe_width.get() - w).abs() > 0.5 {
-                let old_w = probe_width.get();
-                let tx = probe_tx.get();
-                probe_width.set(w);
-                if (tx + old_w).abs() < 2.0 {
-                    probe_tx.set(-w);
-                }
-            }
-        })
-        .height(0.0),
-
-        when(
-            move || {
-                page_width.get();
-                true
-            },
-            move || {
-                let w = page_width.get();
-                row((
-                    row((
-                        week_page(strip_state, -1, w),
-                        week_page(strip_state, 0, w),
-                        week_page(strip_state, 1, w),
-                    ))
-                    .translation(strip_tx, 0.0),
-                ))
-                .on_drag(pager_drag(strip_tx.clone(), page_width.clone(), state.clone()))
-            },
-        ),
+        row((
+            row((
+                week_page(strip_state, -1, w),
+                week_page(strip_state, 0, w),
+                week_page(strip_state, 1, w),
+            ))
+            .spacing(0.0)
+            .translation(strip_tx, 0.0),
+        ))
+        .spacing(0.0)
+        .width(w)
+        .on_drag(pager_drag(strip_tx.clone(), page_width.clone(), state.clone())),
     ))
     .spacing(0.0)
+    .width(w)
 }
 
 fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
@@ -466,6 +452,7 @@ fn week_header(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) 
     let s2 = state;
     let pw2 = page_width;
     let st2 = strip_tx;
+    let w = page_width.get();
     row((
         button("<")
             .action(move || pager_go(s1, pw1, st1, -1))
@@ -483,6 +470,7 @@ fn week_header(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) 
     ))
     .spacing(12.0)
     .padding(Insets { top: 0.0, leading: 16.0, bottom: 6.0, trailing: 16.0 })
+    .width(w)
 }
 
 /// Strip leading zeros from week summary (e.g. "01 сентября" → "1 сентября")
@@ -567,43 +555,24 @@ fn day_card_with(
 
 
 fn summary_view(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) -> impl Piece {
-    let probe_width = page_width;
-    let probe_tx = strip_tx;
     let strip_state = state;
+    let w = page_width.get();
     column((
-        canvas(move |_draw, size| {
-            let w = size.width;
-            if w > 1.0 && (probe_width.get() - w).abs() > 0.5 {
-                let old_w = probe_width.get();
-                let tx = probe_tx.get();
-                probe_width.set(w);
-                if (tx + old_w).abs() < 2.0 {
-                    probe_tx.set(-w);
-                }
-            }
-        })
-        .height(0.0),
-
-        when(
-            move || {
-                page_width.get();
-                true
-            },
-            move || {
-                let w = page_width.get();
-                row((
-                    row((
-                        summary_page(strip_state, -1, w),
-                        summary_page(strip_state, 0, w),
-                        summary_page(strip_state, 1, w),
-                    ))
-                    .translation(strip_tx, 0.0),
-                ))
-                .on_drag(summary_drag(strip_tx.clone(), page_width.clone(), state.clone()))
-            },
-        ),
+        row((
+            row((
+                summary_page(strip_state, -1, w),
+                summary_page(strip_state, 0, w),
+                summary_page(strip_state, 1, w),
+            ))
+            .spacing(0.0)
+            .translation(strip_tx, 0.0),
+        ))
+        .spacing(0.0)
+        .width(w)
+        .on_drag(summary_drag(strip_tx.clone(), page_width.clone(), state.clone())),
     ))
     .spacing(0.0)
+    .width(w)
 }
 
 fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
