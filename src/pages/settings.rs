@@ -426,6 +426,7 @@ fn dev_settings(state: AppState) -> impl Piece {
             (
                 label("Инструменты разработчика").font(Font::Headline).color(colors::WARNING),
 
+                label("Версия: v0.1.0"),
                 button("Показать токен")
                     .action(move || {
                         let msg = if let Some(t) = features::auth::get_token() {
