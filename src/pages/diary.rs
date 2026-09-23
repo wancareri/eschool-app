@@ -9,7 +9,7 @@ use day::prelude::*;
 use day_piece_pullrefresh::pull_to_refresh;
 
 const PAD: f64 = 20.0;
-const SWIPE_THRESHOLD: f64 = 72.0;
+const SWIPE_THRESHOLD: f64 = 30.0;
 const SWIPE_AXIS_LOCK: f64 = 4.0;
 const SWIPE_EDGE_DAMP: f64 = 0.3;
 
@@ -414,7 +414,6 @@ fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
     ))
     .spacing(0.0)
     .width(w)
-    .grow()
 }
 
 fn week_header(state: AppState, page_width: Signal<f64>, strip_tx: Signal<f64>) -> impl Piece {
