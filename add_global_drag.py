@@ -1,0 +1,108 @@
+import re
+
+with open('src/pages/diary.rs', 'r') as f:
+    content = f.read()
+
+# Add unified global_drag function before render
+global_drag_code = """
+fn global_drag(
+    strip_tx: Signal<f64>,
+    page_width: Signal<f64>,
+    state: AppState,
+    show_summary: Signal<bool>,
+) -> impl Fn(Drag) + 'static {
+    let axis: Signal<Option<bool>> = Signal::new(None);
+    move |drag: Drag| {
+        let dx = drag.translation.x;
+        let dy = drag.translation.y;
+        let w = page_width.get();
+        match drag.phase {
+            DragPhase::Began => {
+                axis.set(None);
+                strip_tx.set(-w);
+            }
+            DragPhase::Changed => {
+                let mut horiz = axis.get();
+                if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
+                    horiz = Some(dx.abs() >= dy.abs());
+                    axis.set(horiz);
+                }
+                if horiz == Some(true) {
+                    let mut x = dx;
+                    if show_summary.get() {
+                        let q = state.current_quarter.get();
+                        if q == 0 && x > 0.0 { x *= SWIPE_EDGE_DAMP; }
+                        if q >= 4 && x < 0.0 { x *= SWIPE_EDGE_DAMP; }
+                    } else {
+                        let idx = state.current_week_index.get();
+                        let total = state.all_weeks.get().len() as i32;
+                        if idx <= 0 && x > 0.0 { x *= SWIPE_EDGE_DAMP; }
+                        if idx + 1 >= total && x < 0.0 { x *= SWIPE_EDGE_DAMP; }
+                    }
+                    strip_tx.set(-w + x);
+                }
+            }
+            DragPhase::Ended => {
+                let was_horiz = axis.get() == Some(true);
+                axis.set(None);
+                let actual_dx = strip_tx.get() + w;
+                if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
+                    if show_summary.get() {
+                        let q = state.current_quarter.get();
+                        if actual_dx < 0.0 && q + 1 <= 4 {
+                            features::diary::load_quarter(state, q + 1);
+                            strip_tx.set(strip_tx.get() + w);
+                            with_animation(AnimSpec::ease_out(200), || { strip_tx.set(-w); });
+                            return;
+                        }
+                        if actual_dx > 0.0 && q > 0 {
+                            features::diary::load_quarter(state, q - 1);
+                            strip_tx.set(strip_tx.get() - w);
+                            with_animation(AnimSpec::ease_out(200), || { strip_tx.set(-w); });
+                            return;
+                        }
+                    } else {
+                        let idx = state.current_week_index.get();
+                        let total = state.all_weeks.get().len() as i32;
+                        if actual_dx < 0.0 && idx + 1 < total {
+                            features::diary::load_week(state, idx + 1);
+                            strip_tx.set(strip_tx.get() + w);
+                            with_animation(AnimSpec::ease_out(200), || { strip_tx.set(-w); });
+                            return;
+                        }
+                        if actual_dx > 0.0 && idx > 0 {
+                            features::diary::load_week(state, idx - 1);
+                            strip_tx.set(strip_tx.get() - w);
+                            with_animation(AnimSpec::ease_out(200), || { strip_tx.set(-w); });
+                            return;
+                        }
+                    }
+                }
+                if was_horiz {
+                    with_animation(AnimSpec::ease_out(200), || { strip_tx.set(-w); });
+                }
+            }
+        }
+    }
+}
+"""
+
+content = content.replace("pub fn render() -> impl Piece {", global_drag_code + "\npub fn render() -> impl Piece {")
+
+# Attach global drag to pull_to_refresh
+content = re.sub(r'\.on_refresh\(move \|\| \{\n        let state = AppState::ambient\(\);\n        if state\.is_authenticated\.get\(\) \{\n            features::diary::load_all\(state\);\n        \}\n    \}\)\n    \.grow\(\)',
+r'''.on_refresh(move || {
+        let state = AppState::ambient();
+        if state.is_authenticated.get() {
+            features::diary::load_all(state);
+        }
+    })
+    .on_drag(global_drag(drag_tx, drag_width, drag_state, show_summary_drag))
+    .grow()''', content)
+
+# Remove old pager_drag and summary_drag functions entirely
+content = re.sub(r'fn pager_drag.*?^\}$', '', content, flags=re.MULTILINE | re.DOTALL)
+content = re.sub(r'fn summary_drag.*?^\}$', '', content, flags=re.MULTILINE | re.DOTALL)
+
+with open('src/pages/diary.rs', 'w') as f:
+    f.write(content)
