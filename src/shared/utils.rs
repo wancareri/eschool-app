@@ -45,3 +45,31 @@ pub fn grade_color(mark: &str) -> Color {
         _          => colors::GRAY_400,
     }
 }
+
+pub fn avg_grade_color(avg: f64) -> Color {
+    if avg >= 8.5 {
+        colors::GRADE_EXCELLENT
+    } else if avg >= 6.5 {
+        colors::GRADE_GOOD
+    } else if avg >= 4.5 {
+        colors::GRADE_SATISFACTORY
+    } else if avg >= 2.5 {
+        colors::GRADE_POOR
+    } else {
+        colors::GRADE_FAILING
+    }
+}
+
+pub fn parse_marks(mark_str: &str) -> Vec<f64> {
+    let mut result = Vec::new();
+    for part in mark_str.split(|c: char| c == '/' || c == ',' || c == ';' || c == ' ' || c == '(' || c == ')') {
+        let trimmed = part.trim();
+        if let Ok(val) = trimmed.parse::<f64>() {
+            if val >= 1.0 && val <= 100.0 {
+                result.push(val);
+            }
+        }
+    }
+    result
+}
+

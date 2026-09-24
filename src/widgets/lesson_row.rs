@@ -22,7 +22,7 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
         row((
             label(move || s_num.with(|s| s.number.to_string()))
                 .font(Font::Caption)
-                .color(colors::WHITE)
+                .secondary()
                 .frame(NUM_WIDTH, 20.0),
             column((
                 label(move || s_title.with(|s| s.subject_title.clone()))
