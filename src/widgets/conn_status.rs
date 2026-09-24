@@ -89,10 +89,10 @@ fn apply_glass_blur(piece: impl Decorate) -> impl Piece {
     piece
 }
 
-fn accent_bg(hex: u32, alpha: f64) -> Color {
-    let r = ((hex >> 16) & 0xFF) as f64 / 255.0;
-    let g = ((hex >> 8) & 0xFF) as f64 / 255.0;
-    let b = (hex & 0xFF) as f64 / 255.0;
+fn accent_dark_bg(hex: u32, alpha: f64) -> Color {
+    let r = (((hex >> 16) & 0xFF) as f64 / 255.0) * 0.70;
+    let g = (((hex >> 8) & 0xFF) as f64 / 255.0) * 0.70;
+    let b = ((hex & 0xFF) as f64 / 255.0) * 0.70;
     Color::rgba(r, g, b, alpha)
 }
 
@@ -169,9 +169,9 @@ pub fn render() -> impl Piece {
     .align(VAlign::Center)
     .padding(Insets { top: 6.0, leading: 9.0, bottom: 6.0, trailing: 9.0 })
     .background(move || match state.conn_status.get() {
-        ConnStatus::Connecting | ConnStatus::Connected => accent_bg(state.accent_color.get(), 0.14),
-        ConnStatus::Idle | ConnStatus::Offline => Color::rgba(0.5, 0.5, 0.5, 0.10),
-        ConnStatus::Error => Color::rgba(1.0, 0.30, 0.30, 0.12),
+        ConnStatus::Connecting | ConnStatus::Connected => accent_dark_bg(state.accent_color.get(), 0.50),
+        ConnStatus::Idle | ConnStatus::Offline => Color::rgba(0.28, 0.28, 0.28, 0.32),
+        ConnStatus::Error => Color::rgba(0.70, 0.15, 0.15, 0.50),
     })
     .corner_radius(14.0)
     .animation(Animation::ease_out(220))

@@ -7,13 +7,11 @@ pub fn render(state: AppState, title: &'static str, value_fn: impl Fn() -> Strin
         label(move || value_fn())
             .font(Font::Title2)
             .color(move || Color::hex(s.accent_color.get()))
-            .align(TextAlign::Center)
-            .grow(),
+            .align(TextAlign::Center),
         label(title)
             .font(Font::Caption)
             .secondary()
-            .align(TextAlign::Center)
-            .grow(),
+            .align(TextAlign::Center),
     ))
     .align(HAlign::Center)
     .spacing(2.0)
