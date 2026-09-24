@@ -8,7 +8,7 @@ use day::prelude::*;
 use day_piece_pullrefresh::pull_to_refresh;
 
 const PAD: f64 = 20.0;
-const SWIPE_THRESHOLD: f64 = 48.0;
+const SWIPE_THRESHOLD: f64 = 36.0;
 const SWIPE_AXIS_LOCK: f64 = 8.0;
 const SWIPE_EDGE_DAMP: f64 = 0.3;
 
@@ -173,7 +173,7 @@ fn lessons_at(state: AppState, offset: i32) -> Vec<DaySchedule> {
         state.lessons.get()
     } else {
         let idx = state.current_week_index.get() + offset;
-        state.week_cache.get().get(&idx).cloned().unwrap_or_default()
+        state.week_cache.with(|cache| cache.get(&idx).cloned().unwrap_or_default())
     }
 }
 
@@ -193,10 +193,12 @@ fn pager_go(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>, dir: 
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(280));
         day::reactive::on_main(move || {
-            if let Some(state) = AppState::get_main() {
-                features::diary::load_week(state, new_idx);
-            }
-            set_drag.set(0.0);
+            day::reactive::batch(|| {
+                if let Some(state) = AppState::get_main() {
+                    features::diary::load_week(state, new_idx);
+                }
+                set_drag.set(0.0);
+            });
         });
     });
 }
@@ -219,10 +221,10 @@ fn pager_drag(
             DragPhase::Changed => {
                 let mut horiz = axis.get();
                 if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
-                    horiz = Some(dx.abs() >= dy.abs() * 0.6);
+                    horiz = Some(dx.abs() >= dy.abs() * 0.5);
                     axis.set(horiz);
                 }
-                if horiz == Some(false) && dx.abs() > 24.0 && dx.abs() > dy.abs() * 1.2 {
+                if horiz == Some(false) && dx.abs() > 20.0 && dx.abs() > dy.abs() * 1.0 {
                     horiz = Some(true);
                     axis.set(horiz);
                 }
@@ -254,10 +256,12 @@ fn pager_drag(
                         std::thread::spawn(move || {
                             std::thread::sleep(std::time::Duration::from_millis(220));
                             day::reactive::on_main(move || {
-                                if let Some(state) = AppState::get_main() {
-                                    features::diary::load_week(state, idx + 1);
-                                }
-                                set_drag.set(0.0);
+                                day::reactive::batch(|| {
+                                    if let Some(state) = AppState::get_main() {
+                                        features::diary::load_week(state, idx + 1);
+                                    }
+                                    set_drag.set(0.0);
+                                });
                             });
                         });
                         return;
@@ -270,10 +274,12 @@ fn pager_drag(
                         std::thread::spawn(move || {
                             std::thread::sleep(std::time::Duration::from_millis(220));
                             day::reactive::on_main(move || {
-                                if let Some(state) = AppState::get_main() {
-                                    features::diary::load_week(state, idx - 1);
-                                }
-                                set_drag.set(0.0);
+                                day::reactive::batch(|| {
+                                    if let Some(state) = AppState::get_main() {
+                                        features::diary::load_week(state, idx - 1);
+                                    }
+                                    set_drag.set(0.0);
+                                });
                             });
                         });
                         return;
@@ -340,10 +346,12 @@ fn summary_drag(
                         std::thread::spawn(move || {
                             std::thread::sleep(std::time::Duration::from_millis(220));
                             day::reactive::on_main(move || {
-                                if let Some(state) = AppState::get_main() {
-                                    select_quarter(state, q + 1);
-                                }
-                                set_drag.set(0.0);
+                                day::reactive::batch(|| {
+                                    if let Some(state) = AppState::get_main() {
+                                        select_quarter(state, q + 1);
+                                    }
+                                    set_drag.set(0.0);
+                                });
                             });
                         });
                         return;
@@ -356,10 +364,12 @@ fn summary_drag(
                         std::thread::spawn(move || {
                             std::thread::sleep(std::time::Duration::from_millis(220));
                             day::reactive::on_main(move || {
-                                if let Some(state) = AppState::get_main() {
-                                    select_quarter(state, q - 1);
-                                }
-                                set_drag.set(0.0);
+                                day::reactive::batch(|| {
+                                    if let Some(state) = AppState::get_main() {
+                                        select_quarter(state, q - 1);
+                                    }
+                                    set_drag.set(0.0);
+                                });
                             });
                         });
                         return;
@@ -424,7 +434,7 @@ fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
         if offset == 0 {
             !state.lessons.get().is_empty() || !state.lessons_loading.get()
         } else {
-            state.week_cache.get().contains_key(&ti)
+            state.week_cache.with(|c| c.contains_key(&ti))
         }
     };
 
@@ -514,33 +524,24 @@ fn diary_list_with(
     get_lessons: impl Fn() -> Vec<DaySchedule> + Copy + 'static,
 ) -> impl Piece {
     each(
-        items(move || get_lessons(), |d: &DaySchedule| d.date),
+        items(get_lessons, |d: &DaySchedule| d.date),
         move |day_slot| {
-            let date = day_slot.key();
-            day_card_with(state, get_lessons, date).any()
+            day_card_with(state, day_slot).any()
         },
     )
 }
 
 fn day_card_with(
     state: AppState,
-    get_lessons: impl Fn() -> Vec<DaySchedule> + Copy + 'static,
-    date: u64,
+    day_slot: ItemSlot<DaySchedule, u64>,
 ) -> impl Piece {
-    let get_slots = move || {
-        get_lessons()
-            .into_iter()
-            .find(|d| d.date == date)
-            .map(|d| d.slots)
-            .unwrap_or_default()
-    };
+    let s_header = day_slot;
+    let s_slots = day_slot;
+    let get_slots = move || s_slots.with(|d| d.slots.clone());
+
     column((
         label(move || {
-            get_lessons()
-                .iter()
-                .find(|d| d.date == date)
-                .map(|d| utils::format_date_header(d.day_of_week, d.date))
-                .unwrap_or_default()
+            s_header.with(|d| utils::format_date_header(d.day_of_week, d.date))
         })
         .font(Font::Headline)
         .color(move || Color::hex(state.accent_color.get()))
@@ -548,8 +549,7 @@ fn day_card_with(
         each(
             items(get_slots, |s: &LessonSlot| s.number),
             move |slot| {
-                let num = slot.key();
-                widgets::lesson_row::render(get_lessons, date, num).any()
+                widgets::lesson_row::render(slot).any()
             },
         ),
     ))

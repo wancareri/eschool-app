@@ -2,13 +2,12 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use crate::app::{AppState, ConnStatus};
 use crate::res;
-use crate::shared::colors;
 use day::prelude::*;
 
 static COLLAPSE_GEN: AtomicU64 = AtomicU64::new(0);
 
 fn expand_island(setter_exp: Setter<bool>, setter_op: Setter<f64>) {
-    with_animation(Animation::ease_out(240), move || {
+    with_animation(Animation::ease_out(220), move || {
         setter_exp.set(true);
     });
     std::thread::spawn(move || {
@@ -28,7 +27,7 @@ fn collapse_island(setter_exp: Setter<bool>, setter_op: Setter<f64>) {
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(140));
         day::reactive::on_main(move || {
-            with_animation(Animation::ease_out(240), move || {
+            with_animation(Animation::ease_out(220), move || {
                 setter_exp.set(false);
             });
         });
@@ -75,14 +74,9 @@ fn apply_glass_blur(piece: impl Decorate) -> impl Piece {
             UIViewAutoresizing::FlexibleWidth.0 | UIViewAutoresizing::FlexibleHeight.0,
         ));
         effect_view.setUserInteractionEnabled(false);
-        effect_view.setClipsToBounds(true);
-
-        let effect_layer: Retained<CALayer> = effect_view.layer();
-        effect_layer.setCornerRadius(13.5);
-        effect_layer.setMasksToBounds(true);
 
         let view_layer: Retained<CALayer> = view.layer();
-        view_layer.setCornerRadius(13.5);
+        view_layer.setCornerRadius(14.0);
         view_layer.setMasksToBounds(true);
 
         view.insertSubview_atIndex(&effect_view, 0);
@@ -95,72 +89,83 @@ fn apply_glass_blur(piece: impl Decorate) -> impl Piece {
     piece
 }
 
-fn render_pill(
-    status: ConnStatus,
-    expanded: Signal<bool>,
-    text_opacity: Signal<f64>,
-    setter_exp: Setter<bool>,
-    setter_op: Setter<f64>,
-) -> impl Piece {
-    let (icon_kind, text, text_color, bg_tint) = match status {
-        ConnStatus::Connecting => (
-            0,
-            "Обновление…",
-            colors::primary(),
-            Color::rgba(0.23, 0.51, 0.96, 0.08),
-        ),
-        ConnStatus::Connected => (
-            1,
-            "Подключено",
-            colors::SUCCESS,
-            Color::rgba(0.06, 0.72, 0.50, 0.08),
-        ),
-        ConnStatus::Idle => (
-            2,
-            "В сети",
-            colors::SUCCESS,
-            Color::rgba(0.06, 0.72, 0.50, 0.06),
-        ),
-        ConnStatus::Offline => (
-            3,
-            "Оффлайн",
-            colors::WARNING,
-            Color::rgba(0.96, 0.62, 0.04, 0.08),
-        ),
-        ConnStatus::Error => (
-            4,
-            "Ошибка сети",
-            colors::ERROR,
-            Color::rgba(0.94, 0.27, 0.27, 0.08),
-        ),
-    };
+pub fn render() -> impl Piece {
+    let state = AppState::ambient();
+    let expanded = Signal::new(true);
+    let text_opacity = Signal::new(1.0);
+    let setter_exp = expanded.setter();
+    let setter_op = text_opacity.setter();
 
-    let icon_piece = match icon_kind {
-        0 => spinner().frame(13.0, 13.0).any(),
-        1 => vector(res::vectors::status_ok).frame(13.0, 13.0).tint(colors::SUCCESS).any(),
-        2 => vector(res::vectors::status_ok).frame(13.0, 13.0).tint(colors::SUCCESS).any(),
-        3 => vector(res::vectors::status_offline).frame(13.0, 13.0).tint(colors::WARNING).any(),
-        _ => vector(res::vectors::status_error).frame(13.0, 13.0).tint(colors::ERROR).any(),
-    };
+    // Initial collapse after 3 seconds
+    schedule_collapse(setter_exp, setter_op);
+
+    // Watch for connection status updates to re-expand island
+    watch(
+        move || state.conn_status.get(),
+        move |new_st, old_st| {
+            if old_st != Some(new_st) {
+                expand_island(setter_exp, setter_op);
+                schedule_collapse(setter_exp, setter_op);
+            }
+        },
+    );
+
+    let icon_piece = when(
+        move || state.conn_status.get() == ConnStatus::Connecting,
+        || spinner().frame(13.0, 13.0).any(),
+    )
+    .otherwise(move || {
+        when(
+            move || state.conn_status.get() == ConnStatus::Offline,
+            || vector(res::vectors::status_offline).frame(13.0, 13.0).tint(Color::hex(0xF59E0B)).any(),
+        )
+        .otherwise(move || {
+            when(
+                move || state.conn_status.get() == ConnStatus::Error,
+                || vector(res::vectors::status_error).frame(13.0, 13.0).tint(Color::hex(0xEF4444)).any(),
+            )
+            .otherwise(move || {
+                // Connected or Idle — Lucide wifi status ok
+                vector(res::vectors::status_ok).frame(13.0, 13.0).tint(Color::hex(0x10B981)).any()
+            })
+        })
+    });
 
     let content = row((
         icon_piece,
         when(
             move || expanded.get(),
             move || {
-                label(text)
-                    .font(Font::Caption2)
-                    .color(text_color)
-                    .opacity(move || text_opacity.get())
-                    .padding(Insets { top: 0.0, leading: 6.0, bottom: 0.0, trailing: 4.0 })
+                label(move || match state.conn_status.get() {
+                    ConnStatus::Connecting => "Обновление…",
+                    ConnStatus::Connected => "Подключено",
+                    ConnStatus::Idle => "В сети",
+                    ConnStatus::Offline => "Оффлайн",
+                    ConnStatus::Error => "Ошибка сети",
+                })
+                .font(Font::Caption2)
+                .color(move || match state.conn_status.get() {
+                    ConnStatus::Connecting => Color::hex(0x3B82F6),
+                    ConnStatus::Connected | ConnStatus::Idle => Color::hex(0x10B981),
+                    ConnStatus::Offline => Color::hex(0xF59E0B),
+                    ConnStatus::Error => Color::hex(0xEF4444),
+                })
+                .opacity(move || text_opacity.get())
+                .padding(Insets { top: 0.0, leading: 6.0, bottom: 0.0, trailing: 3.0 })
             },
         ),
     ))
     .align(VAlign::Center)
-    .padding(Insets { top: 6.5, leading: 8.5, bottom: 6.5, trailing: 8.5 })
-    .background(bg_tint)
-    .corner_radius(13.5)
-    .animation(Animation::ease_out(240))
+    .padding(Insets { top: 6.0, leading: 9.0, bottom: 6.0, trailing: 9.0 })
+    .background(move || match state.conn_status.get() {
+        ConnStatus::Connecting => Color::rgba(0.25, 0.55, 1.0, 0.12),
+        ConnStatus::Connected => Color::rgba(0.18, 0.80, 0.44, 0.12),
+        ConnStatus::Idle => Color::rgba(0.18, 0.80, 0.44, 0.08),
+        ConnStatus::Offline => Color::rgba(1.0, 0.60, 0.10, 0.12),
+        ConnStatus::Error => Color::rgba(1.0, 0.30, 0.30, 0.12),
+    })
+    .corner_radius(14.0)
+    .animation(Animation::ease_out(220))
     .on_tap(move || {
         let cur = expanded.get();
         if !cur {
@@ -172,52 +177,4 @@ fn render_pill(
     });
 
     apply_glass_blur(content)
-}
-
-pub fn render() -> impl Piece {
-    let state = AppState::ambient();
-    let expanded = Signal::new(true);
-    let text_opacity = Signal::new(1.0);
-    let setter_exp = expanded.setter();
-    let setter_op = text_opacity.setter();
-
-    // Initial collapse after 3 seconds
-    schedule_collapse(setter_exp, setter_op);
-
-    // Watch for connection status updates
-    watch(
-        move || state.conn_status.get(),
-        move |new_st, old_st| {
-            if old_st != Some(new_st) {
-                expand_island(setter_exp, setter_op);
-                schedule_collapse(setter_exp, setter_op);
-            }
-        },
-    );
-
-    when(
-        move || state.conn_status.get() == ConnStatus::Connecting,
-        move || render_pill(ConnStatus::Connecting, expanded, text_opacity, setter_exp, setter_op),
-    )
-    .otherwise(move || {
-        when(
-            move || state.conn_status.get() == ConnStatus::Connected,
-            move || render_pill(ConnStatus::Connected, expanded, text_opacity, setter_exp, setter_op),
-        )
-        .otherwise(move || {
-            when(
-                move || state.conn_status.get() == ConnStatus::Offline,
-                move || render_pill(ConnStatus::Offline, expanded, text_opacity, setter_exp, setter_op),
-            )
-            .otherwise(move || {
-                when(
-                    move || state.conn_status.get() == ConnStatus::Error,
-                    move || render_pill(ConnStatus::Error, expanded, text_opacity, setter_exp, setter_op),
-                )
-                .otherwise(move || {
-                    render_pill(ConnStatus::Idle, expanded, text_opacity, setter_exp, setter_op)
-                })
-            })
-        })
-    })
 }

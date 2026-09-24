@@ -367,35 +367,36 @@ pub fn load_week(state: AppState, new_index: i32) {
     let set_current_quarter = state.current_quarter.setter();
     let set_lessons = state.lessons.setter();
     let set_lessons_loading = state.lessons_loading.setter();
-
-    set_current_week_index.set(idx as i32);
-    set_current_week.set(week_summary);
-    set_current_quarter.set(quarter_for_index(idx));
-
-    // Instant-serve from week_cache when present
-    let cached = state.week_cache.get().get(&(idx as i32)).cloned();
-    let mut need_fetch = true;
     let set_conn = state.conn_status.setter();
-    
-    if let Some(lessons) = cached {
-        set_lessons.set(lessons);
-        set_lessons_loading.set(false);
-        if state.conn_status.get() == crate::app::ConnStatus::Connecting {
-            set_conn.set(crate::app::ConnStatus::Connected);
+
+    // Instant-serve from week_cache when present (without cloning whole HashMap)
+    let cached = state.week_cache.with(|c| c.get(&(idx as i32)).cloned());
+    let mut need_fetch = true;
+
+    day::reactive::batch(|| {
+        set_current_week_index.set(idx as i32);
+        set_current_week.set(week_summary);
+        set_current_quarter.set(quarter_for_index(idx));
+
+        if let Some(lessons) = cached {
+            set_lessons.set(lessons);
+            set_lessons_loading.set(false);
+            if state.conn_status.get() == crate::app::ConnStatus::Connecting {
+                set_conn.set(crate::app::ConnStatus::Connected);
+            }
+            need_fetch = false;
+            nslog::nslog(&format!("[Diary] load_week idx={idx} served from cache"));
+        } else {
+            set_lessons.set(Vec::new());
+            set_lessons_loading.set(true);
+            set_conn.set(crate::app::ConnStatus::Connecting);
+            nslog::nslog(&format!("[Diary] load_week idx={idx} uuid={week_uuid}"));
         }
-        need_fetch = false;
-        nslog::nslog(&format!("[Diary] load_week idx={idx} served from cache"));
-    } else {
-        set_lessons.set(Vec::new());
-        set_lessons_loading.set(true);
-        set_conn.set(crate::app::ConnStatus::Connecting);
-        nslog::nslog(&format!("[Diary] load_week idx={idx} uuid={week_uuid}"));
-    }
+    });
 
     // Neighbor prefetch: idx±1 not already in cache
     let mut prefetch: Vec<(i32, String)> = Vec::new();
-    {
-        let cache = state.week_cache.get();
+    state.week_cache.with(|cache| {
         for di in [-1i32, 1i32] {
             let ni = idx as i32 + di;
             if ni < 0 || ni as usize >= weeks.len() {
@@ -408,7 +409,7 @@ pub fn load_week(state: AppState, new_index: i32) {
                 prefetch.push((ni, w.uuid.clone()));
             }
         }
-    }
+    });
 
     let cur_uuid = week_uuid;
     let cur_i = idx as i32;

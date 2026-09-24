@@ -5,28 +5,37 @@ use day::prelude::*;
 const NUM_WIDTH: f64 = 28.0;
 const HW_LEFT: f64 = 16.0 + NUM_WIDTH + 12.0;
 
-pub fn render<F>(get_lessons: F, date: u64, number: u32) -> impl Piece
-where
-    F: Fn() -> Vec<DaySchedule> + Copy + 'static,
-{
+pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
+    let s_num = slot;
+    let s_title = slot;
+    let s_time = slot;
+    let s_mark = slot;
+    let s_color = slot;
+    let s_has_comment = slot;
+    let s_comment = slot;
+    let s_has_hw = slot;
+    let s_hw = slot;
+    let s_has_msg = slot;
+    let s_msg = slot;
+
     column((
         row((
-            label(number.to_string())
+            label(move || s_num.with(|s| s.number.to_string()))
                 .font(Font::Caption)
                 .color(colors::WHITE)
                 .frame(NUM_WIDTH, 20.0),
             column((
-                label(move || find_field(get_lessons, date, number, |s| s.subject_title.clone()))
+                label(move || s_title.with(|s| s.subject_title.clone()))
                     .font(Font::Body),
                 label(move || {
-                    let time = find_field(get_lessons, date, number, |s| {
+                    s_time.with(|s| {
                         let t = &s.start_time;
-                        t.get(..5).unwrap_or(t).to_string()
-                    });
-                    let topic = find_field(get_lessons, date, number, |s| {
-                        s.topic.clone().unwrap_or_default()
-                    });
-                    if topic.is_empty() { time } else { format!("{time} · {topic}") }
+                        let time = t.get(..5).unwrap_or(t);
+                        match &s.topic {
+                            Some(topic) if !topic.is_empty() => format!("{time} · {topic}"),
+                            _ => time.to_string(),
+                        }
+                    })
                 })
                 .font(Font::Caption)
                 .secondary(),
@@ -35,7 +44,7 @@ where
             .align(HAlign::Leading)
             .grow(),
             label(move || {
-                find_field(get_lessons, date, number, |s| {
+                s_mark.with(|s| {
                     s.lesson_mark.as_ref()
                         .and_then(|m| m.mark.clone())
                         .unwrap_or_else(|| "—".into())
@@ -43,101 +52,40 @@ where
             })
             .font(Font::Title3)
             .color(move || {
-                let mark = find_field(get_lessons, date, number, |s| {
-                    s.lesson_mark.as_ref()
-                        .and_then(|m| m.mark.clone())
-                        .unwrap_or_default()
-                });
-                utils::grade_color(&mark)
+                s_color.with(|s| {
+                    let mark = s.lesson_mark.as_ref()
+                        .and_then(|m| m.mark.as_deref())
+                        .unwrap_or("—");
+                    utils::grade_color(mark)
+                })
             }),
         ))
         .spacing(12.0)
         .padding(Insets { top: 8.0, leading: 16.0, bottom: 0.0, trailing: 20.0 }),
+
         when(
-            move || find_field_bool(get_lessons, date, number, |s| {
-                s.lesson_mark.as_ref()
-                    .and_then(|m| m.comment.as_ref())
-                    .map_or(false, |c| !c.is_empty())
-            }),
-            move || {
-                label(move || find_field(get_lessons, date, number, |s| {
-                    s.lesson_mark.as_ref()
-                        .and_then(|m| m.comment.clone())
-                        .unwrap_or_default()
-                }))
+            move || s_has_comment.with(|s| s.lesson_mark.as_ref().and_then(|m| m.comment.as_ref()).map(|c| !c.is_empty()).unwrap_or(false)),
+            move || label(move || s_comment.with(|s| s.lesson_mark.as_ref().and_then(|m| m.comment.clone()).unwrap_or_default()))
                 .font(Font::Caption)
                 .color(colors::SECONDARY)
-                .padding(Insets { top: 2.0, leading: HW_LEFT, bottom: 2.0, trailing: 20.0 })
-            },
+                .padding(Insets { top: 2.0, leading: HW_LEFT, bottom: 2.0, trailing: 20.0 }),
         ),
+
         when(
-            move || find_field_bool(get_lessons, date, number, |s| {
-                s.homework.as_ref().map_or(false, |h| !h.is_empty())
-            }),
-            move || {
-                label(move || find_field(get_lessons, date, number, |s| {
-                    s.homework.clone().unwrap_or_default()
-                }))
+            move || s_has_hw.with(|s| s.homework.as_ref().map(|h| !h.is_empty()).unwrap_or(false)),
+            move || label(move || s_hw.with(|s| s.homework.clone().unwrap_or_default()))
                 .font(Font::Caption)
                 .color(colors::ACCENT)
-                .padding(Insets { top: 4.0, leading: HW_LEFT, bottom: 4.0, trailing: 20.0 })
-            },
+                .padding(Insets { top: 4.0, leading: HW_LEFT, bottom: 4.0, trailing: 20.0 }),
         ),
+
         when(
-            move || find_field_bool(get_lessons, date, number, |s| {
-                s.message.as_ref().map_or(false, |m| !m.is_empty())
-            }),
-            move || {
-                label(move || {
-                    let msg = find_field(get_lessons, date, number, |s| {
-                        s.message.clone().unwrap_or_default()
-                    });
-                    format!("ℹ {msg}")
-                })
+            move || s_has_msg.with(|s| s.message.as_ref().map(|m| !m.is_empty()).unwrap_or(false)),
+            move || label(move || s_msg.with(|s| s.message.as_ref().map(|m| format!("ℹ {m}")).unwrap_or_default()))
                 .font(Font::Caption)
                 .color(colors::SECONDARY)
-                .padding(Insets { top: 2.0, leading: HW_LEFT, bottom: 8.0, trailing: 20.0 })
-            },
+                .padding(Insets { top: 2.0, leading: HW_LEFT, bottom: 8.0, trailing: 20.0 }),
         ),
     ))
     .spacing(0.0)
-}
-
-fn find_lesson(lessons: &[DaySchedule], date: u64, number: u32) -> Option<&LessonSlot> {
-    lessons
-        .iter()
-        .find(|d| d.date == date)
-        .and_then(|d| d.slots.iter().find(|s| s.number == number))
-}
-
-fn find_field<F, G>(
-    get_lessons: F,
-    date: u64,
-    number: u32,
-    f: G,
-) -> String
-where
-    F: Fn() -> Vec<DaySchedule>,
-    G: Fn(&LessonSlot) -> String,
-{
-    let lessons = get_lessons();
-    find_lesson(&lessons, date, number)
-        .map(&f)
-        .unwrap_or_default()
-}
-
-fn find_field_bool<F, G>(
-    get_lessons: F,
-    date: u64,
-    number: u32,
-    f: G,
-) -> bool
-where
-    F: Fn() -> Vec<DaySchedule>,
-    G: Fn(&LessonSlot) -> bool,
-{
-    let lessons = get_lessons();
-    find_lesson(&lessons, date, number)
-        .map(&f)
-        .unwrap_or(false)
 }
