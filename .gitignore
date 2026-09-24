@@ -36,3 +36,8 @@ platform/android/.idea/
 website/.daysite/
 website/appindex.json
 website/gallery-manifest.json
+
+# Build outputs and artifacts
+dist/
+gh_artifacts*/
+*.ipa

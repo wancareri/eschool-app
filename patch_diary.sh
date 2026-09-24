@@ -1,1 +1,0 @@
-sed -i 's/\.padding(Insets { top: 16.0, leading: PAD, bottom: 6.0, trailing: PAD })/\.padding(Insets { top: 16.0, leading: PAD, bottom: 6.0, trailing: PAD })\.align(TextAlign::Leading)/' src/pages/diary.rs
