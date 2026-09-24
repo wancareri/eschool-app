@@ -43,6 +43,40 @@ pub fn render() -> impl Piece {
     );
 
     
+    let axis: Signal<Option<bool>> = Signal::new(None);
+    let drag_handler = move |drag: Drag| {
+        let dx = drag.translation.x;
+        let dy = drag.translation.y;
+        match drag.phase {
+            DragPhase::Began => {
+                axis.set(None);
+            }
+            DragPhase::Changed => {
+                let mut horiz = axis.get();
+                if horiz.is_none() && (dx.abs() > 10.0 || dy.abs() > 10.0) {
+                    horiz = Some(dx.abs() >= dy.abs() * 0.7);
+                    axis.set(horiz);
+                }
+            }
+            DragPhase::Ended => {
+                let was_horiz = axis.get() == Some(true);
+                axis.set(None);
+                if was_horiz && dx.abs() >= 40.0 {
+                    let cur = current_tab.get();
+                    if dx < -40.0 && cur < 3 {
+                        with_animation(AnimSpec::ease_out(150), move || {
+                            current_tab.set(cur + 1);
+                        });
+                    } else if dx > 40.0 && cur > 0 {
+                        with_animation(AnimSpec::ease_out(150), move || {
+                            current_tab.set(cur - 1);
+                        });
+                    }
+                }
+            }
+        }
+    };
+
     when(
         move || show_setup.get(),
         move || pin_setup_modal(show_setup, pin_enabled)
@@ -97,7 +131,8 @@ pub fn render() -> impl Piece {
         .grow())
         .grow()
     ))
-    .grow(),
+    .grow()
+    .on_drag(drag_handler),
 
     // Sticky status indicator in top-left corner
     widgets::conn_status::render()
@@ -207,7 +242,9 @@ fn pin_setup_modal(show_setup: Signal<bool>, pin_enabled: Signal<bool>) -> impl 
     let confirm = Signal::new(String::new());
     let error = Signal::new(String::new());
 
-    let c = column(( 
+    column((
+        spacer().grow(),
+
         column((
             label(move || res::str::app_title().format())
                 .font(Font::LargeTitle)
@@ -230,7 +267,7 @@ fn pin_setup_modal(show_setup: Signal<bool>, pin_enabled: Signal<bool>) -> impl 
             setup_dot(3, input),
         ))
         .spacing(20.0)
-        .padding(Insets { top: 24.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
+        .padding(Insets { top: 20.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
         .align(VAlign::Center),
 
         when(
@@ -243,7 +280,7 @@ fn pin_setup_modal(show_setup: Signal<bool>, pin_enabled: Signal<bool>) -> impl 
         ),
 
         setup_numpad(input, step, confirm, error, show_setup, pin_enabled),
-        
+
         button("Отмена")
             .action(move || {
                 show_setup.set(false);
@@ -251,14 +288,19 @@ fn pin_setup_modal(show_setup: Signal<bool>, pin_enabled: Signal<bool>) -> impl 
             })
             .id("pin-modal-cancel")
             .padding(Insets { top: 24.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
+
+        spacer().grow(),
     ))
     .spacing(8.0)
     .align(HAlign::Center)
-    .padding(Insets { top: 80.0, leading: 40.0, bottom: 40.0, trailing: 40.0 });
-    
-    // Wrap in a row to force horizontal centering
-    let c = column((c,)).grow();
-    row((spacer().grow(), c, spacer().grow())).grow().any()
+    .padding(Insets {
+        top: 24.0,
+        leading: 24.0,
+        bottom: 24.0,
+        trailing: 24.0,
+    })
+    .grow()
+    .any()
 }
 
 fn setup_dot(index: usize, input: Signal<String>) -> impl Piece {
@@ -267,7 +309,7 @@ fn setup_dot(index: usize, input: Signal<String>) -> impl Piece {
     })
     .action(|| {})
     .id(format!("setup-dot-{index}"))
-    .frame(20.0, 20.0)
+    .frame(24.0, 24.0)
 }
 
 fn setup_numpad(
@@ -282,9 +324,10 @@ fn setup_numpad(
         let k = key.clone();
         let k2 = key.clone();
         if k.is_empty() {
-            spacer().frame(72.0, 52.0).any()
+            spacer().frame(75.0, 75.0).any()
         } else if k == "⌫" {
             button("⌫")
+                .bordered()
                 .action(move || {
                     let mut v = state.get();
                     if !v.is_empty() {
@@ -293,11 +336,12 @@ fn setup_numpad(
                         error.set("".into());
                     }
                 })
-                .frame(72.0, 52.0)
+                .frame(75.0, 75.0)
                 .id(format!("sk-{k2}"))
                 .any()
         } else {
             button(k.clone())
+                .bordered()
                 .action(move || {
                     let mut v = state.get();
                     if v.len() >= 4 { return; }
@@ -322,7 +366,7 @@ fn setup_numpad(
                         }
                     }
                 })
-                .frame(72.0, 52.0)
+                .frame(75.0, 75.0)
                 .id(format!("sk-{k2}"))
                 .any()
         }
@@ -333,24 +377,24 @@ fn setup_numpad(
             setup_key(input.clone(), "1".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "2".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "3".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
-        )).spacing(16.0),
+        )).spacing(20.0).align(VAlign::Center),
         row((
             setup_key(input.clone(), "4".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "5".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "6".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
-        )).spacing(16.0),
+        )).spacing(20.0).align(VAlign::Center),
         row((
             setup_key(input.clone(), "7".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "8".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "9".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
-        )).spacing(16.0),
+        )).spacing(20.0).align(VAlign::Center),
         row((
             setup_key(input.clone(), "".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "0".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "⌫".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
-        )).spacing(16.0),
+        )).spacing(20.0).align(VAlign::Center),
     ))
-    .spacing(12.0)
+    .spacing(16.0)
     .align(HAlign::Center)
 }
 

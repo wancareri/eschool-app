@@ -3,7 +3,6 @@ day::routes! {
         Login => "login",
         Diary => "diary",
         Schedule => "schedule",
-        Teachers => "teachers",
         Settings => "settings",
     }
 }

@@ -18,7 +18,7 @@ pub fn render() -> impl Piece {
                 label(move || res::str::schedule_title().format())
                     .font(Font::LargeTitle)
                     .align(TextAlign::Center),
-                label("Расписание уроков")
+                label("Расписание уроков и преподаватели")
                     .font(Font::Subheadline)
                     .secondary()
                     .align(TextAlign::Center),
@@ -37,12 +37,12 @@ pub fn render() -> impl Piece {
             ),
             when(
                 move || state.is_authenticated.get() && state.schedule_loading.get(),
-                || column((
+                move || column((
                     spacer(),
-                    spinner(),
+                    widgets::spinner::render(state, 18.0),
                     label("  Загрузка…").font(Font::Caption).secondary(),
                     spacer(),
-                )).grow(),
+                )).align(HAlign::Center).grow(),
             ),
             when(
                 move || state.is_authenticated.get() && !state.schedule_loading.get(),
@@ -83,6 +83,10 @@ fn schedule_content(state: AppState) -> impl Piece {
                 .align(TextAlign::Center)
                 .padding(Insets { top: 60.0, leading: PAD, bottom: 60.0, trailing: PAD }),
         ),
+        when(
+            move || !state.subjects_teachers.get().is_empty(),
+            move || teachers_section(state),
+        ),
     ))
     .spacing(0.0)
     .grow()
@@ -90,7 +94,7 @@ fn schedule_content(state: AppState) -> impl Piece {
 
 fn timetable_section(state: AppState) -> impl Piece {
     column((
-        label("Расписание уроков")
+        label("Расписание по дням")
             .font(Font::Title3)
             .color(move || Color::hex(state.accent_color.get()))
             .padding(Insets { top: 0.0, leading: PAD, bottom: 8.0, trailing: PAD }),
@@ -130,6 +134,7 @@ fn timetable_day_card(state: AppState, dow: u32) -> impl Piece {
 
         label(move || {
             let day_opt = state.timetable_days.get().into_iter().find(|d| d.day_of_week == dow);
+            let teachers = state.subjects_teachers.get();
             let active_slots: Vec<_> = day_opt
                 .as_ref()
                 .map(|d| {
@@ -158,17 +163,90 @@ fn timetable_day_card(state: AppState, dow: u32) -> impl Piece {
                     } else {
                         subjects.join(" / ")
                     };
-                    format!("{}. {}–{}  {}", lesson_num, start, end, subj)
+
+                    let teacher_info = teachers.iter().find(|t| t.subject_title == subj);
+                    if let Some(t) = teacher_info {
+                        if !t.teacher.is_empty() {
+                            format!("{}. {}–{}  {}\n   👤 {} · Уровень: {}", lesson_num, start, end, subj, t.teacher, t.level_of_study)
+                        } else {
+                            format!("{}. {}–{}  {}", lesson_num, start, end, subj)
+                        }
+                    } else {
+                        format!("{}. {}–{}  {}", lesson_num, start, end, subj)
+                    }
                 })
                 .collect::<Vec<_>>()
-                .join("\n")
+                .join("\n\n")
             }
         })
         .font(Font::Body)
         .secondary()
-        .padding(Insets { top: 0.0, leading: PAD, bottom: 8.0, trailing: PAD }),
+        .padding(Insets { top: 0.0, leading: PAD, bottom: 10.0, trailing: PAD }),
 
         divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
+    ))
+    .spacing(0.0)
+}
+
+fn teachers_section(state: AppState) -> impl Piece {
+    column((
+        label("Преподаватели")
+            .font(Font::Title3)
+            .color(move || Color::hex(state.accent_color.get()))
+            .padding(Insets { top: 24.0, leading: PAD, bottom: 8.0, trailing: PAD }),
+
+        each(
+            items(
+                move || state.subjects_teachers.get(),
+                |st| format!("{}:{}", st.teacher_id, st.id),
+            ),
+            move |slot| {
+                let s_st = slot;
+                column((
+                    label(move || s_st.with(|st| st.subject_title.clone()))
+                        .font(Font::Headline)
+                        .color(move || Color::hex(state.accent_color.get()))
+                        .padding(Insets { top: 8.0, leading: PAD, bottom: 2.0, trailing: PAD }),
+
+                    label(move || s_st.with(|st| st.teacher.clone()))
+                        .font(Font::Body)
+                        .secondary()
+                        .padding(Insets { top: 0.0, leading: PAD, bottom: 2.0, trailing: PAD }),
+
+                    row((
+                        label(move || s_st.with(|st| {
+                            if !st.level_of_study.is_empty() {
+                                format!("Уровень: {}", st.level_of_study)
+                            } else {
+                                String::new()
+                            }
+                        }))
+                        .font(Font::Caption)
+                        .color(move || Color::hex(state.accent_color.get())),
+
+                        label(move || s_st.with(|st| {
+                            if let Some(ref g) = st.group_name {
+                                if !g.is_empty() {
+                                    format!("·  Группа: {}", g)
+                                } else {
+                                    String::new()
+                                }
+                            } else {
+                                String::new()
+                            }
+                        }))
+                        .font(Font::Caption)
+                        .secondary(),
+                    ))
+                    .spacing(6.0)
+                    .padding(Insets { top: 0.0, leading: PAD, bottom: 8.0, trailing: PAD }),
+
+                    divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
+                ))
+                .spacing(0.0)
+                .any()
+            },
+        ),
     ))
     .spacing(0.0)
 }

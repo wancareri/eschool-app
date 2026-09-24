@@ -445,9 +445,10 @@ fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
         ),
         when(
             move || is_valid_week() && !is_loaded(),
-            || column((
-                spinner(),
+            move || column((
+                widgets::spinner::render(state, 18.0),
             ))
+            .align(HAlign::Center)
             .padding(Insets { top: 80.0, leading: 0.0, bottom: 80.0, trailing: 0.0 }),
         ),
         when(

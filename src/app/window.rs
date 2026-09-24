@@ -115,7 +115,7 @@ fn build_nav(primary: bool) -> impl Piece {
     let s_even = state;
     let s_odd = state;
 
-    when(
+    let main_content = when(
         move || s_auth.is_authenticated.get(),
         move || {
             let s_tok1 = s_even;
@@ -141,6 +141,12 @@ fn build_nav(primary: bool) -> impl Piece {
             pages::login::render().any()
         }
     })
+    .grow();
+
+    zstack((
+        main_content,
+        crate::widgets::bottom_sheet::network_error_sheet(state),
+    ))
     .grow()
     .any()
 }
@@ -157,7 +163,6 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
             let name = match s {
                 crate::Section::Diary => "diary",
                 crate::Section::Schedule => "schedule",
-                crate::Section::Teachers => "teachers",
                 crate::Section::Settings => "settings",
                 _ => "diary",
             };
@@ -188,13 +193,7 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
             pages::schedule::render,
         )
         .icon_tint(accent)
-        .item_icon(
-            crate::Section::Teachers,
-            res::str::nav_teachers(),
-            res::vectors::tab_teachers,
-            pages::teachers::render,
-        )
-        .icon_tint(accent)
+
         .item_icon(
             crate::Section::Settings,
             res::str::nav_settings(),

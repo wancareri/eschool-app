@@ -90,6 +90,7 @@ pub struct AppState {
 
     // ── connection status ──────────────────────────────────────────────────
     pub conn_status: Signal<ConnStatus>,
+    pub show_network_modal: Signal<bool>,
 }
 
 impl Ambient for AppState {
@@ -107,8 +108,7 @@ impl Ambient for AppState {
 
         let saved_section = day::prefs::get("app.section")
             .and_then(|s| match s.as_str() {
-                "schedule" => Some(crate::Section::Schedule),
-                "teachers" => Some(crate::Section::Teachers),
+                "schedule" | "teachers" => Some(crate::Section::Schedule),
                 "settings" => Some(crate::Section::Settings),
                 _ => Some(crate::Section::Diary),
             })
@@ -164,6 +164,7 @@ impl Ambient for AppState {
             subjects_teachers: Signal::new(Vec::new()),
             teachers_loading: Signal::new(false),
             conn_status: Signal::new(ConnStatus::Idle),
+            show_network_modal: Signal::new(false),
             log_version: Signal::new(0u64),
         };
 

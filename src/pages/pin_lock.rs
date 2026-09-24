@@ -7,6 +7,8 @@ const PIN_LENGTH: usize = 4;
 
 pub fn render(state: AppState) -> impl Piece {
     column((
+        spacer().grow(),
+
         column((
             label(move || res::str::app_title().format())
                 .font(Font::LargeTitle)
@@ -16,7 +18,7 @@ pub fn render(state: AppState) -> impl Piece {
                 .font(Font::Subheadline)
                 .secondary()
                 .align(TextAlign::Center)
-                .padding(Insets { top: 4.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
+                .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
         ))
         .spacing(4.0)
         .align(HAlign::Center),
@@ -30,8 +32,8 @@ pub fn render(state: AppState) -> impl Piece {
                 dot(2, s),
                 dot(3, s),
             ))
-            .spacing(20.0)
-            .padding(Insets { top: 24.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
+            .spacing(24.0)
+            .padding(Insets { top: 28.0, leading: 0.0, bottom: 12.0, trailing: 0.0 })
             .align(VAlign::Center)
         },
 
@@ -42,7 +44,7 @@ pub fn render(state: AppState) -> impl Piece {
                 .font(Font::Caption)
                 .color(colors::ERROR)
                 .align(TextAlign::Center)
-                .padding(Insets { top: 4.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
+                .padding(Insets { top: 4.0, leading: 0.0, bottom: 4.0, trailing: 0.0 }),
         ),
 
         // Numpad
@@ -59,17 +61,19 @@ pub fn render(state: AppState) -> impl Piece {
                         crate::shared::biometric::authenticate_async(state);
                     })
                     .id("pin-biometric-btn")
-                    .padding(Insets { top: 20.0, leading: 0.0, bottom: 0.0, trailing: 0.0 })
+                    .padding(Insets { top: 24.0, leading: 0.0, bottom: 0.0, trailing: 0.0 })
             },
         ),
+
+        spacer().grow(),
     ))
     .spacing(8.0)
     .align(HAlign::Center)
     .padding(Insets {
-        top: 80.0,
-        leading: 40.0,
-        bottom: 40.0,
-        trailing: 40.0,
+        top: 24.0,
+        leading: 24.0,
+        bottom: 24.0,
+        trailing: 24.0,
     })
     .grow()
     .any()
@@ -87,7 +91,7 @@ fn dot(index: usize, state: AppState) -> impl Piece {
     })
     .action(|| {})
     .id(format!("dot-{index}"))
-    .frame(20.0, 20.0)
+    .frame(24.0, 24.0)
 }
 
 fn numpad(state: AppState) -> impl Piece {
@@ -97,7 +101,7 @@ fn numpad(state: AppState) -> impl Piece {
         numpad_row(state, &["7", "8", "9"]),
         numpad_row(state, &["", "0", "⌫"]),
     ))
-    .spacing(12.0)
+    .spacing(16.0)
     .align(HAlign::Center)
 }
 
@@ -114,7 +118,8 @@ fn numpad_row(state: AppState, keys: &[&str]) -> impl Piece {
         numpad_key(s2, k2),
         numpad_key(s3, k3),
     ))
-    .spacing(16.0)
+    .spacing(20.0)
+    .align(VAlign::Center)
 }
 
 fn numpad_key(state: AppState, key: &str) -> impl Piece {
@@ -124,9 +129,10 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
     let s = state;
 
     if key_str.is_empty() {
-        spacer().frame(72.0, 52.0).any()
+        spacer().frame(75.0, 75.0).any()
     } else if key_str == "⌫" {
         button("⌫")
+            .bordered()
             .action(move || {
                 let mut input = s.pin_input.get();
                 if !input.is_empty() {
@@ -135,11 +141,12 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                     s.pin_error.set(false);
                 }
             })
-            .frame(72.0, 52.0)
+            .frame(75.0, 75.0)
             .id("pin-backspace")
             .any()
     } else {
         button(key_clone2.clone())
+            .bordered()
             .action(move || {
                 let mut input = s.pin_input.get();
                 if input.len() >= PIN_LENGTH {
@@ -166,7 +173,7 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                     }
                 }
             })
-            .frame(72.0, 52.0)
+            .frame(75.0, 75.0)
             .id(format!("pin-key-{key_clone2}"))
             .any()
     }

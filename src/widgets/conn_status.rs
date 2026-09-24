@@ -119,7 +119,7 @@ pub fn render() -> impl Piece {
 
     let icon_piece = when(
         move || state.conn_status.get() == ConnStatus::Connecting,
-        || spinner().frame(13.0, 13.0).any(),
+        move || super::spinner::render(state, 13.0).any(),
     )
     .otherwise(move || {
         when(
@@ -133,10 +133,10 @@ pub fn render() -> impl Piece {
             )
             .otherwise(move || {
                 let st = state.conn_status.get();
-                let tint_color = if st == ConnStatus::Connected {
-                    Color::hex(state.accent_color.get())
-                } else {
-                    Color::hex(0x8E8E93)
+                let tint_color = match st {
+                    ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => Color::hex(state.accent_color.get()),
+                    ConnStatus::Offline => Color::hex(0x8E8E93),
+                    ConnStatus::Error => Color::hex(0xEF4444),
                 };
                 vector(res::vectors::status_ok).frame(13.0, 13.0).tint(tint_color).any()
             })
@@ -157,8 +157,8 @@ pub fn render() -> impl Piece {
                 })
                 .font(Font::Caption2)
                 .color(move || match state.conn_status.get() {
-                    ConnStatus::Connecting | ConnStatus::Connected => Color::hex(state.accent_color.get()),
-                    ConnStatus::Idle | ConnStatus::Offline => Color::hex(0x8E8E93),
+                    ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => Color::hex(state.accent_color.get()),
+                    ConnStatus::Offline => Color::hex(0x8E8E93),
                     ConnStatus::Error => Color::hex(0xEF4444),
                 })
                 .opacity(move || text_opacity.get())
@@ -169,19 +169,24 @@ pub fn render() -> impl Piece {
     .align(VAlign::Center)
     .padding(Insets { top: 6.0, leading: 9.0, bottom: 6.0, trailing: 9.0 })
     .background(move || match state.conn_status.get() {
-        ConnStatus::Connecting | ConnStatus::Connected => accent_dark_bg(state.accent_color.get(), 0.50),
-        ConnStatus::Idle | ConnStatus::Offline => Color::rgba(0.28, 0.28, 0.28, 0.32),
+        ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => accent_dark_bg(state.accent_color.get(), 0.50),
+        ConnStatus::Offline => Color::rgba(0.28, 0.28, 0.28, 0.32),
         ConnStatus::Error => Color::rgba(0.70, 0.15, 0.15, 0.50),
     })
     .corner_radius(14.0)
     .animation(Animation::ease_out(220))
     .on_tap(move || {
-        let cur = expanded.get();
-        if !cur {
-            expand_island(setter_exp, setter_op);
-            schedule_collapse(setter_exp, setter_op);
+        let cur_st = state.conn_status.get();
+        if cur_st == ConnStatus::Error || cur_st == ConnStatus::Offline {
+            state.show_network_modal.set(true);
         } else {
-            collapse_island(setter_exp, setter_op);
+            let cur = expanded.get();
+            if !cur {
+                expand_island(setter_exp, setter_op);
+                schedule_collapse(setter_exp, setter_op);
+            } else {
+                collapse_island(setter_exp, setter_op);
+            }
         }
     });
 
