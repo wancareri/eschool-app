@@ -66,15 +66,22 @@ pub fn load_all(state: AppState) {
     }
     if let Some(cached_wc) = cache::load_json::<std::collections::HashMap<i32, Vec<DaySchedule>>>("week_cache") {
         nslog::nslog(&format!("[Cache] Loading cached week_cache ({} weeks)", cached_wc.len()));
+        if let Some(ci) = cached_cur_idx {
+            if let Some(ls) = cached_wc.get(&ci) {
+                set_lessons.set(ls.clone());
+            }
+        }
         state.week_cache.set(cached_wc);
     }
     if let Some(cached_lessons) = cache::load_json::<Vec<DaySchedule>>("lessons") {
         nslog::nslog("[Cache] Loading cached lessons");
-        set_lessons.set(cached_lessons.clone());
-        if let Some(ci) = cached_cur_idx {
-            let mut wc = state.week_cache.get();
-            wc.insert(ci, cached_lessons);
-            state.week_cache.set(wc);
+        if state.lessons.get().is_empty() {
+            set_lessons.set(cached_lessons.clone());
+            if let Some(ci) = cached_cur_idx {
+                let mut wc = state.week_cache.get();
+                wc.insert(ci, cached_lessons);
+                state.week_cache.set(wc);
+            }
         }
     }
     if let Some(cached_bells) = cache::load_json::<Vec<BellTime>>("bell_times") {
