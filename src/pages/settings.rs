@@ -304,11 +304,11 @@ fn pin_setup_modal(show_setup: Signal<bool>, pin_enabled: Signal<bool>) -> impl 
 }
 
 fn setup_dot(index: usize, input: Signal<String>) -> impl Piece {
-    button(move || {
+    label(move || {
         if input.get().len() > index { "●" } else { "○" }
     })
-    .action(|| {})
-    .id(format!("setup-dot-{index}"))
+    .font(Font::Title2)
+    .align(TextAlign::Center)
     .frame(24.0, 24.0)
 }
 
@@ -324,10 +324,9 @@ fn setup_numpad(
         let k = key.clone();
         let k2 = key.clone();
         if k.is_empty() {
-            spacer().frame(75.0, 75.0).any()
+            spacer().frame(70.0, 44.0).any()
         } else if k == "⌫" {
             button("⌫")
-                .bordered()
                 .action(move || {
                     let mut v = state.get();
                     if !v.is_empty() {
@@ -336,12 +335,11 @@ fn setup_numpad(
                         error.set("".into());
                     }
                 })
-                .frame(75.0, 75.0)
                 .id(format!("sk-{k2}"))
+                .frame(70.0, 44.0)
                 .any()
         } else {
             button(k.clone())
-                .bordered()
                 .action(move || {
                     let mut v = state.get();
                     if v.len() >= 4 { return; }
@@ -366,8 +364,8 @@ fn setup_numpad(
                         }
                     }
                 })
-                .frame(75.0, 75.0)
                 .id(format!("sk-{k2}"))
+                .frame(70.0, 44.0)
                 .any()
         }
     }
@@ -377,24 +375,24 @@ fn setup_numpad(
             setup_key(input.clone(), "1".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "2".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "3".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
-        )).spacing(20.0).align(VAlign::Center),
+        )).spacing(24.0).align(VAlign::Center),
         row((
             setup_key(input.clone(), "4".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "5".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "6".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
-        )).spacing(20.0).align(VAlign::Center),
+        )).spacing(24.0).align(VAlign::Center),
         row((
             setup_key(input.clone(), "7".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "8".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "9".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
-        )).spacing(20.0).align(VAlign::Center),
+        )).spacing(24.0).align(VAlign::Center),
         row((
             setup_key(input.clone(), "".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "0".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
             setup_key(input.clone(), "⌫".into(), confirm.clone(), step.clone(), error.clone(), setup_mode.clone()),
-        )).spacing(20.0).align(VAlign::Center),
+        )).spacing(24.0).align(VAlign::Center),
     ))
-    .spacing(16.0)
+    .spacing(12.0)
     .align(HAlign::Center)
 }
 

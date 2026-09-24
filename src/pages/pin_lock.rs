@@ -86,11 +86,11 @@ fn dot(index: usize, state: AppState) -> impl Piece {
     };
     let error = state.pin_error;
 
-    button(move || {
+    label(move || {
         if error.get() { "●" } else if filled() { "●" } else { "○" }
     })
-    .action(|| {})
-    .id(format!("dot-{index}"))
+    .font(Font::Title2)
+    .align(TextAlign::Center)
     .frame(24.0, 24.0)
 }
 
@@ -101,7 +101,7 @@ fn numpad(state: AppState) -> impl Piece {
         numpad_row(state, &["7", "8", "9"]),
         numpad_row(state, &["", "0", "⌫"]),
     ))
-    .spacing(16.0)
+    .spacing(12.0)
     .align(HAlign::Center)
 }
 
@@ -118,7 +118,7 @@ fn numpad_row(state: AppState, keys: &[&str]) -> impl Piece {
         numpad_key(s2, k2),
         numpad_key(s3, k3),
     ))
-    .spacing(20.0)
+    .spacing(24.0)
     .align(VAlign::Center)
 }
 
@@ -129,10 +129,9 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
     let s = state;
 
     if key_str.is_empty() {
-        spacer().frame(75.0, 75.0).any()
+        spacer().frame(72.0, 72.0).any()
     } else if key_str == "⌫" {
         button("⌫")
-            .bordered()
             .action(move || {
                 let mut input = s.pin_input.get();
                 if !input.is_empty() {
@@ -141,12 +140,12 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                     s.pin_error.set(false);
                 }
             })
-            .frame(75.0, 75.0)
             .id("pin-backspace")
+            .bordered()
+            .frame(72.0, 72.0)
             .any()
     } else {
         button(key_clone2.clone())
-            .bordered()
             .action(move || {
                 let mut input = s.pin_input.get();
                 if input.len() >= PIN_LENGTH {
@@ -156,7 +155,6 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                 s.pin_input.set(input.clone());
                 s.pin_error.set(false);
 
-                // Auto-check when 4 digits entered
                 if input.len() == PIN_LENGTH {
                     if pin::verify(&input) {
                         nslog::nslog("[PIN] Correct, unlocking");
@@ -173,8 +171,9 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                     }
                 }
             })
-            .frame(75.0, 75.0)
             .id(format!("pin-key-{key_clone2}"))
+            .bordered()
+            .frame(72.0, 72.0)
             .any()
     }
 }
