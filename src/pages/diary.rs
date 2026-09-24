@@ -657,13 +657,21 @@ fn summary_header_for(state: AppState, offset: i32) -> impl Piece {
     if q == 4 {
         row((
             label("Предмет").font(Font::Caption).secondary().grow(),
-            label("Выст.").font(Font::Caption).secondary().frame(36.0, 0.0).align(TextAlign::Center),
-            label("Вых.").font(Font::Caption).secondary().frame(36.0, 0.0).align(TextAlign::Center),
+            column((
+                label("Выходящая").font(Font::Caption2).secondary().align(TextAlign::Center),
+                label("ср. балл").font(Font::Caption2).secondary().align(TextAlign::Center),
+            ))
+            .frame(58.0, 0.0),
+            column((
+                label("Выставл.").font(Font::Caption2).secondary().align(TextAlign::Center),
+                label("итог").font(Font::Caption2).secondary().align(TextAlign::Center),
+            ))
+            .frame(50.0, 0.0),
             row((
-                label("I").font(Font::Caption).secondary().frame(26.0, 0.0).align(TextAlign::Center),
-                label("II").font(Font::Caption).secondary().frame(26.0, 0.0).align(TextAlign::Center),
-                label("III").font(Font::Caption).secondary().frame(26.0, 0.0).align(TextAlign::Center),
-                label("IV").font(Font::Caption).secondary().frame(26.0, 0.0).align(TextAlign::Center),
+                label("I").font(Font::Caption).secondary().frame(24.0, 0.0).align(TextAlign::Center),
+                label("II").font(Font::Caption).secondary().frame(24.0, 0.0).align(TextAlign::Center),
+                label("III").font(Font::Caption).secondary().frame(24.0, 0.0).align(TextAlign::Center),
+                label("IV").font(Font::Caption).secondary().frame(24.0, 0.0).align(TextAlign::Center),
             ))
             .spacing(2.0),
         ))
@@ -673,8 +681,16 @@ fn summary_header_for(state: AppState, offset: i32) -> impl Piece {
     } else {
         row((
             label("Предмет").font(Font::Caption).secondary().grow(),
-            label("Выст.").font(Font::Caption).secondary().frame(50.0, 0.0).align(TextAlign::Center),
-            label("Вых.").font(Font::Caption).secondary().frame(50.0, 0.0).align(TextAlign::Center),
+            column((
+                label("Выходящая").font(Font::Caption).secondary().align(TextAlign::Center),
+                label("средний балл").font(Font::Caption2).secondary().align(TextAlign::Center),
+            ))
+            .frame(86.0, 0.0),
+            column((
+                label("Выставленная").font(Font::Caption).secondary().align(TextAlign::Center),
+                label("оценка").font(Font::Caption2).secondary().align(TextAlign::Center),
+            ))
+            .frame(92.0, 0.0),
         ))
         .spacing(8.0)
         .padding(Insets { top: 4.0, leading: PAD, bottom: 4.0, trailing: PAD })
@@ -714,25 +730,27 @@ fn quarter_summary_at(state: AppState, q: usize, offset: i32) -> impl Piece {
             let sj2 = subj_name.clone();
             row((
                 label(subj_name).font(Font::Body).grow(),
-                {
-                    let off: std::collections::HashMap<String, Vec<OfficialMark>> = if offset == 0 {
-                        off_state.official_marks.get()
-                    } else {
-                        off_state.quarter_official_marks.get().get(q).cloned().unwrap_or_default()
-                    };
-                    let (text, ok) = mark_label(official_avg(&off, &sj));
-                    label(text).font(Font::Headline).frame(50.0, 0.0).align(TextAlign::Center)
-                        .color(if ok { colors::SUCCESS } else { colors::SECONDARY })
-                },
+                // 1. Выходящая: средний балл по оценкам
                 {
                     let marks: std::collections::HashMap<String, Vec<f64>> = if offset == 0 {
                         marks_state.quarter_marks.get()
                     } else {
                         marks_state.quarter_all_marks.get().get(q).cloned().unwrap_or_default()
                     };
-                    let (text, ok) = mark_label(marks_avg(&marks, &sj2));
+                    let (text, ok) = mark_label(marks_avg(&marks, &sj));
                     let c = if ok { colors::SUCCESS } else if text != "—" { colors::WARNING } else { colors::SECONDARY };
-                    label(text).font(Font::Headline).frame(50.0, 0.0).align(TextAlign::Center).color(c)
+                    label(text).font(Font::Headline).frame(86.0, 0.0).align(TextAlign::Center).color(c)
+                },
+                // 2. Выставленная: выставленная итоговая оценка
+                {
+                    let off: std::collections::HashMap<String, Vec<OfficialMark>> = if offset == 0 {
+                        off_state.official_marks.get()
+                    } else {
+                        off_state.quarter_official_marks.get().get(q).cloned().unwrap_or_default()
+                    };
+                    let (text, ok) = mark_label(official_avg(&off, &sj2));
+                    let c = if ok { colors::SUCCESS } else if text != "—" { colors::GRADE_GOOD } else { colors::SECONDARY };
+                    label(text).font(Font::Headline).frame(92.0, 0.0).align(TextAlign::Center).color(c)
                 },
             ))
             .spacing(8.0)
@@ -773,18 +791,21 @@ fn year_summary_at(state: AppState) -> impl Piece {
             column((
                 row((
                     label(subj_name).font(Font::Subheadline).grow(),
-                    {
-                        let off = off_state.official_marks.get();
-                        let (text, ok) = mark_label(official_avg(&off, &sj));
-                        label(text).font(Font::Headline).frame(36.0, 0.0).align(TextAlign::Center)
-                            .color(if ok { colors::SUCCESS } else { colors::SECONDARY })
-                    },
+                    // 1. Выходящая за год (средний балл)
                     {
                         let marks = marks_state.quarter_marks.get();
-                        let (text, ok) = mark_label(marks_avg(&marks, &sj2));
+                        let (text, ok) = mark_label(marks_avg(&marks, &sj));
                         let c = if ok { colors::SUCCESS } else if text != "—" { colors::WARNING } else { colors::SECONDARY };
-                        label(text).font(Font::Headline).frame(36.0, 0.0).align(TextAlign::Center).color(c)
+                        label(text).font(Font::Headline).frame(58.0, 0.0).align(TextAlign::Center).color(c)
                     },
+                    // 2. Выставленная за год (годовая оценка)
+                    {
+                        let off = off_state.official_marks.get();
+                        let (text, ok) = mark_label(official_avg(&off, &sj2));
+                        let c = if ok { colors::SUCCESS } else if text != "—" { colors::GRADE_GOOD } else { colors::SECONDARY };
+                        label(text).font(Font::Headline).frame(50.0, 0.0).align(TextAlign::Center).color(c)
+                    },
+                    // Четверти: I, II, III, IV
                     year_quarter_cells(cell_state, sj3),
                 ))
                 .spacing(4.0)
