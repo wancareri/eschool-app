@@ -1,6 +1,7 @@
 use crate::app::AppState;
 use day::prelude::*;
 
+/// Compact accent-colored spinner.  Pass the desired point-size (e.g. 14.0).
 pub fn render(state: AppState, size: f64) -> impl Piece {
     #[cfg(target_os = "ios")]
     {

@@ -119,7 +119,7 @@ pub fn render() -> impl Piece {
 
     let icon_piece = when(
         move || state.conn_status.get() == ConnStatus::Connecting,
-        move || super::spinner::render(state, 13.0).any(),
+        move || super::spinner::render(state, 10.0).any(),
     )
     .otherwise(move || {
         when(
