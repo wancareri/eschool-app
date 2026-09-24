@@ -109,18 +109,152 @@ fn window_shell(primary: bool) -> impl Piece {
     })
 }
 
+/// iOS: Telegram-style edge scrims — a soft ~20% black gradient at the very top
+/// (80pt) and bottom (64pt), so full-bleed content stays readable where it runs
+/// into the notch / home-indicator safe areas. Must sit on a VIEW-backed
+/// container: `when` builds a layout-only node with no UIView, where
+/// `with_native` returns None and the tweak would silently do nothing.
+#[cfg(target_os = "ios")]
+fn edge_scrims(piece: impl Decorate) -> impl Piece {
+    use day_uikit::UiKitExt;
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+    use objc2_core_graphics::CGColor;
+    use objc2_foundation::{NSArray, NSString};
+    use objc2_quartz_core::{CAAutoresizingMask, CAGradientLayer};
+    use objc2_ui_kit::UIScreen;
+
+    piece.uikit(|view, _class, mtm| {
+        const NAME: &str = "eschool.edge_scrim";
+
+        let root = view.layer();
+        // A patched piece may re-run the tweak on the same mounted view —
+        // don't stack a second pair of scrims on top of the first.
+        // SAFETY: tweaks run once at mount on the main thread; nothing mutates
+        // the layer tree concurrently.
+        if let Some(subs) = unsafe { root.sublayers() } {
+            let n = subs.count();
+            for i in 0..n {
+                if subs
+                    .objectAtIndex(i)
+                    .name()
+                    .map(|found| found.to_string() == NAME)
+                    .unwrap_or(false)
+                {
+                    return;
+                }
+            }
+        }
+
+        // Bounds are zero before the first layout pass; fall back to the screen
+        // so the gradients land somewhere sane. Autoresizing is armed only when
+        // a real size was known — arming it on a zero-size frame pins the
+        // bottom scrim to y=0, and CA never recomputes the margins afterwards.
+        let bounds = view.bounds();
+        let laid_out = bounds.size.width >= 1.0 && bounds.size.height >= 1.0;
+        let (w, h) = if laid_out {
+            (bounds.size.width, bounds.size.height)
+        } else {
+            #[allow(deprecated)]
+            let screen = UIScreen::mainScreen(mtm);
+            let sb = screen.bounds();
+            (sb.size.width, sb.size.height)
+        };
+        if w < 1.0 || h < 1.0 {
+            return;
+        }
+
+        // SAFETY: CGColor is a CF type — objc2 guarantees CF objects lay out
+        // identically to NSObjects, so the cast keeps the same object and only
+        // widens the static type for storage in one NSArray<AnyObject>.
+        let dark: Retained<AnyObject> = unsafe {
+            Retained::cast_unchecked(Retained::<CGColor>::from(CGColor::new_generic_rgb(
+                0.0, 0.0, 0.0, 0.2,
+            )))
+        };
+        let clear: Retained<AnyObject> = unsafe {
+            Retained::cast_unchecked(Retained::<CGColor>::from(CGColor::new_generic_rgb(
+                0.0, 0.0, 0.0, 0.0,
+            )))
+        };
+
+        let tag = NSString::from_str(NAME);
+        let gradient = |frame: CGRect, dark_first: bool| {
+            let g = CAGradientLayer::new();
+            g.setFrame(frame);
+            let pair = if dark_first {
+                [dark.clone(), clear.clone()]
+            } else {
+                [clear.clone(), dark.clone()]
+            };
+            let colors = NSArray::from_retained_slice(&pair);
+            // SAFETY: setColors takes CGColorRefs; the pair holds exactly that.
+            unsafe { g.setColors(Some(&colors)) };
+            g.setStartPoint(CGPoint::new(0.5, 0.0));
+            g.setEndPoint(CGPoint::new(0.5, 1.0));
+            g.setZPosition(1000.0);
+            g.setName(Some(&tag));
+            g
+        };
+
+        let top = gradient(
+            CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(w, 80.0)),
+            true,
+        );
+        let bottom = gradient(
+            CGRect::new(CGPoint::new(0.0, h - 64.0), CGSize::new(w, 64.0)),
+            false,
+        );
+        if laid_out {
+            top.setAutoresizingMask(CAAutoresizingMask::LayerWidthSizable);
+            bottom.setAutoresizingMask(CAAutoresizingMask(
+                CAAutoresizingMask::LayerWidthSizable.0 | CAAutoresizingMask::LayerMinYMargin.0,
+            ));
+        }
+        root.addSublayer(&top);
+        root.addSublayer(&bottom);
+    })
+}
+
+#[cfg(not(target_os = "ios"))]
+fn edge_scrims(piece: impl Decorate) -> impl Piece {
+    piece
+}
+
 fn build_nav(primary: bool) -> impl Piece {
     let state = AppState::ambient();
+    let show_modal = state.show_network_modal;
+    let s_modal = state;
+
+    // Necessary: multi-child root zstack makes iOS content_frame pad by the home
+    // inset and lifts the tab bar; single-child body keeps full-bleed layout.
+    when(
+        move || !show_modal.get(),
+        move || nav_body(state, primary).any(),
+    )
+    .otherwise(move || {
+        zstack((
+            nav_body(s_modal, primary),
+            crate::widgets::bottom_sheet::network_error_sheet(s_modal),
+        ))
+        .grow()
+        .any()
+    })
+    .grow()
+}
+
+fn nav_body(state: AppState, primary: bool) -> impl Piece {
     let s_auth = state;
     let s_even = state;
     let s_odd = state;
 
-    let main_content = when(
+    when(
         move || s_auth.is_authenticated.get(),
         move || {
             let s_tok1 = s_even;
             let s_tok2 = s_odd;
-            column((
+            edge_scrims(column((
                 when(
                     move || s_tok1.ui_reload_token.get() % 2 == 0,
                     move || render_nav_content(s_even, primary),
@@ -129,26 +263,19 @@ fn build_nav(primary: bool) -> impl Piece {
                     move || s_tok2.ui_reload_token.get() % 2 == 1,
                     move || render_nav_content(s_odd, primary),
                 ),
-            ))
+            )))
             .grow()
             .any()
         },
     )
     .otherwise(move || {
         if state.pin_lock_active.get() {
-            pages::pin_lock::render(state).any()
+            edge_scrims(pages::pin_lock::render(state)).any()
         } else {
-            pages::login::render().any()
+            edge_scrims(pages::login::render()).any()
         }
     })
-    .grow();
-
-    zstack((
-        main_content,
-        crate::widgets::bottom_sheet::network_error_sheet(state),
-    ))
     .grow()
-    .any()
 }
 
 fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
