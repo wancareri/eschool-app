@@ -8,9 +8,9 @@ use day::prelude::*;
 use day_piece_pullrefresh::pull_to_refresh;
 
 const PAD: f64 = 20.0;
-const SWIPE_THRESHOLD: f64 = 120.0;
-const SWIPE_AXIS_LOCK: f64 = 6.0;
-const SWIPE_EDGE_DAMP: f64 = 0.25;
+const SWIPE_THRESHOLD: f64 = 48.0;
+const SWIPE_AXIS_LOCK: f64 = 8.0;
+const SWIPE_EDGE_DAMP: f64 = 0.3;
 
 fn get_screen_width() -> f64 {
     #[cfg(target_os = "ios")]
@@ -71,7 +71,7 @@ pub fn render() -> impl Piece {
 
         // Sticky status indicator in top-left corner
         widgets::conn_status::render()
-            .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
+            .padding(Insets { top: 16.0, leading: 20.0, bottom: 0.0, trailing: 0.0 }),
     ))
     .align(Alignment::TopLeading)
     .grow()
@@ -219,7 +219,11 @@ fn pager_drag(
             DragPhase::Changed => {
                 let mut horiz = axis.get();
                 if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
-                    horiz = Some(dx.abs() >= dy.abs());
+                    horiz = Some(dx.abs() >= dy.abs() * 0.6);
+                    axis.set(horiz);
+                }
+                if horiz == Some(false) && dx.abs() > 24.0 && dx.abs() > dy.abs() * 1.2 {
+                    horiz = Some(true);
                     axis.set(horiz);
                 }
                 if horiz == Some(true) {
@@ -243,12 +247,12 @@ fn pager_drag(
                 let actual_dx = drag_x.get();
                 if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
                     if actual_dx < 0.0 && idx + 1 < total {
-                        with_animation(AnimSpec::ease_out(280), move || {
+                        with_animation(AnimSpec::ease_out(220), move || {
                             drag_x.set(-w);
                         });
                         let set_drag = drag_x.setter();
                         std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_millis(280));
+                            std::thread::sleep(std::time::Duration::from_millis(220));
                             day::reactive::on_main(move || {
                                 if let Some(state) = AppState::get_main() {
                                     features::diary::load_week(state, idx + 1);
@@ -259,12 +263,12 @@ fn pager_drag(
                         return;
                     }
                     if actual_dx > 0.0 && idx > 0 {
-                        with_animation(AnimSpec::ease_out(280), move || {
+                        with_animation(AnimSpec::ease_out(220), move || {
                             drag_x.set(w);
                         });
                         let set_drag = drag_x.setter();
                         std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_millis(280));
+                            std::thread::sleep(std::time::Duration::from_millis(220));
                             day::reactive::on_main(move || {
                                 if let Some(state) = AppState::get_main() {
                                     features::diary::load_week(state, idx - 1);
@@ -276,7 +280,7 @@ fn pager_drag(
                     }
                 }
                 if was_horiz {
-                    with_animation(AnimSpec::ease_out(200), move || {
+                    with_animation(AnimSpec::ease_out(180), move || {
                         drag_x.set(0.0);
                     });
                 }
@@ -303,7 +307,11 @@ fn summary_drag(
             DragPhase::Changed => {
                 let mut horiz = axis.get();
                 if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
-                    horiz = Some(dx.abs() >= dy.abs());
+                    horiz = Some(dx.abs() >= dy.abs() * 0.6);
+                    axis.set(horiz);
+                }
+                if horiz == Some(false) && dx.abs() > 24.0 && dx.abs() > dy.abs() * 1.2 {
+                    horiz = Some(true);
                     axis.set(horiz);
                 }
                 if horiz == Some(true) {
@@ -325,12 +333,12 @@ fn summary_drag(
                 let actual_dx = drag_x.get();
                 if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
                     if actual_dx < 0.0 && q + 1 <= 4 {
-                        with_animation(AnimSpec::ease_out(280), move || {
+                        with_animation(AnimSpec::ease_out(220), move || {
                             drag_x.set(-w);
                         });
                         let set_drag = drag_x.setter();
                         std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_millis(280));
+                            std::thread::sleep(std::time::Duration::from_millis(220));
                             day::reactive::on_main(move || {
                                 if let Some(state) = AppState::get_main() {
                                     select_quarter(state, q + 1);
@@ -341,12 +349,12 @@ fn summary_drag(
                         return;
                     }
                     if actual_dx > 0.0 && q > 0 {
-                        with_animation(AnimSpec::ease_out(280), move || {
+                        with_animation(AnimSpec::ease_out(220), move || {
                             drag_x.set(w);
                         });
                         let set_drag = drag_x.setter();
                         std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_millis(280));
+                            std::thread::sleep(std::time::Duration::from_millis(220));
                             day::reactive::on_main(move || {
                                 if let Some(state) = AppState::get_main() {
                                     select_quarter(state, q - 1);
@@ -358,7 +366,7 @@ fn summary_drag(
                     }
                 }
                 if was_horiz {
-                    with_animation(AnimSpec::ease_out(200), move || {
+                    with_animation(AnimSpec::ease_out(180), move || {
                         drag_x.set(0.0);
                     });
                 }

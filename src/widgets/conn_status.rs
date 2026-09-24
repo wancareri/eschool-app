@@ -1,4 +1,4 @@
-/// Dynamic Island connection status indicator — frosted glass pill with auto-collapse.
+/// Dynamic Island connection status indicator — frosted glass capsule with Lucide icons and smooth animations.
 use std::sync::atomic::{AtomicU64, Ordering};
 use crate::app::{AppState, ConnStatus};
 use crate::res;
@@ -7,15 +7,41 @@ use day::prelude::*;
 
 static COLLAPSE_GEN: AtomicU64 = AtomicU64::new(0);
 
-fn schedule_collapse(setter: Setter<bool>) {
+fn expand_island(setter_exp: Setter<bool>, setter_op: Setter<f64>) {
+    with_animation(Animation::ease_out(240), move || {
+        setter_exp.set(true);
+    });
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        day::reactive::on_main(move || {
+            with_animation(Animation::ease_out(180), move || {
+                setter_op.set(1.0);
+            });
+        });
+    });
+}
+
+fn collapse_island(setter_exp: Setter<bool>, setter_op: Setter<f64>) {
+    with_animation(Animation::ease_out(130), move || {
+        setter_op.set(0.0);
+    });
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(140));
+        day::reactive::on_main(move || {
+            with_animation(Animation::ease_out(240), move || {
+                setter_exp.set(false);
+            });
+        });
+    });
+}
+
+fn schedule_collapse(setter_exp: Setter<bool>, setter_op: Setter<f64>) {
     let gen_id = COLLAPSE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(3000));
         if COLLAPSE_GEN.load(Ordering::SeqCst) == gen_id {
             day::reactive::on_main(move || {
-                with_animation(Animation::ease_out(300), move || {
-                    setter.set(false);
-                });
+                collapse_island(setter_exp, setter_op);
             });
         }
     });
@@ -52,11 +78,11 @@ fn apply_glass_blur(piece: impl Decorate) -> impl Piece {
         effect_view.setClipsToBounds(true);
 
         let effect_layer: Retained<CALayer> = effect_view.layer();
-        effect_layer.setCornerRadius(11.0);
+        effect_layer.setCornerRadius(13.5);
         effect_layer.setMasksToBounds(true);
 
         let view_layer: Retained<CALayer> = view.layer();
-        view_layer.setCornerRadius(11.0);
+        view_layer.setCornerRadius(13.5);
         view_layer.setMasksToBounds(true);
 
         view.insertSubview_atIndex(&effect_view, 0);
@@ -69,14 +95,19 @@ fn apply_glass_blur(piece: impl Decorate) -> impl Piece {
     piece
 }
 
-fn render_pill(status: ConnStatus, expanded: Signal<bool>) -> impl Piece {
-    let setter = expanded.setter();
+fn render_pill(
+    status: ConnStatus,
+    expanded: Signal<bool>,
+    text_opacity: Signal<f64>,
+    setter_exp: Setter<bool>,
+    setter_op: Setter<f64>,
+) -> impl Piece {
     let (icon_kind, text, text_color, bg_tint) = match status {
         ConnStatus::Connecting => (
             0,
             "Обновление…",
-            Color::rgba(0.45, 0.52, 0.62, 1.0),
-            Color::rgba(0.2, 0.25, 0.35, 0.08),
+            colors::primary(),
+            Color::rgba(0.23, 0.51, 0.96, 0.08),
         ),
         ConnStatus::Connected => (
             1,
@@ -105,13 +136,11 @@ fn render_pill(status: ConnStatus, expanded: Signal<bool>) -> impl Piece {
     };
 
     let icon_piece = match icon_kind {
-        0 => spinner().frame(12.0, 12.0).any(),
-        1 => vector(res::vectors::status_ok).frame(12.0, 12.0).tint(colors::SUCCESS).any(),
-        2 => zstack((
-            circle().fill(colors::SUCCESS).frame(7.0, 7.0),
-        )).align(Alignment::Center).frame(12.0, 12.0).any(),
-        3 => vector(res::vectors::status_offline).frame(12.0, 12.0).tint(colors::WARNING).any(),
-        _ => vector(res::vectors::status_error).frame(12.0, 12.0).tint(colors::ERROR).any(),
+        0 => spinner().frame(13.0, 13.0).any(),
+        1 => vector(res::vectors::status_ok).frame(13.0, 13.0).tint(colors::SUCCESS).any(),
+        2 => vector(res::vectors::status_ok).frame(13.0, 13.0).tint(colors::SUCCESS).any(),
+        3 => vector(res::vectors::status_offline).frame(13.0, 13.0).tint(colors::WARNING).any(),
+        _ => vector(res::vectors::status_error).frame(13.0, 13.0).tint(colors::ERROR).any(),
     };
 
     let content = row((
@@ -122,26 +151,23 @@ fn render_pill(status: ConnStatus, expanded: Signal<bool>) -> impl Piece {
                 label(text)
                     .font(Font::Caption2)
                     .color(text_color)
-                    .padding(Insets { top: 0.0, leading: 4.0, bottom: 0.0, trailing: 2.0 })
+                    .opacity(move || text_opacity.get())
+                    .padding(Insets { top: 0.0, leading: 6.0, bottom: 0.0, trailing: 4.0 })
             },
         ),
     ))
     .align(VAlign::Center)
-    .padding(Insets { top: 4.5, leading: 6.0, bottom: 4.5, trailing: 6.0 })
+    .padding(Insets { top: 6.5, leading: 8.5, bottom: 6.5, trailing: 8.5 })
     .background(bg_tint)
-    .corner_radius(11.0)
-    .animation(Animation::ease_out(300))
+    .corner_radius(13.5)
+    .animation(Animation::ease_out(240))
     .on_tap(move || {
         let cur = expanded.get();
         if !cur {
-            with_animation(Animation::ease_out(250), move || {
-                setter.set(true);
-            });
-            schedule_collapse(setter);
+            expand_island(setter_exp, setter_op);
+            schedule_collapse(setter_exp, setter_op);
         } else {
-            with_animation(Animation::ease_out(250), move || {
-                setter.set(false);
-            });
+            collapse_island(setter_exp, setter_op);
         }
     });
 
@@ -151,45 +177,45 @@ fn render_pill(status: ConnStatus, expanded: Signal<bool>) -> impl Piece {
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let expanded = Signal::new(true);
-    let setter = expanded.setter();
+    let text_opacity = Signal::new(1.0);
+    let setter_exp = expanded.setter();
+    let setter_op = text_opacity.setter();
 
     // Initial collapse after 3 seconds
-    schedule_collapse(setter);
+    schedule_collapse(setter_exp, setter_op);
 
     // Watch for connection status updates
     watch(
         move || state.conn_status.get(),
         move |new_st, old_st| {
             if old_st != Some(new_st) {
-                with_animation(Animation::ease_out(250), move || {
-                    expanded.set(true);
-                });
-                schedule_collapse(setter);
+                expand_island(setter_exp, setter_op);
+                schedule_collapse(setter_exp, setter_op);
             }
         },
     );
 
     when(
         move || state.conn_status.get() == ConnStatus::Connecting,
-        move || render_pill(ConnStatus::Connecting, expanded),
+        move || render_pill(ConnStatus::Connecting, expanded, text_opacity, setter_exp, setter_op),
     )
     .otherwise(move || {
         when(
             move || state.conn_status.get() == ConnStatus::Connected,
-            move || render_pill(ConnStatus::Connected, expanded),
+            move || render_pill(ConnStatus::Connected, expanded, text_opacity, setter_exp, setter_op),
         )
         .otherwise(move || {
             when(
                 move || state.conn_status.get() == ConnStatus::Offline,
-                move || render_pill(ConnStatus::Offline, expanded),
+                move || render_pill(ConnStatus::Offline, expanded, text_opacity, setter_exp, setter_op),
             )
             .otherwise(move || {
                 when(
                     move || state.conn_status.get() == ConnStatus::Error,
-                    move || render_pill(ConnStatus::Error, expanded),
+                    move || render_pill(ConnStatus::Error, expanded, text_opacity, setter_exp, setter_op),
                 )
                 .otherwise(move || {
-                    render_pill(ConnStatus::Idle, expanded)
+                    render_pill(ConnStatus::Idle, expanded, text_opacity, setter_exp, setter_op)
                 })
             })
         })
