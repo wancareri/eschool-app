@@ -36,15 +36,16 @@ pub fn render() -> impl Piece {
     let page_width = Signal::new(initial_w);
     let drag_x = Signal::new(0.0);
 
-    zstack((
-        pull_to_refresh(refreshing, scroll(column((
+    pull_to_refresh(refreshing, scroll(column((
+            widgets::conn_status::render()
+                .padding(Insets { top: 8.0, leading: 16.0, bottom: 0.0, trailing: 16.0 }),
             column((
                 label(move || res::str::diary_title().format())
                     .font(Font::LargeTitle)
                     .align(TextAlign::Center),
             ))
             .spacing(6.0)
-            .padding(Insets { top: 16.0, leading: PAD, bottom: 4.0, trailing: PAD }),
+            .padding(Insets { top: 8.0, leading: PAD, bottom: 4.0, trailing: PAD }),
 
             quarter_tabs(state),
             sub_tabs(state, show_summary),
@@ -59,22 +60,14 @@ pub fn render() -> impl Piece {
             ),
         ))
         .spacing(0.0)
-        .background(Color::CLEAR))
-        .grow())
+        .grow()))
         .on_refresh(move || {
             let state = AppState::ambient();
             if state.is_authenticated.get() {
                 features::diary::load_all(state);
             }
         })
-        .grow(),
-
-        // Sticky status indicator in top-left corner
-        widgets::conn_status::render()
-            .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
-    ))
-    .align(Alignment::TopLeading)
-    .grow()
+        .grow()
 }
 
 // ── Quarter / Year tabs ────────────────────────────────────────────────
@@ -446,7 +439,7 @@ fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
         when(
             move || is_valid_week() && !is_loaded(),
             move || column((
-                widgets::spinner::render(state, 18.0),
+                widgets::spinner::render(state, 11.0),
             ))
             .align(HAlign::Center)
             .padding(Insets { top: 80.0, leading: 0.0, bottom: 80.0, trailing: 0.0 }),

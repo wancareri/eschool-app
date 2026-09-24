@@ -12,8 +12,9 @@ pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let refreshing = Signal::new(false);
 
-    zstack((
-        pull_to_refresh(refreshing, scroll(column((
+    pull_to_refresh(refreshing, scroll(column((
+            widgets::conn_status::render()
+                .padding(Insets { top: 8.0, leading: 16.0, bottom: 0.0, trailing: 16.0 }),
             column((
                 label(move || res::str::teachers_title().format())
                     .font(Font::LargeTitle)
@@ -24,7 +25,7 @@ pub fn render() -> impl Piece {
                     .align(TextAlign::Center),
             ))
             .spacing(6.0)
-            .padding(Insets { top: 16.0, leading: PAD, bottom: 12.0, trailing: PAD }),
+            .padding(Insets { top: 8.0, leading: PAD, bottom: 12.0, trailing: PAD }),
             when(
                 move || !state.is_authenticated.get(),
                 || column((
@@ -36,9 +37,9 @@ pub fn render() -> impl Piece {
             ),
             when(
                 move || state.is_authenticated.get() && state.teachers_loading.get(),
-                || column((
+                move || column((
                     spacer(),
-                    spinner(),
+                    widgets::spinner::render(state, 11.0),
                     label("  Загрузка…").font(Font::Caption).secondary(),
                     spacer(),
                 )).grow(),
@@ -58,14 +59,7 @@ pub fn render() -> impl Piece {
             }
             done.set(false);
         })
-        .grow(),
-
-        // Sticky status indicator in top-left corner
-        widgets::conn_status::render()
-            .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
-    ))
-    .align(Alignment::TopLeading)
-    .grow()
+        .grow()
 }
 
 fn teachers_list(state: AppState) -> impl Piece {
