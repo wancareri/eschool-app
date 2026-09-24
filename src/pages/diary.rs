@@ -645,26 +645,33 @@ fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
 }
 
 fn summary_header_for(state: AppState, offset: i32) -> impl Piece {
-    row((
-        label("Предмет").font(Font::Caption).secondary().grow(),
-        label("Выст.").font(Font::Caption).secondary().frame(50.0, 0.0).align(TextAlign::Center),
-        label("Вых.").font(Font::Caption).secondary().frame(50.0, 0.0).align(TextAlign::Center),
-        when(
-            move || {
-                let q = (state.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                q == 4
-            },
-            || row((
-                label("I").font(Font::Caption).secondary().frame(38.0, 0.0).align(TextAlign::Center),
-                label("II").font(Font::Caption).secondary().frame(38.0, 0.0).align(TextAlign::Center),
-                label("III").font(Font::Caption).secondary().frame(38.0, 0.0).align(TextAlign::Center),
-                label("IV").font(Font::Caption).secondary().frame(38.0, 0.0).align(TextAlign::Center),
+    let q = (state.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+    if q == 4 {
+        row((
+            label("Предмет").font(Font::Caption).secondary().grow(),
+            label("Выст.").font(Font::Caption).secondary().frame(36.0, 0.0).align(TextAlign::Center),
+            label("Вых.").font(Font::Caption).secondary().frame(36.0, 0.0).align(TextAlign::Center),
+            row((
+                label("I").font(Font::Caption).secondary().frame(26.0, 0.0).align(TextAlign::Center),
+                label("II").font(Font::Caption).secondary().frame(26.0, 0.0).align(TextAlign::Center),
+                label("III").font(Font::Caption).secondary().frame(26.0, 0.0).align(TextAlign::Center),
+                label("IV").font(Font::Caption).secondary().frame(26.0, 0.0).align(TextAlign::Center),
             ))
-            .spacing(4.0),
-        ),
-    ))
-    .spacing(8.0)
-    .padding(Insets { top: 4.0, leading: PAD, bottom: 4.0, trailing: PAD })
+            .spacing(2.0),
+        ))
+        .spacing(4.0)
+        .padding(Insets { top: 4.0, leading: 12.0, bottom: 4.0, trailing: 12.0 })
+        .any()
+    } else {
+        row((
+            label("Предмет").font(Font::Caption).secondary().grow(),
+            label("Выст.").font(Font::Caption).secondary().frame(50.0, 0.0).align(TextAlign::Center),
+            label("Вых.").font(Font::Caption).secondary().frame(50.0, 0.0).align(TextAlign::Center),
+        ))
+        .spacing(8.0)
+        .padding(Insets { top: 4.0, leading: PAD, bottom: 4.0, trailing: PAD })
+        .any()
+    }
 }
 
 fn quarter_summary_at(state: AppState, q: usize, offset: i32) -> impl Piece {
@@ -757,24 +764,24 @@ fn year_summary_at(state: AppState) -> impl Piece {
             let sj3 = subj_name.clone();
             column((
                 row((
-                    label(subj_name).font(Font::Body).grow(),
+                    label(subj_name).font(Font::Subheadline).grow(),
                     {
                         let off = off_state.official_marks.get();
                         let (text, ok) = mark_label(official_avg(&off, &sj));
-                        label(text).font(Font::Headline).frame(50.0, 0.0).align(TextAlign::Center)
+                        label(text).font(Font::Headline).frame(36.0, 0.0).align(TextAlign::Center)
                             .color(if ok { colors::SUCCESS } else { colors::SECONDARY })
                     },
                     {
                         let marks = marks_state.quarter_marks.get();
                         let (text, ok) = mark_label(marks_avg(&marks, &sj2));
                         let c = if ok { colors::SUCCESS } else if text != "—" { colors::WARNING } else { colors::SECONDARY };
-                        label(text).font(Font::Headline).frame(50.0, 0.0).align(TextAlign::Center).color(c)
+                        label(text).font(Font::Headline).frame(36.0, 0.0).align(TextAlign::Center).color(c)
                     },
                     year_quarter_cells(cell_state, sj3),
                 ))
-                .spacing(8.0)
-                .padding(Insets { top: 6.0, leading: PAD, bottom: 2.0, trailing: PAD }),
-                divider(),
+                .spacing(4.0)
+                .padding(Insets { top: 6.0, leading: 12.0, bottom: 6.0, trailing: 12.0 }),
+                divider().padding(Insets { top: 0.0, leading: 12.0, bottom: 0.0, trailing: 12.0 }),
             ))
             .spacing(0.0)
             .any()
@@ -812,7 +819,7 @@ fn year_quarter_cells(state: AppState, subject: String) -> impl Piece {
         year_q_cell(s, sj.clone(), 2),
         year_q_cell(s, sj, 3),
     ))
-    .spacing(4.0)
+    .spacing(2.0)
 }
 
 fn year_q_cell(state: AppState, subject: String, q: usize) -> impl Piece {
@@ -826,7 +833,7 @@ fn year_q_cell(state: AppState, subject: String, q: usize) -> impl Piece {
             } else { "—".into() }
         }).font(Font::Caption).align(TextAlign::Center),
     ))
-    .frame(38.0, 0.0)
+    .frame(26.0, 0.0)
 }
 
 // ── Structs ────────────────────────────────────────────────────────────

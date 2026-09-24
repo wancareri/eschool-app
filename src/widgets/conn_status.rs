@@ -11,28 +11,45 @@ pub fn render() -> impl Piece {
         move || state.conn_status.get() != ConnStatus::Idle,
         move || {
             let status = state.conn_status.get();
-            row((
-                match status {
-                    ConnStatus::Connecting => row((
-                        spinner().frame(14.0, 14.0),
+            let (bg_color, content) = match status {
+                ConnStatus::Connecting => (
+                    Color::rgba(0.2, 0.25, 0.35, 0.14),
+                    row((
+                        spinner().frame(13.0, 13.0),
                         label("Обновление…").font(Font::Caption2).secondary(),
-                    )).spacing(4.0).any(),
-                    ConnStatus::Connected => row((
-                        vector(res::vectors::status_ok).frame(14.0, 14.0).tint(colors::SUCCESS),
+                    )).spacing(5.0).any(),
+                ),
+                ConnStatus::Connected => (
+                    Color::rgba(0.06, 0.72, 0.50, 0.16),
+                    row((
+                        vector(res::vectors::status_ok).frame(13.0, 13.0).tint(colors::SUCCESS),
                         label("Подключено").font(Font::Caption2).color(colors::SUCCESS),
-                    )).spacing(4.0).any(),
-                    ConnStatus::Offline => row((
-                        vector(res::vectors::status_offline).frame(14.0, 14.0).tint(colors::WARNING),
+                    )).spacing(5.0).any(),
+                ),
+                ConnStatus::Offline => (
+                    Color::rgba(0.96, 0.62, 0.04, 0.16),
+                    row((
+                        vector(res::vectors::status_offline).frame(13.0, 13.0).tint(colors::WARNING),
                         label("Оффлайн").font(Font::Caption2).color(colors::WARNING),
-                    )).spacing(4.0).any(),
-                    ConnStatus::Error => row((
-                        vector(res::vectors::status_error).frame(14.0, 14.0).tint(colors::ERROR),
+                    )).spacing(5.0).any(),
+                ),
+                ConnStatus::Error => (
+                    Color::rgba(0.94, 0.27, 0.27, 0.16),
+                    row((
+                        vector(res::vectors::status_error).frame(13.0, 13.0).tint(colors::ERROR),
                         label("Ошибка сети").font(Font::Caption2).color(colors::ERROR),
-                    )).spacing(4.0).any(),
-                    ConnStatus::Idle => spacer().frame(0.0, 0.0).any(),
-                },
-            ))
-            .padding(Insets { top: 4.0, leading: 8.0, bottom: 4.0, trailing: 8.0 })
+                    )).spacing(5.0).any(),
+                ),
+                ConnStatus::Idle => (
+                    Color::CLEAR,
+                    spacer().frame(0.0, 0.0).any(),
+                ),
+            };
+
+            content
+                .padding(Insets { top: 5.0, leading: 10.0, bottom: 5.0, trailing: 10.0 })
+                .background(bg_color)
+                .corner_radius(12.0)
         },
     )
 }
