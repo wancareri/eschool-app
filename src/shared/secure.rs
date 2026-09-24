@@ -5,6 +5,7 @@
 #[allow(unused_imports)]
 use crate::shared::nslog;
 
+#[allow(dead_code)]
 const SERVICE: &str = "by.eschool.app";
 
 /// Save a string to secure storage.

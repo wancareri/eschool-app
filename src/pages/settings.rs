@@ -251,7 +251,7 @@ fn setup_numpad(
     confirm: Signal<String>,
     error: Signal<String>,
     setup_mode: Signal<bool>,
-    pin_enabled: Signal<bool>,
+    _pin_enabled: Signal<bool>,
 ) -> impl Piece {
     fn setup_key(state: Signal<String>, key: String, confirm: Signal<String>, step: Signal<u8>, error: Signal<String>, setup_mode: Signal<bool>) -> impl Piece {
         let k = key.clone();

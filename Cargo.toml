@@ -49,16 +49,19 @@ regex = "1"
 keyring = { version = "3", features = ["apple-native"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
+day-uikit = { git = "https://github.com/wancareri/day.git" }
 block2 = "0.6"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSDictionary", "NSUserDefaults", "NSError"] }
 objc2-core-foundation = { version = "0.3", features = ["CFCGTypes"] }
 objc2-core-graphics = { version = "0.3", features = [] }
+objc2-quartz-core = { version = "0.3", features = ["CALayer"] }
 dispatch2 = "0.3"
 objc2-ui-kit = { version = "0.3", features = [
     "UIApplication", "UIView", "UIWindow", "UIScreen", "UIViewController",
     "UINavigationController", "UIKitCore", "block2",
     "UIColor", "UINavigationBar", "UITabBar", "UISwitch", "UIButton", "UIBarButtonItem",
+    "UIVisualEffectView", "UIBlurEffect", "UIVisualEffect",
 ] }
 objc2-user-notifications = { version = "0.3", features = [
     "UNUserNotificationCenter", "UNNotificationSettings", "UNNotificationRequest",

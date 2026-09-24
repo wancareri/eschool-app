@@ -105,12 +105,7 @@ pub fn load_all(state: AppState) {
     if let Some(name) = cache::load("user_full_name") { set_full_name.set(name); }
     if let Some(school) = cache::load("user_school_name") { set_school_name.set(school); }
 
-    // If we loaded any cached data, show "offline" status until network confirms
-    if cached_cur_idx.is_some() {
-        set_conn.set(crate::app::ConnStatus::Offline);
-    } else {
-        set_conn.set(crate::app::ConnStatus::Connecting);
-    }
+    set_conn.set(crate::app::ConnStatus::Connecting);
 
     let set_conn2 = state.conn_status.setter();
     std::thread::spawn(move || {
@@ -385,7 +380,9 @@ pub fn load_week(state: AppState, new_index: i32) {
     if let Some(lessons) = cached {
         set_lessons.set(lessons);
         set_lessons_loading.set(false);
-        set_conn.set(crate::app::ConnStatus::Offline);
+        if state.conn_status.get() == crate::app::ConnStatus::Connecting {
+            set_conn.set(crate::app::ConnStatus::Connected);
+        }
         need_fetch = false;
         nslog::nslog(&format!("[Diary] load_week idx={idx} served from cache"));
     } else {
