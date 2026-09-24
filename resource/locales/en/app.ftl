@@ -8,7 +8,7 @@
 app_title = ESchool
 
 nav_diary = Diary
-nav_schedule = Schedule
+nav_schedule = Study
 nav_teachers = Teachers
 nav_settings = Settings
 nav_login = Account
@@ -45,6 +45,6 @@ field_color = Color
 
 # E-schools specific
 diary_title = Diary
-schedule_title = Schedule
+schedule_title = Study
 teachers_title = Teachers
 settings_title = Settings

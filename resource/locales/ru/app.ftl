@@ -3,7 +3,7 @@
 app_title = ESchool
 
 nav_diary = Дневник
-nav_schedule = Расписание
+nav_schedule = Учёба
 nav_teachers = Учителя
 nav_settings = Настройки
 nav_login = Аккаунт
@@ -36,6 +36,6 @@ field_rating = Оценка
 field_color = Цвет
 
 diary_title = Дневник
-schedule_title = Расписание
+schedule_title = Учёба
 teachers_title = Учителя
 settings_title = Настройки
