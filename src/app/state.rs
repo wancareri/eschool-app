@@ -53,6 +53,7 @@ pub struct AppState {
 
     // ── theme ────────────────────────────────────────────────────────────
     pub accent_color: Signal<u32>,
+    pub ui_reload_token: Signal<u32>,
 
     // ── diary ────────────────────────────────────────────────────────────
     pub lessons: Signal<Vec<DaySchedule>>,
@@ -124,6 +125,7 @@ impl Ambient for AppState {
             class_label: Signal::new(String::new()),
             is_graduating: Signal::new(false),
             accent_color: Signal::new(accent),
+            ui_reload_token: Signal::new(0),
             lessons: Signal::new(Vec::new()),
             lessons_loading: Signal::new(false),
             current_week: Signal::new(String::new()),

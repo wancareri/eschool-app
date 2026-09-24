@@ -48,6 +48,17 @@ pub fn apply_ios_tint(hex: u32) {
         let bar_btn_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UIBarButtonItem), appearance];
         let _: () = objc2::msg_send![&*bar_btn_appearance, setTintColor: &*color];
+
+        // Apply tintColor to all active windows so existing views update immediately!
+        let app: objc2::rc::Retained<objc2::runtime::AnyObject> =
+            objc2::msg_send![objc2::class!(UIApplication), sharedApplication];
+        let windows: Option<objc2::rc::Retained<objc2_foundation::NSArray<objc2::runtime::AnyObject>>> =
+            objc2::msg_send![&*app, windows];
+        if let Some(win_arr) = windows {
+            for win in win_arr.iter() {
+                let _: () = objc2::msg_send![&*win, setTintColor: &*color];
+            }
+        }
     }
 }
 

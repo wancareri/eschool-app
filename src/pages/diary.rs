@@ -587,7 +587,6 @@ fn summary_view(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>) -
 }
 
 fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
-    let q = (state.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
     let title_state = state;
     let header_state = state;
     let qs_state = state;
@@ -606,23 +605,38 @@ fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
             let s = state;
             label(move || {
                 let q = (s.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                let off: std::collections::HashMap<String, Vec<OfficialMark>> = if offset == 0 {
-                    s.official_marks.get()
-                } else {
-                    s.quarter_official_marks.get().get(q).cloned().unwrap_or_default()
-                };
-                let mut sum = 0.0;
-                let mut count = 0;
-                for marks in off.values() {
-                    for m in marks {
-                        sum += m.value;
-                        count += 1;
+                if q == 4 {
+                    let mut sum = 0.0;
+                    let mut count = 0;
+                    for q_idx in 0..4 {
+                        let m = get_quarter_marks_map(s, q_idx);
+                        for vals in m.values() {
+                            for &v in vals {
+                                sum += v;
+                                count += 1;
+                            }
+                        }
                     }
-                }
-                if count > 0 {
-                    format!("Средний балл: {:.2}", sum / count as f64)
+                    if count > 0 {
+                        format!("Средний балл за год: {:.2}", sum / count as f64)
+                    } else {
+                        "Средний балл за год: —".to_string()
+                    }
                 } else {
-                    "Средний балл: —".to_string()
+                    let marks = get_quarter_marks_map(s, q);
+                    let mut sum = 0.0;
+                    let mut count = 0;
+                    for vals in marks.values() {
+                        for &v in vals {
+                            sum += v;
+                            count += 1;
+                        }
+                    }
+                    if count > 0 {
+                        format!("Средний балл: {:.2}", sum / count as f64)
+                    } else {
+                        "Средний балл: —".to_string()
+                    }
                 }
             })
             .font(Font::Subheadline)
@@ -631,20 +645,21 @@ fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
             .padding(Insets { top: 0.0, leading: PAD, bottom: 10.0, trailing: PAD })
         },
         
-        summary_header_for(header_state, offset),
-        divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
         when(
-            move || {
-                let q = (title_state.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                q != 4
-            },
-            move || quarter_summary_at(qs_state, q, offset),
+            move || (header_state.current_quarter.get() as i32 + offset).clamp(0, 4) != 4,
+            move || quarter_summary_header(),
         ),
         when(
-            move || {
-                let q = (title_state.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                q == 4
-            },
+            move || (header_state.current_quarter.get() as i32 + offset).clamp(0, 4) == 4,
+            move || year_summary_header(),
+        ),
+        divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
+        when(
+            move || (title_state.current_quarter.get() as i32 + offset).clamp(0, 4) != 4,
+            move || quarter_summary_at(qs_state, offset),
+        ),
+        when(
+            move || (title_state.current_quarter.get() as i32 + offset).clamp(0, 4) == 4,
             move || year_summary_at(ys_state),
         ),
     ))
@@ -652,31 +667,70 @@ fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
     .width(w)
 }
 
-fn summary_header_for(state: AppState, offset: i32) -> impl Piece {
-    let q = (state.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-    if q == 4 {
-        row((
-            label("Предмет").font(Font::Caption).secondary().grow(),
-            label("I").font(Font::Caption).secondary().frame(28.0, 0.0).align(TextAlign::Center),
-            label("II").font(Font::Caption).secondary().frame(28.0, 0.0).align(TextAlign::Center),
-            label("III").font(Font::Caption).secondary().frame(28.0, 0.0).align(TextAlign::Center),
-            label("IV").font(Font::Caption).secondary().frame(28.0, 0.0).align(TextAlign::Center),
-            label("Ср.").font(Font::Caption).secondary().frame(42.0, 0.0).align(TextAlign::Center),
-            label("Год").font(Font::Caption).secondary().frame(42.0, 0.0).align(TextAlign::Center),
-        ))
-        .spacing(4.0)
-        .padding(Insets { top: 6.0, leading: 12.0, bottom: 6.0, trailing: 12.0 })
-        .any()
-    } else {
-        row((
-            label("Предмет").font(Font::Caption).secondary().grow(),
-            label("Ср. балл").font(Font::Caption).secondary().frame(72.0, 0.0).align(TextAlign::Center),
-            label("Выставл.").font(Font::Caption).secondary().frame(68.0, 0.0).align(TextAlign::Center),
-        ))
-        .spacing(8.0)
-        .padding(Insets { top: 6.0, leading: PAD, bottom: 6.0, trailing: PAD })
-        .any()
+fn quarter_summary_header() -> impl Piece {
+    row((
+        label("Предмет").font(Font::Caption).secondary().grow(),
+        label("Ср. балл").font(Font::Caption).secondary().frame(72.0, 0.0).align(TextAlign::Center),
+        label("Выставл.").font(Font::Caption).secondary().frame(68.0, 0.0).align(TextAlign::Center),
+    ))
+    .spacing(8.0)
+    .padding(Insets { top: 6.0, leading: PAD, bottom: 6.0, trailing: PAD })
+}
+
+fn year_summary_header() -> impl Piece {
+    row((
+        label("Предмет").font(Font::Caption).secondary().grow(),
+        label("I").font(Font::Caption).secondary().frame(28.0, 0.0).align(TextAlign::Center),
+        label("II").font(Font::Caption).secondary().frame(28.0, 0.0).align(TextAlign::Center),
+        label("III").font(Font::Caption).secondary().frame(28.0, 0.0).align(TextAlign::Center),
+        label("IV").font(Font::Caption).secondary().frame(28.0, 0.0).align(TextAlign::Center),
+        label("Ср.").font(Font::Caption).secondary().frame(42.0, 0.0).align(TextAlign::Center),
+        label("Год").font(Font::Caption).secondary().frame(42.0, 0.0).align(TextAlign::Center),
+    ))
+    .spacing(4.0)
+    .padding(Insets { top: 6.0, leading: 12.0, bottom: 6.0, trailing: 12.0 })
+}
+
+fn get_all_subject_names(state: AppState) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for t in state.subjects_teachers.get() {
+        if !t.subject_title.is_empty() && !names.contains(&t.subject_title) {
+            names.push(t.subject_title);
+        }
     }
+    for day in state.lessons.get() {
+        for slot in &day.slots {
+            if !slot.subject_title.is_empty() && !names.contains(&slot.subject_title) {
+                names.push(slot.subject_title.clone());
+            }
+        }
+    }
+    state.week_cache.with(|cache| {
+        for days in cache.values() {
+            for day in days {
+                for slot in &day.slots {
+                    if !slot.subject_title.is_empty() && !names.contains(&slot.subject_title) {
+                        names.push(slot.subject_title.clone());
+                    }
+                }
+            }
+        }
+    });
+    for q_map in state.quarter_all_marks.get() {
+        for name in q_map.keys() {
+            if !name.is_empty() && !names.contains(name) {
+                names.push(name.clone());
+            }
+        }
+    }
+    for name in state.quarter_marks.get().keys() {
+        if !name.is_empty() && !names.contains(name) {
+            names.push(name.clone());
+        }
+    }
+    names.sort();
+    names.dedup();
+    names
 }
 
 fn get_quarter_marks_map(state: AppState, q: usize) -> std::collections::HashMap<String, Vec<f64>> {
@@ -705,76 +759,86 @@ fn get_quarter_official_map(state: AppState, q: usize) -> std::collections::Hash
     })
 }
 
-fn quarter_summary_at(state: AppState, q: usize, _offset: i32) -> impl Piece {
-    let marks_state = state;
-    let off_state = state;
+fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
+    let s_subj = state;
+    let s_rows = state;
     each(
         items(
-            move || {
-                let teachers = state.subjects_teachers.get();
-                let marks = get_quarter_marks_map(state, q);
-                let off = get_quarter_official_map(state, q);
-                let mut names: Vec<String> = teachers.iter()
-                    .map(|t| t.subject_title.clone())
-                    .collect();
-                for name in marks.keys() {
-                    if !names.contains(name) {
-                        names.push(name.clone());
-                    }
-                }
-                for name in off.keys() {
-                    if !names.contains(name) {
-                        names.push(name.clone());
-                    }
-                }
-                names.sort();
-                names.dedup();
-                names
-            },
+            move || get_all_subject_names(s_subj),
             |s: &String| s.clone(),
         ),
         move |item| {
             let subj_name = item.get();
-            let sj = subj_name.clone();
+            let sj1 = subj_name.clone();
             let sj2 = subj_name.clone();
+            let sj3 = subj_name.clone();
+            let sj4 = subj_name.clone();
+            let st1 = s_rows;
+            let st2 = s_rows;
+            let st3 = s_rows;
+            let st4 = s_rows;
             column((
                 row((
                     label(subj_name).font(Font::Body).grow(),
-                    // 1. Выходящая: средний балл по оценкам
-                    {
-                        let marks = get_quarter_marks_map(marks_state, q);
-                        let avg = marks.get(&sj).and_then(|v| {
+                    // 1. Выходящая: средний балл по оценкам (реактивно!)
+                    label(move || {
+                        let cur_q = (st1.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+                        let marks = get_quarter_marks_map(st1, cur_q);
+                        let avg = marks.get(&sj1).and_then(|v| {
                             if v.is_empty() { None } else { Some(v.iter().sum::<f64>() / v.len() as f64) }
                         });
-                        let text = match avg {
+                        match avg {
                             Some(v) => format!("{:.1}", v),
                             None => "—".into(),
-                        };
-                        let c = match avg {
+                        }
+                    })
+                    .font(Font::Headline)
+                    .color(move || {
+                        let cur_q = (st2.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+                        let marks = get_quarter_marks_map(st2, cur_q);
+                        let avg = marks.get(&sj2).and_then(|v| {
+                            if v.is_empty() { None } else { Some(v.iter().sum::<f64>() / v.len() as f64) }
+                        });
+                        match avg {
                             Some(v) => utils::avg_grade_color(v),
                             None => colors::SECONDARY,
-                        };
-                        label(text).font(Font::Headline).frame(72.0, 0.0).align(TextAlign::Center).color(c)
-                    },
-                    // 2. Выставленная: выставленная итоговая оценка
-                    {
-                        let off = get_quarter_official_map(off_state, q);
-                        let marks = get_quarter_marks_map(marks_state, q);
-                        let final_val = off.get(&sj2).and_then(|v| v.last()).map(|m| m.value).or_else(|| {
-                            marks.get(&sj2).and_then(|v| {
+                        }
+                    })
+                    .frame(72.0, 0.0)
+                    .align(TextAlign::Center),
+
+                    // 2. Выставленная: выставленная итоговая оценка (реактивно!)
+                    label(move || {
+                        let cur_q = (st3.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+                        let off = get_quarter_official_map(st3, cur_q);
+                        let marks = get_quarter_marks_map(st3, cur_q);
+                        let final_val = off.get(&sj3).and_then(|v| v.last()).map(|m| m.value).or_else(|| {
+                            marks.get(&sj3).and_then(|v| {
                                 if v.is_empty() { None } else { Some((v.iter().sum::<f64>() / v.len() as f64).round()) }
                             })
                         });
-                        let text = match final_val {
+                        match final_val {
                             Some(v) => format!("{:.0}", v),
                             None => "—".into(),
-                        };
-                        let c = match final_val {
+                        }
+                    })
+                    .font(Font::Headline)
+                    .color(move || {
+                        let cur_q = (st4.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+                        let off = get_quarter_official_map(st4, cur_q);
+                        let marks = get_quarter_marks_map(st4, cur_q);
+                        let final_val = off.get(&sj4).and_then(|v| v.last()).map(|m| m.value).or_else(|| {
+                            marks.get(&sj4).and_then(|v| {
+                                if v.is_empty() { None } else { Some((v.iter().sum::<f64>() / v.len() as f64).round()) }
+                            })
+                        });
+                        match final_val {
                             Some(v) => utils::avg_grade_color(v),
                             None => colors::SECONDARY,
-                        };
-                        label(text).font(Font::Headline).frame(68.0, 0.0).align(TextAlign::Center).color(c)
-                    },
+                        }
+                    })
+                    .frame(68.0, 0.0)
+                    .align(TextAlign::Center),
                 ))
                 .spacing(8.0)
                 .padding(Insets { top: 8.0, leading: PAD, bottom: 8.0, trailing: PAD }),
@@ -787,26 +851,11 @@ fn quarter_summary_at(state: AppState, q: usize, _offset: i32) -> impl Piece {
 }
 
 fn year_summary_at(state: AppState) -> impl Piece {
+    let s_subj = state;
     let cell_state = state;
     each(
         items(
-            move || {
-                let teachers = state.subjects_teachers.get();
-                let mut names: Vec<String> = teachers.iter()
-                    .map(|t| t.subject_title.clone())
-                    .collect();
-                for q in 0..4 {
-                    let marks = get_quarter_marks_map(state, q);
-                    for name in marks.keys() {
-                        if !names.contains(name) {
-                            names.push(name.clone());
-                        }
-                    }
-                }
-                names.sort();
-                names.dedup();
-                names
-            },
+            move || get_all_subject_names(s_subj),
             |s: &String| s.clone(),
         ),
         move |item| {
@@ -838,26 +887,38 @@ fn year_summary_at(state: AppState) -> impl Piece {
 }
 
 fn year_q_cell(state: AppState, subject: String, q: usize) -> impl Piece {
-    let s = state;
-    let sj = subject;
+    let s1 = state;
+    let s2 = state;
+    let sj1 = subject.clone();
+    let sj2 = subject;
     label(move || {
-        let yqd = s.year_quarter_data.get();
+        let marks = get_quarter_marks_map(s1, q);
+        if let Some(v) = marks.get(&*sj1) {
+            if !v.is_empty() {
+                return format!("{:.0}", (v.iter().sum::<f64>() / v.len() as f64).round());
+            }
+        }
+        let yqd = s1.year_quarter_data.get();
         if let Some((_, m)) = yqd.get(q) {
-            if let Some(v) = m.get(&*sj) {
+            if let Some(v) = m.get(&*sj1) {
                 if !v.is_empty() {
                     return format!("{:.0}", (v.iter().sum::<f64>() / v.len() as f64).round());
                 }
             }
         }
-        let marks = get_quarter_marks_map(s, q);
-        if let Some(v) = marks.get(&*sj) {
-            if !v.is_empty() {
-                return format!("{:.0}", (v.iter().sum::<f64>() / v.len() as f64).round());
-            }
-        }
         "—".into()
     })
     .font(Font::Subheadline)
+    .color(move || {
+        let marks = get_quarter_marks_map(s2, q);
+        let avg = marks.get(&*sj2).and_then(|v| {
+            if v.is_empty() { None } else { Some(v.iter().sum::<f64>() / v.len() as f64) }
+        });
+        match avg {
+            Some(v) => utils::avg_grade_color(v),
+            None => colors::SECONDARY,
+        }
+    })
     .align(TextAlign::Center)
     .frame(28.0, 0.0)
 }

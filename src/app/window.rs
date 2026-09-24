@@ -111,57 +111,27 @@ fn window_shell(primary: bool) -> impl Piece {
 
 fn build_nav(primary: bool) -> impl Piece {
     let state = AppState::ambient();
+    let s_auth = state;
+    let s_even = state;
+    let s_odd = state;
 
     when(
-        move || state.is_authenticated.get(),
+        move || s_auth.is_authenticated.get(),
         move || {
-            let section = Signal::new(crate::Section::Diary);
-            let accent = Color::hex(state.accent_color.get());
-            #[cfg(target_os = "ios")]
-            crate::shared::colors::apply_ios_tint(state.accent_color.get());
-            let sel = nav(section)
-                .style(day::prelude::NavStyle::Tabs)
-                .title(move || {
-                    if state.loading.get() {
-                        format!("{}  ⏳", res::str::app_title().format())
-                    } else {
-                        res::str::app_title().format()
-                    }
-                })
-                .item_icon(
-                    crate::Section::Diary,
-                    res::str::nav_diary(),
-                    res::vectors::tab_diary,
-                    pages::diary::render,
-                )
-                .icon_tint(accent)
-                .item_icon(
-                    crate::Section::Schedule,
-                    res::str::nav_schedule(),
-                    res::vectors::tab_schedule,
-                    pages::schedule::render,
-                )
-                .icon_tint(accent)
-                .item_icon(
-                    crate::Section::Teachers,
-                    res::str::nav_teachers(),
-                    res::vectors::tab_teachers,
-                    pages::teachers::render,
-                )
-                .icon_tint(accent)
-                .item_icon(
-                    crate::Section::Settings,
-                    res::str::nav_settings(),
-                    res::vectors::tab_settings,
-                    pages::settings::render,
-                )
-                .icon_tint(accent);
-
-            if primary {
-                sel.id("nav").restore("app.section").any()
-            } else {
-                sel.id("nav").local().any()
-            }
+            let s_tok1 = s_even;
+            let s_tok2 = s_odd;
+            column((
+                when(
+                    move || s_tok1.ui_reload_token.get() % 2 == 0,
+                    move || render_nav_content(s_even, primary),
+                ),
+                when(
+                    move || s_tok2.ui_reload_token.get() % 2 == 1,
+                    move || render_nav_content(s_odd, primary),
+                ),
+            ))
+            .grow()
+            .any()
         },
     )
     .otherwise(move || {
@@ -173,4 +143,54 @@ fn build_nav(primary: bool) -> impl Piece {
     })
     .grow()
     .any()
+}
+
+fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
+    let section = Signal::new(crate::Section::Diary);
+    let accent = Color::hex(state.accent_color.get());
+    #[cfg(target_os = "ios")]
+    crate::shared::colors::apply_ios_tint(state.accent_color.get());
+    let sel = nav(section)
+        .style(day::prelude::NavStyle::Tabs)
+        .title(move || {
+            if state.loading.get() {
+                format!("{}  ⏳", res::str::app_title().format())
+            } else {
+                res::str::app_title().format()
+            }
+        })
+        .item_icon(
+            crate::Section::Diary,
+            res::str::nav_diary(),
+            res::vectors::tab_diary,
+            pages::diary::render,
+        )
+        .icon_tint(accent)
+        .item_icon(
+            crate::Section::Schedule,
+            res::str::nav_schedule(),
+            res::vectors::tab_schedule,
+            pages::schedule::render,
+        )
+        .icon_tint(accent)
+        .item_icon(
+            crate::Section::Teachers,
+            res::str::nav_teachers(),
+            res::vectors::tab_teachers,
+            pages::teachers::render,
+        )
+        .icon_tint(accent)
+        .item_icon(
+            crate::Section::Settings,
+            res::str::nav_settings(),
+            res::vectors::tab_settings,
+            pages::settings::render,
+        )
+        .icon_tint(accent);
+
+    if primary {
+        sel.id("nav").restore("app.section").any()
+    } else {
+        sel.id("nav").local().any()
+    }
 }
