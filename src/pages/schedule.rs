@@ -1,5 +1,6 @@
 use crate::app::AppState;
 use crate::features;
+use crate::widgets;
 use eschool_api::entities::*;
 use crate::shared::utils;
 use crate::res;
@@ -12,52 +13,60 @@ pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let refreshing = Signal::new(false);
 
-    pull_to_refresh(refreshing, scroll(column((
-        column((
-            label(move || res::str::schedule_title().format())
-                .font(Font::LargeTitle)
-                .align(TextAlign::Center),
-            label("Расписание уроков")
-                .font(Font::Subheadline)
-                .secondary()
-                .align(TextAlign::Center),
-        ))
-        .spacing(6.0)
-        .padding(Insets { top: 16.0, leading: PAD, bottom: 12.0, trailing: PAD }),
+    zstack((
+        pull_to_refresh(refreshing, scroll(column((
+            column((
+                label(move || res::str::schedule_title().format())
+                    .font(Font::LargeTitle)
+                    .align(TextAlign::Center),
+                label("Расписание уроков")
+                    .font(Font::Subheadline)
+                    .secondary()
+                    .align(TextAlign::Center),
+            ))
+            .spacing(6.0)
+            .padding(Insets { top: 16.0, leading: PAD, bottom: 12.0, trailing: PAD }),
 
-        when(
-            move || !state.is_authenticated.get(),
-            || column((
-                spacer(),
-                label("Войдите для просмотра расписания")
-                    .font(Font::Body).secondary().align(TextAlign::Center),
-                spacer(),
-            )).grow(),
-        ),
-        when(
-            move || state.is_authenticated.get() && state.schedule_loading.get(),
-            || column((
-                spacer(),
-                spinner(),
-                label("  Загрузка…").font(Font::Caption).secondary(),
-                spacer(),
-            )).grow(),
-        ),
-        when(
-            move || state.is_authenticated.get() && !state.schedule_loading.get(),
-            move || schedule_content(state),
-        ),
+            when(
+                move || !state.is_authenticated.get(),
+                || column((
+                    spacer(),
+                    label("Войдите для просмотра расписания")
+                        .font(Font::Body).secondary().align(TextAlign::Center),
+                    spacer(),
+                )).grow(),
+            ),
+            when(
+                move || state.is_authenticated.get() && state.schedule_loading.get(),
+                || column((
+                    spacer(),
+                    spinner(),
+                    label("  Загрузка…").font(Font::Caption).secondary(),
+                    spacer(),
+                )).grow(),
+            ),
+            when(
+                move || state.is_authenticated.get() && !state.schedule_loading.get(),
+                move || schedule_content(state),
+            ),
+        ))
+        .spacing(0.0)
+        .grow()))
+        .on_refresh(move || {
+            let state = AppState::ambient();
+            let done = refreshing.setter();
+            if state.is_authenticated.get() {
+                features::diary::load_all(state);
+            }
+            done.set(false);
+        })
+        .grow(),
+
+        // Sticky status indicator in top-left corner
+        widgets::conn_status::render()
+            .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
     ))
-    .spacing(0.0)
-    .grow()))
-    .on_refresh(move || {
-        let state = AppState::ambient();
-        let done = refreshing.setter();
-        if state.is_authenticated.get() {
-            features::diary::load_all(state);
-        }
-        done.set(false);
-    })
+    .align(Alignment::TopLeading)
     .grow()
 }
 

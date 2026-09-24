@@ -1,5 +1,6 @@
 use crate::app::AppState;
 use crate::features;
+use crate::widgets;
 use crate::res;
 use crate::shared::{biometric, colors, nslog, pin};
 use day::prelude::*;
@@ -38,7 +39,8 @@ pub fn render() -> impl Piece {
     when(
         move || show_setup.get(),
         move || pin_setup_modal(show_setup, pin_enabled)
-    ).otherwise(move || column((
+    ).otherwise(move || zstack((
+        column((
         column((
             label(move || res::str::settings_title().format())
                 .font(Font::LargeTitle).align(TextAlign::Center),
@@ -87,8 +89,16 @@ pub fn render() -> impl Piece {
         .spacing(0.0)
         .grow())
         .grow()
-    )))
-    .grow().any()
+    ))
+    .grow(),
+
+    // Sticky status indicator in top-left corner
+    widgets::conn_status::render()
+        .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
+    ))
+    .align(Alignment::TopLeading)
+    .grow()
+    .any())
 }
 
 fn profile_section(state: AppState) -> impl Piece {

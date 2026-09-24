@@ -71,7 +71,7 @@ pub fn render() -> impl Piece {
 
         // Sticky status indicator in top-left corner
         widgets::conn_status::render()
-            .padding(Insets { top: 16.0, leading: 20.0, bottom: 0.0, trailing: 0.0 }),
+            .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
     ))
     .align(Alignment::TopLeading)
     .grow()
