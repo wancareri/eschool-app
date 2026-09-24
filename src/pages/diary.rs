@@ -537,15 +537,45 @@ fn day_card_with(
 ) -> impl Piece {
     let s_header = day_slot;
     let s_slots = day_slot;
+    let s_empty = day_slot;
     let get_slots = move || s_slots.with(|d| d.slots.clone());
 
     column((
         label(move || {
-            s_header.with(|d| utils::format_date_header(d.day_of_week, d.date))
+            s_header.with(|d| {
+                let base = utils::format_date_header(d.day_of_week, d.date);
+                if d.slots.is_empty() {
+                    if d.day_of_week >= 6 {
+                        format!("{base}  ·  Выходной")
+                    } else {
+                        format!("{base}  ·  Нет уроков")
+                    }
+                } else {
+                    base
+                }
+            })
         })
         .font(Font::Headline)
         .color(move || Color::hex(state.accent_color.get()))
         .padding(Insets { top: 16.0, leading: PAD, bottom: 6.0, trailing: PAD }).align(TextAlign::Leading),
+        when(
+            move || s_empty.with(|d| d.slots.is_empty()),
+            move || {
+                let s_dow = s_empty;
+                label(move || {
+                    let dow = s_dow.with(|d| d.day_of_week);
+                    if dow >= 6 {
+                        "Выходной день"
+                    } else {
+                        "Нет уроков"
+                    }
+                })
+                .font(Font::Subheadline)
+                .secondary()
+                .padding(Insets { top: 2.0, leading: PAD, bottom: 8.0, trailing: PAD })
+                .align(TextAlign::Leading)
+            },
+        ),
         each(
             items(get_slots, |s: &LessonSlot| s.number),
             move |slot| {

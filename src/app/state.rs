@@ -54,6 +54,8 @@ pub struct AppState {
     // ── theme ────────────────────────────────────────────────────────────
     pub accent_color: Signal<u32>,
     pub ui_reload_token: Signal<u32>,
+    pub current_section: Signal<crate::Section>,
+    pub settings_tab: Signal<usize>,
 
     // ── diary ────────────────────────────────────────────────────────────
     pub lessons: Signal<Vec<DaySchedule>>,
@@ -103,6 +105,19 @@ impl Ambient for AppState {
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(crate::shared::colors::DEFAULT_ACCENT);
 
+        let saved_section = day::prefs::get("app.section")
+            .and_then(|s| match s.as_str() {
+                "schedule" => Some(crate::Section::Schedule),
+                "teachers" => Some(crate::Section::Teachers),
+                "settings" => Some(crate::Section::Settings),
+                _ => Some(crate::Section::Diary),
+            })
+            .unwrap_or(crate::Section::Diary);
+
+        let saved_tab = day::prefs::get("app.settings_tab")
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(0);
+
         let biometric_lock = has_token
             && crate::shared::biometric::is_available()
             && crate::shared::biometric::is_enabled();
@@ -126,6 +141,8 @@ impl Ambient for AppState {
             is_graduating: Signal::new(false),
             accent_color: Signal::new(accent),
             ui_reload_token: Signal::new(0),
+            current_section: Signal::new(saved_section),
+            settings_tab: Signal::new(saved_tab),
             lessons: Signal::new(Vec::new()),
             lessons_loading: Signal::new(false),
             current_week: Signal::new(String::new()),

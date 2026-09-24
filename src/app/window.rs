@@ -146,10 +146,25 @@ fn build_nav(primary: bool) -> impl Piece {
 }
 
 fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
-    let section = Signal::new(crate::Section::Diary);
+    let section = state.current_section;
     let accent = Color::hex(state.accent_color.get());
     #[cfg(target_os = "ios")]
     crate::shared::colors::apply_ios_tint(state.accent_color.get());
+
+    day::reactive::watch(
+        move || section.get(),
+        move |&s, _| {
+            let name = match s {
+                crate::Section::Diary => "diary",
+                crate::Section::Schedule => "schedule",
+                crate::Section::Teachers => "teachers",
+                crate::Section::Settings => "settings",
+                _ => "diary",
+            };
+            day::prefs::set("app.section", name);
+        },
+    );
+
     let sel = nav(section)
         .style(day::prelude::NavStyle::Tabs)
         .title(move || {

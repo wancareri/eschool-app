@@ -8,7 +8,14 @@ use day_piece_texteditor::text_editor;
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
-    let current_tab = Signal::new(0usize);
+    let current_tab = state.settings_tab;
+
+    day::reactive::watch(
+        move || current_tab.get(),
+        move |&t, _| {
+            day::prefs::set("app.settings_tab", &t.to_string());
+        },
+    );
     let show_setup = Signal::new(false);
     let pin_enabled = Signal::new(crate::shared::pin::is_enabled());
 
@@ -121,7 +128,6 @@ fn profile_section(state: AppState) -> impl Piece {
 }
 
 fn appearance_section(state: AppState) -> impl Piece {
-    let s = state;
     column((
         form((
             section(
@@ -132,15 +138,6 @@ fn appearance_section(state: AppState) -> impl Piece {
                     accent_option(state, "Фиолетовый", colors::PURPLE),
                     accent_option(state, "Оранжевый", colors::ORANGE),
                     accent_option(state, "Красный", colors::RED),
-                    label("Для полного применения нового цвета к системным элементам (таб-бар, навигация) перезапустите приложение или используйте кнопку ниже.")
-                        .font(Font::Caption)
-                        .secondary(),
-                    button("Быстрая перезагрузка интерфейса")
-                        .action(move || {
-                            let tok = s.ui_reload_token.get();
-                            s.ui_reload_token.set(tok + 1);
-                        })
-                        .id("quick-reload-btn"),
                 )
             ).title("Цвета"),
         )),
@@ -169,6 +166,10 @@ fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
         state.accent_color.set(hex);
         #[cfg(target_os = "ios")]
         colors::apply_ios_tint(hex);
+        state.current_section.set(crate::Section::Settings);
+        state.settings_tab.set(1);
+        day::prefs::set("app.section", "settings");
+        day::prefs::set("app.settings_tab", "1");
         let cur_tok = state.ui_reload_token.get();
         state.ui_reload_token.set(cur_tok + 1);
     })
