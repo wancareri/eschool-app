@@ -89,6 +89,13 @@ fn apply_glass_blur(piece: impl Decorate) -> impl Piece {
     piece
 }
 
+fn accent_bg(hex: u32, alpha: f64) -> Color {
+    let r = ((hex >> 16) & 0xFF) as f64 / 255.0;
+    let g = ((hex >> 8) & 0xFF) as f64 / 255.0;
+    let b = (hex & 0xFF) as f64 / 255.0;
+    Color::rgba(r, g, b, alpha)
+}
+
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let expanded = Signal::new(true);
@@ -117,7 +124,7 @@ pub fn render() -> impl Piece {
     .otherwise(move || {
         when(
             move || state.conn_status.get() == ConnStatus::Offline,
-            || vector(res::vectors::status_offline).frame(13.0, 13.0).tint(Color::hex(0xF59E0B)).any(),
+            || vector(res::vectors::status_offline).frame(13.0, 13.0).tint(Color::hex(0x8E8E93)).any(),
         )
         .otherwise(move || {
             when(
@@ -125,8 +132,13 @@ pub fn render() -> impl Piece {
                 || vector(res::vectors::status_error).frame(13.0, 13.0).tint(Color::hex(0xEF4444)).any(),
             )
             .otherwise(move || {
-                // Connected or Idle — Lucide wifi status ok
-                vector(res::vectors::status_ok).frame(13.0, 13.0).tint(Color::hex(0x10B981)).any()
+                let st = state.conn_status.get();
+                let tint_color = if st == ConnStatus::Connected {
+                    Color::hex(state.accent_color.get())
+                } else {
+                    Color::hex(0x8E8E93)
+                };
+                vector(res::vectors::status_ok).frame(13.0, 13.0).tint(tint_color).any()
             })
         })
     });
@@ -145,9 +157,8 @@ pub fn render() -> impl Piece {
                 })
                 .font(Font::Caption2)
                 .color(move || match state.conn_status.get() {
-                    ConnStatus::Connecting => Color::hex(0x3B82F6),
-                    ConnStatus::Connected | ConnStatus::Idle => Color::hex(0x10B981),
-                    ConnStatus::Offline => Color::hex(0xF59E0B),
+                    ConnStatus::Connecting | ConnStatus::Connected => Color::hex(state.accent_color.get()),
+                    ConnStatus::Idle | ConnStatus::Offline => Color::hex(0x8E8E93),
                     ConnStatus::Error => Color::hex(0xEF4444),
                 })
                 .opacity(move || text_opacity.get())
@@ -158,10 +169,8 @@ pub fn render() -> impl Piece {
     .align(VAlign::Center)
     .padding(Insets { top: 6.0, leading: 9.0, bottom: 6.0, trailing: 9.0 })
     .background(move || match state.conn_status.get() {
-        ConnStatus::Connecting => Color::rgba(0.25, 0.55, 1.0, 0.12),
-        ConnStatus::Connected => Color::rgba(0.18, 0.80, 0.44, 0.12),
-        ConnStatus::Idle => Color::rgba(0.18, 0.80, 0.44, 0.08),
-        ConnStatus::Offline => Color::rgba(1.0, 0.60, 0.10, 0.12),
+        ConnStatus::Connecting | ConnStatus::Connected => accent_bg(state.accent_color.get(), 0.14),
+        ConnStatus::Idle | ConnStatus::Offline => Color::rgba(0.5, 0.5, 0.5, 0.10),
         ConnStatus::Error => Color::rgba(1.0, 0.30, 0.30, 0.12),
     })
     .corner_radius(14.0)

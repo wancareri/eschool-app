@@ -2,7 +2,6 @@ use crate::app::AppState;
 use crate::features;
 use crate::widgets;
 use eschool_api::entities::*;
-use crate::shared::colors;
 use crate::res;
 use day::prelude::*;
 use day_piece_pullrefresh::pull_to_refresh;
@@ -134,7 +133,7 @@ fn teacher_card(state: AppState, key: String) -> impl Piece {
                         .find(|s| format!("{}:{}", s.teacher_id, s.id) == lk)
                         .map(|s| format!("Уровень: {}", s.level_of_study))
                         .unwrap_or_default()
-                }).font(Font::Caption).color(colors::INFO)
+                }).font(Font::Caption).color(move || Color::hex(state.accent_color.get()))
             }),
             when(move || {
                 state.subjects_teachers.get()

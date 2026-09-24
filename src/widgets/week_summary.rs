@@ -11,6 +11,7 @@ where
             .font(Font::Headline)
             .color(move || Color::hex(state.accent_color.get()))
             .align(TextAlign::Center)
+            .grow()
             .padding(Insets { top: 16.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
         row((
@@ -39,7 +40,11 @@ where
             }),
         ))
         .spacing(8.0)
-        .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
+        .align(VAlign::Center)
+        .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
+        .grow(),
     ))
+    .align(HAlign::Center)
     .spacing(0.0)
+    .grow()
 }
