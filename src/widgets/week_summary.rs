@@ -14,6 +14,7 @@ where
             .padding(Insets { top: 16.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
         row((
+            spacer().grow(),
             super::stat_block::render(state, "Уроков", move || {
                 let lessons = get_lessons();
                 lessons.iter().map(|d| d.slots.len()).sum::<usize>().to_string()
@@ -37,6 +38,7 @@ where
                 if marks.is_empty() { "—".into() }
                 else { format!("{:.1}", marks.iter().sum::<f64>() / marks.len() as f64) }
             }),
+            spacer().grow(),
         ))
         .spacing(8.0)
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),

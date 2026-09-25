@@ -12,18 +12,9 @@ const PAD: f64 = 16.0;
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let refreshing = Signal::new(false);
-    let jump: Signal<Option<ScrollTarget>> = Signal::new(None);
 
     zstack((
-        column((
-            // Fixed day-chip rail: sits outside the scroll so it stays visible while the
-            // timetable scrolls underneath (Day has no sticky section headers on iOS).
-            when(
-                move || state.is_authenticated.get() && !state.timetable_days.get().is_empty(),
-                move || day_chip_row(state, jump),
-            ),
-
-            pull_to_refresh(refreshing, scroll(column((
+        pull_to_refresh(refreshing, scroll(column((
                     column((
                         label(move || res::str::schedule_title().format())
                             .font(Font::LargeTitle)
@@ -60,8 +51,7 @@ pub fn render() -> impl Piece {
                     ),
                 ))
                 .spacing(0.0)
-                .grow())
-                .scroll_target(jump))
+                .grow()))
                 .on_refresh(move || {
                     let state = AppState::ambient();
                     let done = refreshing.setter();
@@ -71,75 +61,12 @@ pub fn render() -> impl Piece {
                     done.set(false);
                 })
                 .grow(),
-        ))
-        .spacing(0.0)
-        .grow(),
 
         widgets::conn_status::render()
             .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
     ))
     .align(Alignment::TopLeading)
     .grow()
-}
-
-fn today_dow() -> u32 {
-    // e-schools indexes weekdays 1=Mon..7=Sun; shift "now" to the Europe/Minsk civil
-    // day (UTC+3, no DST) first, then the epoch formula (1970-01-01 was a Thursday).
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let epoch_days = ((now + 3 * 3600) / 86_400) as i64;
-    (((epoch_days + 3) % 7 + 1) as u32).clamp(1, 7)
-}
-
-fn day_chip(
-    state: AppState,
-    jump: Signal<Option<ScrollTarget>>,
-    dow: u32,
-    today: u32,
-) -> impl Piece {
-    let is_today = dow == today;
-    label(utils::weekday_short(dow))
-        .font(Font::Footnote)
-        .weight(FontWeight::Medium)
-        .color(move || {
-            if is_today {
-                Color::hex(0xFFFFFF)
-            } else {
-                Color::hex(state.accent_color.get())
-            }
-        })
-        .padding(Insets { top: 6.0, leading: 12.0, bottom: 6.0, trailing: 12.0 })
-        .background(move || {
-            let accent = state.accent_color.get();
-            if is_today {
-                Color::hex(accent)
-            } else {
-                Color::hex(accent).with_alpha(0.12)
-            }
-        })
-        .corner_radius(14.0)
-        .on_tap(move || {
-            jump.set(Some(ScrollTarget::Id(format!("day-{dow}"))));
-        })
-        .a11y(|b| b.role(Role::Button))
-        .id(format!("chip-{dow}"))
-}
-
-fn day_chip_row(state: AppState, jump: Signal<Option<ScrollTarget>>) -> impl Piece {
-    let today = today_dow();
-    row((
-        day_chip(state, jump, 1, today),
-        day_chip(state, jump, 2, today),
-        day_chip(state, jump, 3, today),
-        day_chip(state, jump, 4, today),
-        day_chip(state, jump, 5, today),
-        day_chip(state, jump, 6, today),
-        day_chip(state, jump, 7, today),
-    ))
-    .spacing(6.0)
-    .padding(Insets { top: 46.0, leading: PAD, bottom: 6.0, trailing: PAD })
 }
 
 fn schedule_content(state: AppState) -> impl Piece {
@@ -155,10 +82,6 @@ fn schedule_content(state: AppState) -> impl Piece {
                 .secondary()
                 .align(TextAlign::Center)
                 .padding(Insets { top: 60.0, leading: PAD, bottom: 60.0, trailing: PAD }),
-        ),
-        when(
-            move || !state.subjects_teachers.get().is_empty(),
-            move || teachers_section(state),
         ),
     ))
     .spacing(0.0)
@@ -317,66 +240,6 @@ fn timetable_day_card(state: AppState, dow: u32) -> impl Piece {
 
         divider()
             .padding(Insets { top: 8.0, leading: PAD, bottom: 0.0, trailing: PAD }),
-    ))
-    .spacing(0.0)
-}
-
-fn teachers_section(state: AppState) -> impl Piece {
-    column((
-        label("Преподаватели")
-            .font(Font::Title3)
-            .color(move || Color::hex(state.accent_color.get()))
-            .padding(Insets { top: 24.0, leading: PAD, bottom: 4.0, trailing: PAD }),
-
-        // Header
-        row((
-            label("Предмет")
-                .font(Font::Caption)
-                .secondary()
-                .grow(),
-            label("Учитель")
-                .font(Font::Caption)
-                .secondary()
-                .grow(),
-            label("Уровень")
-                .font(Font::Caption)
-                .secondary()
-                .frame(70.0, 16.0),
-        ))
-        .spacing(6.0)
-        .padding(Insets { top: 4.0, leading: PAD, bottom: 4.0, trailing: PAD }),
-
-        divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
-
-        each(
-            items(
-                move || state.subjects_teachers.get(),
-                |st| format!("{}:{}", st.teacher_id, st.id),
-            ),
-            move |slot| {
-                let s_st = slot;
-                column((
-                    row((
-                        label(move || s_st.with(|st| st.subject_title.clone()))
-                            .font(Font::Body)
-                            .grow(),
-                        label(move || s_st.with(|st| st.teacher.clone()))
-                            .font(Font::Body)
-                            .secondary()
-                            .grow(),
-                        label(move || s_st.with(|st| st.level_of_study.clone()))
-                            .font(Font::Caption)
-                            .color(move || Color::hex(state.accent_color.get()))
-                            .frame(70.0, 16.0),
-                    ))
-                    .spacing(6.0)
-                    .padding(Insets { top: 6.0, leading: PAD, bottom: 6.0, trailing: PAD }),
-                    divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
-                ))
-                .spacing(0.0)
-                .any()
-            },
-        ),
     ))
     .spacing(0.0)
 }

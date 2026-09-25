@@ -12,9 +12,8 @@ pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let refreshing = Signal::new(false);
 
-    pull_to_refresh(refreshing, scroll(column((
-            widgets::conn_status::render()
-                .padding(Insets { top: 8.0, leading: 16.0, bottom: 0.0, trailing: 16.0 }),
+    zstack((
+        pull_to_refresh(refreshing, scroll(column((
             column((
                 label(move || res::str::teachers_title().format())
                     .font(Font::LargeTitle)
@@ -59,7 +58,13 @@ pub fn render() -> impl Piece {
             }
             done.set(false);
         })
-        .grow()
+        .grow(),
+
+        widgets::conn_status::render()
+            .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
+    ))
+    .align(Alignment::TopLeading)
+    .grow()
 }
 
 fn teachers_list(state: AppState) -> impl Piece {

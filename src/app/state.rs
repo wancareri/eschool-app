@@ -108,7 +108,8 @@ impl Ambient for AppState {
 
         let saved_section = day::prefs::get("app.section")
             .and_then(|s| match s.as_str() {
-                "schedule" | "teachers" => Some(crate::Section::Schedule),
+                "schedule" => Some(crate::Section::Schedule),
+                "teachers" => Some(crate::Section::Teachers),
                 "settings" => Some(crate::Section::Settings),
                 _ => Some(crate::Section::Diary),
             })

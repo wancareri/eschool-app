@@ -290,6 +290,7 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
             let name = match s {
                 crate::Section::Diary => "diary",
                 crate::Section::Schedule => "schedule",
+                crate::Section::Teachers => "teachers",
                 crate::Section::Settings => "settings",
                 _ => "diary",
             };
@@ -318,6 +319,13 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
             res::str::nav_schedule(),
             res::vectors::tab_schedule,
             pages::schedule::render,
+        )
+        .icon_tint(accent)
+        .item_icon(
+            crate::Section::Teachers,
+            res::str::nav_teachers(),
+            res::vectors::tab_teachers,
+            pages::teachers::render,
         )
         .icon_tint(accent)
 

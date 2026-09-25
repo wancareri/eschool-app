@@ -168,10 +168,32 @@ pub fn render() -> impl Piece {
     ))
     .align(VAlign::Center)
     .padding(Insets { top: 6.0, leading: 9.0, bottom: 6.0, trailing: 9.0 })
-    .background(move || match state.conn_status.get() {
-        ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => accent_dark_bg(state.accent_color.get(), 0.50),
-        ConnStatus::Offline => Color::rgba(0.28, 0.28, 0.28, 0.32),
-        ConnStatus::Error => Color::rgba(0.70, 0.15, 0.15, 0.50),
+    .background(move || {
+        let dark = day::dark_mode();
+        match state.conn_status.get() {
+            ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
+                let accent = state.accent_color.get();
+                if dark {
+                    accent_dark_bg(accent, 0.50)
+                } else {
+                    Color::hex(accent).with_alpha(0.16)
+                }
+            }
+            ConnStatus::Offline => {
+                if dark {
+                    Color::rgba(0.28, 0.28, 0.28, 0.32)
+                } else {
+                    Color::rgba(0.55, 0.55, 0.55, 0.18)
+                }
+            }
+            ConnStatus::Error => {
+                if dark {
+                    Color::rgba(0.70, 0.15, 0.15, 0.50)
+                } else {
+                    Color::rgba(0.94, 0.27, 0.27, 0.16)
+                }
+            }
+        }
     })
     .corner_radius(14.0)
     .animation(Animation::ease_out(220))

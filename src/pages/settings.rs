@@ -16,6 +16,34 @@ pub fn render() -> impl Piece {
             day::prefs::set("app.settings_tab", &t.to_string());
         },
     );
+    let displayed_tab = Signal::new(current_tab.get());
+    let tab_dx = Signal::new(0.0f64);
+    let incoming: Signal<Option<(usize, f64)>> = Signal::new(None);
+    let animating = Signal::new(false);
+    let pager_w = crate::pages::diary::get_screen_width();
+
+    day::reactive::watch(
+        move || current_tab.get(),
+        move |&t, _| {
+            start_switch(t, displayed_tab, incoming, tab_dx, animating, pager_w);
+        },
+    );
+    day::reactive::watch(
+        move || displayed_tab.get(),
+        move |&shown, _| {
+            let want = current_tab.get();
+            if want != shown {
+                start_switch(
+                    want,
+                    displayed_tab,
+                    incoming,
+                    tab_dx,
+                    animating,
+                    pager_w,
+                );
+            }
+        },
+    );
     let show_setup = Signal::new(false);
     let pin_enabled = Signal::new(crate::shared::pin::is_enabled());
 
@@ -64,13 +92,9 @@ pub fn render() -> impl Piece {
                 if was_horiz && dx.abs() >= 40.0 {
                     let cur = current_tab.get();
                     if dx < -40.0 && cur < 3 {
-                        with_animation(AnimSpec::ease_out(150), move || {
-                            current_tab.set(cur + 1);
-                        });
+                        current_tab.set(cur + 1);
                     } else if dx > 40.0 && cur > 0 {
-                        with_animation(AnimSpec::ease_out(150), move || {
-                            current_tab.set(cur - 1);
-                        });
+                        current_tab.set(cur - 1);
                     }
                 }
             }
@@ -98,34 +122,29 @@ pub fn render() -> impl Piece {
         .padding(Insets { top: 8.0, leading: 20.0, bottom: 16.0, trailing: 20.0 }),
 
         scroll(column((
-            when(
-                move || current_tab.get() == 0,
-                move || column((
-                    when(move || state.is_authenticated.get(), move || profile_section(state)),
-                    when(move || state.is_authenticated.get(), move || logout_section(state)),
-                )).spacing(0.0).grow()
-            ),
-
-            when(
-                move || current_tab.get() == 1,
-                move || column((
-                    appearance_section(state),
-                    system_settings(),
-                )).spacing(0.0).grow()
-            ),
-            
-            when(
-                move || current_tab.get() == 2,
-                move || column((
-                    pin_section(state, pin_enabled),
-                    biometric_section(state),
-                )).spacing(0.0).grow()
-            ),
-
-            when(
-                move || current_tab.get() == 3,
-                move || dev_settings(state)
-            ),
+            zstack((
+                each(
+                    items(move || vec![displayed_tab.get()], |t: &usize| *t),
+                    move |slot| {
+                        let t = slot.with(|t: &usize| *t);
+                        tab_body(state, t, pin_enabled)
+                            .translation(move || tab_dx.get(), 0.0)
+                    },
+                ),
+                each(
+                    items(
+                        move || incoming.get().map(|k| vec![k]).unwrap_or_default(),
+                        |k: &(usize, f64)| k.0,
+                    ),
+                    move |slot| {
+                        let (t, dir) = slot.with(|k: &(usize, f64)| *k);
+                        tab_body(state, t, pin_enabled)
+                            .translation(move || tab_dx.get() + dir * pager_w, 0.0)
+                    },
+                ),
+            ))
+            .align(Alignment::TopLeading)
+            .width(pager_w),
         ))
         .spacing(0.0)
         .grow())
@@ -141,6 +160,68 @@ pub fn render() -> impl Piece {
     .align(Alignment::TopLeading)
     .grow()
     .any())
+}
+
+fn start_switch(
+    target: usize,
+    displayed_tab: Signal<usize>,
+    incoming: Signal<Option<(usize, f64)>>,
+    tab_dx: Signal<f64>,
+    animating: Signal<bool>,
+    w: f64,
+) {
+    let shown = displayed_tab.get();
+    if animating.get() || target == shown {
+        return;
+    }
+    let dir = if target > shown { 1.0 } else { -1.0 };
+    animating.set(true);
+    incoming.set(Some((target, dir)));
+    with_animation(AnimSpec::ease_out(280), move || {
+        tab_dx.set(-dir * w);
+    });
+    let d = displayed_tab.setter();
+    let i = incoming.setter();
+    let dx = tab_dx.setter();
+    let a = animating.setter();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(280));
+        day::reactive::on_main(move || {
+            day::reactive::batch(|| {
+                a.set(false);
+                i.set(None);
+                dx.set(0.0);
+                d.set(target);
+            });
+        });
+    });
+}
+
+fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piece {
+    match tab {
+        0 => column((
+            when(move || state.is_authenticated.get(), move || profile_section(state)),
+            when(move || state.is_authenticated.get(), move || logout_section(state)),
+        ))
+        .spacing(0.0)
+        .grow()
+        .any(),
+        1 => column((
+            appearance_section(state),
+            system_settings(),
+        ))
+        .spacing(0.0)
+        .grow()
+        .any(),
+        2 => column((
+            pin_section(state, pin_enabled),
+            biometric_section(state),
+        ))
+        .spacing(0.0)
+        .grow()
+        .any(),
+        _ => dev_settings(state).any(),
+    }
 }
 
 fn profile_section(state: AppState) -> impl Piece {

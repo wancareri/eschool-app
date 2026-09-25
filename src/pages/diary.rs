@@ -12,7 +12,7 @@ const SWIPE_THRESHOLD: f64 = 36.0;
 const SWIPE_AXIS_LOCK: f64 = 8.0;
 const SWIPE_EDGE_DAMP: f64 = 0.3;
 
-fn get_screen_width() -> f64 {
+pub fn get_screen_width() -> f64 {
     #[cfg(target_os = "ios")]
     {
         use objc2::MainThreadMarker;
