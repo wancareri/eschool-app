@@ -385,11 +385,12 @@ fn pin_setup_modal(show_setup: Signal<bool>, pin_enabled: Signal<bool>) -> impl 
 }
 
 fn setup_dot(index: usize, input: Signal<String>) -> impl Piece {
-    label(move || {
-        if input.get().len() > index { "●" } else { "○" }
-    })
-    .font(Font::Title2)
-    .align(TextAlign::Center)
+    zstack((
+        label(move || {
+            if input.get().len() > index { "●" } else { "○" }
+        })
+        .font(Font::Title2),
+    ))
     .frame(24.0, 24.0)
 }
 
@@ -407,56 +408,58 @@ fn setup_numpad(
         if k.is_empty() {
             spacer().frame(70.0, 44.0).any()
         } else if k == "⌫" {
-            label("⌫")
-                .font(Font::LargeTitle)
-                .secondary()
-                .align(TextAlign::Center)
-                .frame(70.0, 44.0)
-                .on_tap(move || {
-                    let mut v = state.get();
-                    if !v.is_empty() {
-                        v.pop();
-                        state.set(v);
-                        error.set("".into());
-                    }
-                })
-                .a11y(|b| b.role(Role::Button))
-                .id(format!("sk-{k2}"))
-                .any()
+            zstack((
+                label("⌫")
+                    .font(Font::LargeTitle)
+                    .secondary(),
+            ))
+            .frame(70.0, 44.0)
+            .on_tap(move || {
+                let mut v = state.get();
+                if !v.is_empty() {
+                    v.pop();
+                    state.set(v);
+                    error.set("".into());
+                }
+            })
+            .a11y(|b| b.role(Role::Button))
+            .id(format!("sk-{k2}"))
+            .any()
         } else {
             let accent = AppState::ambient();
-            label(k.clone())
-                .font(Font::LargeTitle)
-                .color(move || Color::hex(accent.accent_color.get()))
-                .align(TextAlign::Center)
-                .frame(70.0, 44.0)
-                .on_tap(move || {
-                    let mut v = state.get();
-                    if v.len() >= 4 { return; }
-                    v.push_str(&k);
-                    state.set(v.clone());
-                    error.set("".into());
-                    
-                    if v.len() == 4 {
-                        if step.get() == 0 {
-                            confirm.set(v);
-                            state.set(String::new());
-                            step.set(1);
-                        } else if v == confirm.get() {
-                            pin::save_pin(&v);
-                            setup_mode.set(false);
-                            state.set(String::new());
-                            confirm.set(String::new());
-                            nslog::nslog("[PIN] Setup complete");
-                        } else {
-                            error.set("PIN-коды не совпадают".into());
-                            state.set(String::new());
-                        }
+            zstack((
+                label(k.clone())
+                    .font(Font::LargeTitle)
+                    .color(move || Color::hex(accent.accent_color.get())),
+            ))
+            .frame(70.0, 44.0)
+            .on_tap(move || {
+                let mut v = state.get();
+                if v.len() >= 4 { return; }
+                v.push_str(&k);
+                state.set(v.clone());
+                error.set("".into());
+
+                if v.len() == 4 {
+                    if step.get() == 0 {
+                        confirm.set(v);
+                        state.set(String::new());
+                        step.set(1);
+                    } else if v == confirm.get() {
+                        pin::save_pin(&v);
+                        setup_mode.set(false);
+                        state.set(String::new());
+                        confirm.set(String::new());
+                        nslog::nslog("[PIN] Setup complete");
+                    } else {
+                        error.set("PIN-коды не совпадают".into());
+                        state.set(String::new());
                     }
-                })
-                .a11y(|b| b.role(Role::Button))
-                .id(format!("sk-{k2}"))
-                .any()
+                }
+            })
+            .a11y(|b| b.role(Role::Button))
+            .id(format!("sk-{k2}"))
+            .any()
         }
     }
 

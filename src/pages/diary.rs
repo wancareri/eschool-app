@@ -6,11 +6,18 @@ use crate::widgets;
 use crate::res;
 use day::prelude::*;
 use day_piece_pullrefresh::pull_to_refresh;
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 const PAD: f64 = 20.0;
 const SWIPE_THRESHOLD: f64 = 36.0;
 const SWIPE_AXIS_LOCK: f64 = 8.0;
 const SWIPE_EDGE_DAMP: f64 = 0.3;
+
+// A swipe's `load_week` lands only after its slide thread sleeps, so a swipe
+// inside that window reads the stale index and targets the same week. One
+// flight at a time; extra swipes queue here and chain after the load.
+static WEEK_SWIPE_BUSY: AtomicBool = AtomicBool::new(false);
+static WEEK_SWIPE_QUEUE: AtomicI32 = AtomicI32::new(0);
 
 pub fn get_screen_width() -> f64 {
     #[cfg(target_os = "ios")]
@@ -176,20 +183,41 @@ fn lessons_at(state: AppState, offset: i32) -> Vec<DaySchedule> {
 }
 
 fn pager_go(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>, dir: i32) {
+    start_week_swipe(state, drag_x, page_width, dir, 280);
+}
+
+fn start_week_swipe(
+    state: AppState,
+    drag_x: Signal<f64>,
+    page_width: Signal<f64>,
+    dir: i32,
+    dur_ms: u32,
+) {
+    if WEEK_SWIPE_BUSY.load(Ordering::Relaxed) {
+        WEEK_SWIPE_QUEUE.fetch_add(dir, Ordering::Relaxed);
+        return;
+    }
     let idx = state.current_week_index.get();
     let total = state.all_weeks.get().len() as i32;
     let new_idx = idx + dir;
     if new_idx < 0 || new_idx >= total {
+        with_animation(AnimSpec::ease_out(180), || {
+            drag_x.set(0.0);
+        });
         return;
     }
+    WEEK_SWIPE_BUSY.store(true, Ordering::Relaxed);
     let w = page_width.get();
     let target = if dir > 0 { -w } else { w };
-    with_animation(AnimSpec::ease_out(280), move || {
+    with_animation(AnimSpec::ease_out(dur_ms), || {
         drag_x.set(target);
     });
-    let set_drag = drag_x.setter();
+    spawn_week_slide(drag_x.setter(), w, dur_ms, new_idx);
+}
+
+fn spawn_week_slide(set_drag: day::reactive::Setter<f64>, w: f64, dur_ms: u32, new_idx: i32) {
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(280));
+        std::thread::sleep(std::time::Duration::from_millis(dur_ms as u64));
         day::reactive::on_main(move || {
             day::reactive::batch(|| {
                 if let Some(state) = AppState::get_main() {
@@ -197,6 +225,31 @@ fn pager_go(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>, dir: 
                 }
                 set_drag.set(0.0);
             });
+            let q = WEEK_SWIPE_QUEUE.swap(0, Ordering::Relaxed);
+            if q == 0 {
+                WEEK_SWIPE_BUSY.store(false, Ordering::Relaxed);
+                return;
+            }
+            let dir = q.signum();
+            if q.abs() > 1 {
+                WEEK_SWIPE_QUEUE.store(q - dir, Ordering::Relaxed);
+            }
+            let Some(state) = AppState::get_main() else {
+                WEEK_SWIPE_BUSY.store(false, Ordering::Relaxed);
+                return;
+            };
+            let idx = state.current_week_index.get();
+            let total = state.all_weeks.get().len() as i32;
+            if idx + dir < 0 || idx + dir >= total {
+                WEEK_SWIPE_QUEUE.store(0, Ordering::Relaxed);
+                WEEK_SWIPE_BUSY.store(false, Ordering::Relaxed);
+                return;
+            }
+            let target = if dir > 0 { -w } else { w };
+            with_animation(AnimSpec::ease_out(dur_ms), || {
+                set_drag.set(target);
+            });
+            spawn_week_slide(set_drag, w, dur_ms, idx + dir);
         });
     });
 }
@@ -210,7 +263,6 @@ fn pager_drag(
     move |drag: Drag| {
         let dx = drag.translation.x;
         let dy = drag.translation.y;
-        let w = page_width.get();
         match drag.phase {
             DragPhase::Began => {
                 axis.set(None);
@@ -242,46 +294,11 @@ fn pager_drag(
             DragPhase::Ended => {
                 let was_horiz = axis.get() == Some(true);
                 axis.set(None);
-                let idx = state.current_week_index.get();
-                let total = state.all_weeks.get().len() as i32;
                 let actual_dx = drag_x.get();
                 if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
-                    if actual_dx < 0.0 && idx + 1 < total {
-                        with_animation(AnimSpec::ease_out(220), move || {
-                            drag_x.set(-w);
-                        });
-                        let set_drag = drag_x.setter();
-                        std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_millis(220));
-                            day::reactive::on_main(move || {
-                                day::reactive::batch(|| {
-                                    if let Some(state) = AppState::get_main() {
-                                        features::diary::load_week(state, idx + 1);
-                                    }
-                                    set_drag.set(0.0);
-                                });
-                            });
-                        });
-                        return;
-                    }
-                    if actual_dx > 0.0 && idx > 0 {
-                        with_animation(AnimSpec::ease_out(220), move || {
-                            drag_x.set(w);
-                        });
-                        let set_drag = drag_x.setter();
-                        std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_millis(220));
-                            day::reactive::on_main(move || {
-                                day::reactive::batch(|| {
-                                    if let Some(state) = AppState::get_main() {
-                                        features::diary::load_week(state, idx - 1);
-                                    }
-                                    set_drag.set(0.0);
-                                });
-                            });
-                        });
-                        return;
-                    }
+                    let dir = if actual_dx < 0.0 { 1 } else { -1 };
+                    start_week_swipe(state, drag_x, page_width, dir, 220);
+                    return;
                 }
                 if was_horiz {
                     with_animation(AnimSpec::ease_out(180), move || {
@@ -541,18 +558,7 @@ fn day_card_with(
 
     column((
         label(move || {
-            s_header.with(|d| {
-                let base = utils::format_date_header(d.day_of_week, d.date);
-                if d.slots.is_empty() {
-                    if d.day_of_week >= 6 {
-                        format!("{base}  ·  Выходной")
-                    } else {
-                        format!("{base}  ·  Нет уроков")
-                    }
-                } else {
-                    base
-                }
-            })
+            s_header.with(|d| utils::format_date_header(d.day_of_week, d.date))
         })
         .font(Font::Headline)
         .color(move || Color::hex(state.accent_color.get()))
@@ -817,7 +823,7 @@ fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
                             if v.is_empty() { None } else { Some(v.iter().sum::<f64>() / v.len() as f64) }
                         });
                         match avg {
-                            Some(v) => format!("{:.1}", v),
+                            Some(v) => format!("{:.2}", v),
                             None => "—".into(),
                         }
                     })
@@ -975,7 +981,7 @@ fn year_avg_cell(state: AppState, subject: String) -> impl Piece {
     label(move || {
         let avg = calc_year_avg(s1, &sj1);
         match avg {
-            Some(v) => format!("{:.1}", v),
+            Some(v) => format!("{:.2}", v),
             None => "—".into(),
         }
     })

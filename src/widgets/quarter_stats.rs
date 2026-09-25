@@ -9,7 +9,6 @@ pub fn render(state: AppState) -> impl Piece {
             .padding(Insets { top: 16.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
         row((
-            spacer().grow(),
             super::stat_block::render(state, "Четверть", move || {
                 let idx = state.current_week_index.get();
                 let q = if idx < 9 { "I" } else if idx < 18 { "II" } else if idx < 27 { "III" } else { "IV" };
@@ -26,7 +25,6 @@ pub fn render(state: AppState) -> impl Piece {
                     format!("{:.2}", avg)
                 }
             }),
-            spacer().grow(),
         ))
         .spacing(8.0)
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
@@ -46,7 +44,7 @@ pub fn render(state: AppState) -> impl Piece {
             subjects.iter().map(|(subj, vals)| {
                 let avg = vals.iter().sum::<f64>() / vals.len() as f64;
                 let cnt = vals.len();
-                format!("{} — {:.1}  ({})", subj, avg, cnt)
+                format!("{} — {:.2}  ({})", subj, avg, cnt)
             }).collect::<Vec<_>>().join("\n")
         })
         .font(Font::Caption)

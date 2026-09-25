@@ -86,11 +86,12 @@ fn dot(index: usize, state: AppState) -> impl Piece {
     };
     let error = state.pin_error;
 
-    label(move || {
-        if error.get() { "●" } else if filled() { "●" } else { "○" }
-    })
-    .font(Font::Title2)
-    .align(TextAlign::Center)
+    zstack((
+        label(move || {
+            if error.get() { "●" } else if filled() { "●" } else { "○" }
+        })
+        .font(Font::Title2),
+    ))
     .frame(24.0, 24.0)
 }
 
@@ -131,55 +132,57 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
     if key_str.is_empty() {
         spacer().frame(72.0, 72.0).any()
     } else if key_str == "⌫" {
-        label("⌫")
-            .font(Font::LargeTitle)
-            .secondary()
-            .align(TextAlign::Center)
-            .frame(72.0, 72.0)
-            .on_tap(move || {
-                let mut input = s.pin_input.get();
-                if !input.is_empty() {
-                    input.pop();
-                    s.pin_input.set(input);
-                    s.pin_error.set(false);
-                }
-            })
-            .a11y(|b| b.role(Role::Button))
-            .id("pin-backspace")
-            .any()
-    } else {
-        label(key_clone2.clone())
-            .font(Font::LargeTitle)
-            .color(move || Color::hex(state.accent_color.get()))
-            .align(TextAlign::Center)
-            .frame(72.0, 72.0)
-            .on_tap(move || {
-                let mut input = s.pin_input.get();
-                if input.len() >= PIN_LENGTH {
-                    return;
-                }
-                input.push_str(&key_clone);
-                s.pin_input.set(input.clone());
+        zstack((
+            label("⌫")
+                .font(Font::LargeTitle)
+                .secondary(),
+        ))
+        .frame(72.0, 72.0)
+        .on_tap(move || {
+            let mut input = s.pin_input.get();
+            if !input.is_empty() {
+                input.pop();
+                s.pin_input.set(input);
                 s.pin_error.set(false);
+            }
+        })
+        .a11y(|b| b.role(Role::Button))
+        .id("pin-backspace")
+        .any()
+    } else {
+        zstack((
+            label(key_clone2.clone())
+                .font(Font::LargeTitle)
+                .color(move || Color::hex(state.accent_color.get())),
+        ))
+        .frame(72.0, 72.0)
+        .on_tap(move || {
+            let mut input = s.pin_input.get();
+            if input.len() >= PIN_LENGTH {
+                return;
+            }
+            input.push_str(&key_clone);
+            s.pin_input.set(input.clone());
+            s.pin_error.set(false);
 
-                if input.len() == PIN_LENGTH {
-                    if pin::verify(&input) {
-                        nslog::nslog("[PIN] Correct, unlocking");
-                        s.pin_lock_active.set(false);
-                        s.is_authenticated.set(true);
-                        s.pin_input.set(String::new());
-                    } else {
-                        nslog::nslog("[PIN] Wrong");
-                        s.pin_error.set(true);
-                        let clear = s.pin_input.setter();
-                        day::reactive::on_main(move || {
-                            clear.set(String::new());
-                        });
-                    }
+            if input.len() == PIN_LENGTH {
+                if pin::verify(&input) {
+                    nslog::nslog("[PIN] Correct, unlocking");
+                    s.pin_lock_active.set(false);
+                    s.is_authenticated.set(true);
+                    s.pin_input.set(String::new());
+                } else {
+                    nslog::nslog("[PIN] Wrong");
+                    s.pin_error.set(true);
+                    let clear = s.pin_input.setter();
+                    day::reactive::on_main(move || {
+                        clear.set(String::new());
+                    });
                 }
-            })
-            .a11y(|b| b.role(Role::Button))
-            .id(format!("pin-key-{key_clone2}"))
-            .any()
+            }
+        })
+        .a11y(|b| b.role(Role::Button))
+        .id(format!("pin-key-{key_clone2}"))
+        .any()
     }
 }

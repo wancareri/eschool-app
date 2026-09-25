@@ -197,8 +197,7 @@ fn timetable_day_card(state: AppState, dow: u32) -> impl Piece {
         label(move || {
             let name = utils::weekday_name(dow);
             if !has_lessons() {
-                if dow >= 6 { format!("{}  ·  Выходной", name) }
-                else { format!("{}  ·  Нет уроков", name) }
+                name.to_string()
             } else {
                 let count = day_data()
                     .map(|d| d.timetable_slots.iter().filter(|ts| !ts.slots.is_empty()).count())

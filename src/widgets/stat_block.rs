@@ -16,4 +16,5 @@ pub fn render(state: AppState, title: &'static str, value_fn: impl Fn() -> Strin
     .align(HAlign::Center)
     .spacing(2.0)
     .padding(Insets { top: 8.0, leading: 8.0, bottom: 8.0, trailing: 8.0 })
+    .grow_w()
 }
