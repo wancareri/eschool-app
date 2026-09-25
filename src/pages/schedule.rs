@@ -12,55 +12,60 @@ pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let refreshing = Signal::new(false);
 
-    pull_to_refresh(refreshing, scroll(column((
-            widgets::conn_status::render()
-                .padding(Insets { top: 8.0, leading: 16.0, bottom: 0.0, trailing: 16.0 }),
-            column((
-                label(move || res::str::schedule_title().format())
-                    .font(Font::LargeTitle)
-                    .align(TextAlign::Center),
-                label("Расписание, оценки и преподаватели")
-                    .font(Font::Subheadline)
-                    .secondary()
-                    .align(TextAlign::Center),
-            ))
-            .spacing(6.0)
-            .padding(Insets { top: 8.0, leading: PAD, bottom: 12.0, trailing: PAD }),
+    zstack((
+        pull_to_refresh(refreshing, scroll(column((
+                column((
+                    label(move || res::str::schedule_title().format())
+                        .font(Font::LargeTitle)
+                        .align(TextAlign::Center),
+                    label("Расписание, оценки и преподаватели")
+                        .font(Font::Subheadline)
+                        .secondary()
+                        .align(TextAlign::Center),
+                ))
+                .spacing(6.0)
+                .padding(Insets { top: 8.0, leading: PAD, bottom: 12.0, trailing: PAD }),
 
-            when(
-                move || !state.is_authenticated.get(),
-                || column((
-                    spacer(),
-                    label("Войдите для просмотра")
-                        .font(Font::Body).secondary().align(TextAlign::Center),
-                    spacer(),
-                )).grow(),
-            ),
-            when(
-                move || state.is_authenticated.get() && state.schedule_loading.get(),
-                move || column((
-                    spacer(),
-                    widgets::spinner::render(state, 11.0),
-                    label("  Загрузка…").font(Font::Caption).secondary(),
-                    spacer(),
-                )).align(HAlign::Center).grow(),
-            ),
-            when(
-                move || state.is_authenticated.get() && !state.schedule_loading.get(),
-                move || schedule_content(state),
-            ),
-        ))
-        .spacing(0.0)
-        .grow()))
-        .on_refresh(move || {
-            let state = AppState::ambient();
-            let done = refreshing.setter();
-            if state.is_authenticated.get() {
-                features::diary::load_all(state);
-            }
-            done.set(false);
-        })
-        .grow()
+                when(
+                    move || !state.is_authenticated.get(),
+                    || column((
+                        spacer(),
+                        label("Войдите для просмотра")
+                            .font(Font::Body).secondary().align(TextAlign::Center),
+                        spacer(),
+                    )).grow(),
+                ),
+                when(
+                    move || state.is_authenticated.get() && state.schedule_loading.get(),
+                    move || column((
+                        spacer(),
+                        widgets::spinner::render(state, 11.0),
+                        label("  Загрузка…").font(Font::Caption).secondary(),
+                        spacer(),
+                    )).align(HAlign::Center).grow(),
+                ),
+                when(
+                    move || state.is_authenticated.get() && !state.schedule_loading.get(),
+                    move || schedule_content(state),
+                ),
+            ))
+            .spacing(0.0)
+            .grow()))
+            .on_refresh(move || {
+                let state = AppState::ambient();
+                let done = refreshing.setter();
+                if state.is_authenticated.get() {
+                    features::diary::load_all(state);
+                }
+                done.set(false);
+            })
+            .grow(),
+
+        widgets::conn_status::render()
+            .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
+    ))
+    .align(Alignment::TopLeading)
+    .grow()
 }
 
 fn schedule_content(state: AppState) -> impl Piece {

@@ -36,38 +36,43 @@ pub fn render() -> impl Piece {
     let page_width = Signal::new(initial_w);
     let drag_x = Signal::new(0.0);
 
-    pull_to_refresh(refreshing, scroll(column((
-            widgets::conn_status::render()
-                .padding(Insets { top: 8.0, leading: 16.0, bottom: 0.0, trailing: 16.0 }),
-            column((
-                label(move || res::str::diary_title().format())
-                    .font(Font::LargeTitle)
-                    .align(TextAlign::Center),
+    zstack((
+        pull_to_refresh(refreshing, scroll(column((
+                column((
+                    label(move || res::str::diary_title().format())
+                        .font(Font::LargeTitle)
+                        .align(TextAlign::Center),
+                ))
+                .spacing(6.0)
+                .padding(Insets { top: 8.0, leading: PAD, bottom: 4.0, trailing: PAD }),
+
+                quarter_tabs(state),
+                sub_tabs(state, show_summary),
+
+                when(
+                    move || !show_summary.get(),
+                    move || week_view(state, page_width, drag_x),
+                ),
+                when(
+                    move || show_summary.get(),
+                    move || summary_view(state, page_width, drag_x),
+                ),
             ))
-            .spacing(6.0)
-            .padding(Insets { top: 8.0, leading: PAD, bottom: 4.0, trailing: PAD }),
+            .spacing(0.0)
+            .grow()))
+            .on_refresh(move || {
+                let state = AppState::ambient();
+                if state.is_authenticated.get() {
+                    features::diary::load_all(state);
+                }
+            })
+            .grow(),
 
-            quarter_tabs(state),
-            sub_tabs(state, show_summary),
-
-            when(
-                move || !show_summary.get(),
-                move || week_view(state, page_width, drag_x),
-            ),
-            when(
-                move || show_summary.get(),
-                move || summary_view(state, page_width, drag_x),
-            ),
-        ))
-        .spacing(0.0)
-        .grow()))
-        .on_refresh(move || {
-            let state = AppState::ambient();
-            if state.is_authenticated.get() {
-                features::diary::load_all(state);
-            }
-        })
-        .grow()
+        widgets::conn_status::render()
+            .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
+    ))
+    .align(Alignment::TopLeading)
+    .grow()
 }
 
 // ── Quarter / Year tabs ────────────────────────────────────────────────
