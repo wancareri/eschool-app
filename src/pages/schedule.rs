@@ -2,6 +2,7 @@ use crate::app::AppState;
 use crate::features;
 use crate::widgets;
 use crate::shared::utils;
+use crate::shared::colors;
 use crate::res;
 use day::prelude::*;
 use day_piece_pullrefresh::pull_to_refresh;
@@ -11,61 +12,134 @@ const PAD: f64 = 16.0;
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let refreshing = Signal::new(false);
+    let jump: Signal<Option<ScrollTarget>> = Signal::new(None);
 
     zstack((
-        pull_to_refresh(refreshing, scroll(column((
-                column((
-                    label(move || res::str::schedule_title().format())
-                        .font(Font::LargeTitle)
-                        .align(TextAlign::Center),
-                    label("Расписание, оценки и преподаватели")
-                        .font(Font::Subheadline)
-                        .secondary()
-                        .align(TextAlign::Center),
-                ))
-                .spacing(6.0)
-                .padding(Insets { top: 8.0, leading: PAD, bottom: 12.0, trailing: PAD }),
+        column((
+            // Fixed day-chip rail: sits outside the scroll so it stays visible while the
+            // timetable scrolls underneath (Day has no sticky section headers on iOS).
+            when(
+                move || state.is_authenticated.get() && !state.timetable_days.get().is_empty(),
+                move || day_chip_row(state, jump),
+            ),
 
-                when(
-                    move || !state.is_authenticated.get(),
-                    || column((
-                        spacer(),
-                        label("Войдите для просмотра")
-                            .font(Font::Body).secondary().align(TextAlign::Center),
-                        spacer(),
-                    )).grow(),
-                ),
-                when(
-                    move || state.is_authenticated.get() && state.schedule_loading.get(),
-                    move || column((
-                        spacer(),
-                        widgets::spinner::render(state, 11.0),
-                        label("  Загрузка…").font(Font::Caption).secondary(),
-                        spacer(),
-                    )).align(HAlign::Center).grow(),
-                ),
-                when(
-                    move || state.is_authenticated.get() && !state.schedule_loading.get(),
-                    move || schedule_content(state),
-                ),
-            ))
-            .spacing(0.0)
-            .grow()))
-            .on_refresh(move || {
-                let state = AppState::ambient();
-                let done = refreshing.setter();
-                if state.is_authenticated.get() {
-                    features::diary::load_all(state);
-                }
-                done.set(false);
-            })
-            .grow(),
+            pull_to_refresh(refreshing, scroll(column((
+                    column((
+                        label(move || res::str::schedule_title().format())
+                            .font(Font::LargeTitle)
+                            .align(TextAlign::Center),
+                        label("Расписание, оценки и преподаватели")
+                            .font(Font::Subheadline)
+                            .secondary()
+                            .align(TextAlign::Center),
+                    ))
+                    .spacing(6.0)
+                    .padding(Insets { top: 8.0, leading: PAD, bottom: 12.0, trailing: PAD }),
+
+                    when(
+                        move || !state.is_authenticated.get(),
+                        || column((
+                            spacer(),
+                            label("Войдите для просмотра")
+                                .font(Font::Body).secondary().align(TextAlign::Center),
+                            spacer(),
+                        )).grow(),
+                    ),
+                    when(
+                        move || state.is_authenticated.get() && state.schedule_loading.get(),
+                        move || column((
+                            spacer(),
+                            widgets::spinner::render(state, 11.0),
+                            label("  Загрузка…").font(Font::Caption).secondary(),
+                            spacer(),
+                        )).align(HAlign::Center).grow(),
+                    ),
+                    when(
+                        move || state.is_authenticated.get() && !state.schedule_loading.get(),
+                        move || schedule_content(state),
+                    ),
+                ))
+                .spacing(0.0)
+                .grow())
+                .scroll_target(jump))
+                .on_refresh(move || {
+                    let state = AppState::ambient();
+                    let done = refreshing.setter();
+                    if state.is_authenticated.get() {
+                        features::diary::load_all(state);
+                    }
+                    done.set(false);
+                })
+                .grow(),
+        ))
+        .spacing(0.0)
+        .grow(),
 
         widgets::conn_status::render()
             .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
     ))
     .align(Alignment::TopLeading)
     .grow()
+}
+
+fn today_dow() -> u32 {
+    // e-schools indexes weekdays 1=Mon..7=Sun; shift "now" to the Europe/Minsk civil
+    // day (UTC+3, no DST) first, then the epoch formula (1970-01-01 was a Thursday).
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let epoch_days = ((now + 3 * 3600) / 86_400) as i64;
+    (((epoch_days + 3) % 7 + 1) as u32).clamp(1, 7)
+}
+
+fn day_chip(
+    state: AppState,
+    jump: Signal<Option<ScrollTarget>>,
+    dow: u32,
+    today: u32,
+) -> impl Piece {
+    let is_today = dow == today;
+    label(utils::weekday_short(dow))
+        .font(Font::Footnote)
+        .weight(FontWeight::Medium)
+        .color(move || {
+            if is_today {
+                Color::hex(0xFFFFFF)
+            } else {
+                Color::hex(state.accent_color.get())
+            }
+        })
+        .padding(Insets { top: 6.0, leading: 12.0, bottom: 6.0, trailing: 12.0 })
+        .background(move || {
+            let accent = state.accent_color.get();
+            if is_today {
+                Color::hex(accent)
+            } else {
+                Color::hex(accent).with_alpha(0.12)
+            }
+        })
+        .corner_radius(14.0)
+        .on_tap(move || {
+            jump.set(Some(ScrollTarget::Id(format!("day-{dow}"))));
+        })
+        .a11y(|b| b.role(Role::Button))
+        .id(format!("chip-{dow}"))
+}
+
+fn day_chip_row(state: AppState, jump: Signal<Option<ScrollTarget>>) -> impl Piece {
+    let today = today_dow();
+    row((
+        day_chip(state, jump, 1, today),
+        day_chip(state, jump, 2, today),
+        day_chip(state, jump, 3, today),
+        day_chip(state, jump, 4, today),
+        day_chip(state, jump, 5, today),
+        day_chip(state, jump, 6, today),
+        day_chip(state, jump, 7, today),
+    ))
+    .spacing(6.0)
+    .padding(Insets { top: 46.0, leading: PAD, bottom: 6.0, trailing: PAD })
 }
 
 fn schedule_content(state: AppState) -> impl Piece {
@@ -151,32 +225,39 @@ fn day_lesson_rows(state: AppState, dow: u32) -> Vec<LessonRow> {
 }
 
 fn lesson_table_row(state: AppState, slot: ItemSlot<LessonRow, String>) -> impl Piece {
-    column((
-        row((
+    row((
+        column((
             label(move || slot.with(|r| r.num.to_string()))
-                .font(Font::Body)
-                .secondary()
-                .frame(28.0, 20.0),
-            label(move || slot.with(|r| r.time.clone()))
-                .font(Font::Body)
-                .secondary()
-                .frame(80.0, 20.0),
-            label(move || slot.with(|r| r.subject.clone()))
-                .font(Font::Body)
-                .grow(),
-        ))
-        .spacing(6.0)
-        .align(VAlign::Center)
-        .padding(Insets { top: 6.0, leading: PAD, bottom: 2.0, trailing: PAD }),
-        when(
-            move || slot.with(|r| !r.teacher.is_empty()),
-            move || label(move || format!("└ {}", slot.with(|r| r.teacher.clone())))
-                .font(Font::Caption)
+                .font(Font::Footnote)
+                .weight(FontWeight::Semibold)
                 .color(move || Color::hex(state.accent_color.get()))
-                .padding(Insets { top: 0.0, leading: 60.0, bottom: 6.0, trailing: PAD }),
-        ),
+                .align(TextAlign::Center)
+                .frame(26.0, 16.0),
+            label(move || slot.with(|r| r.time.clone()))
+                .font(Font::Caption2)
+                .secondary()
+                .align(TextAlign::Center),
+        ))
+        .spacing(3.0)
+        .align(HAlign::Center),
+        column((
+            label(move || slot.with(|r| r.subject.clone())).font(Font::Body),
+            when(
+                move || slot.with(|r| !r.teacher.is_empty()),
+                move || label(move || slot.with(|r| r.teacher.clone()))
+                    .font(Font::Caption)
+                    .color(move || Color::hex(state.accent_color.get())),
+            ),
+        ))
+        .spacing(3.0)
+        .grow(),
     ))
-    .spacing(0.0)
+    .spacing(12.0)
+    .align(VAlign::Center)
+    .padding(Insets { top: 10.0, leading: 12.0, bottom: 10.0, trailing: 12.0 })
+    .background(Color::rgba(0.95, 0.95, 0.97, 1.0))
+    .corner_radius(10.0)
+    .padding(Insets { top: 4.0, leading: PAD, bottom: 4.0, trailing: PAD })
 }
 
 fn timetable_day_card(state: AppState, dow: u32) -> impl Piece {
@@ -203,28 +284,15 @@ fn timetable_day_card(state: AppState, dow: u32) -> impl Piece {
             }
         })
         .font(Font::Headline)
-        .color(move || Color::hex(state.accent_color.get()))
+        .color(move || {
+            if has_lessons() {
+                Color::hex(state.accent_color.get())
+            } else {
+                colors::SECONDARY
+            }
+        })
+        .id(format!("day-{dow}"))
         .padding(Insets { top: 14.0, leading: PAD, bottom: 6.0, trailing: PAD }),
-
-        when(
-            move || has_lessons(),
-            move || row((
-                label("№")
-                    .font(Font::Caption)
-                    .secondary()
-                    .frame(28.0, 16.0),
-                label("Время")
-                    .font(Font::Caption)
-                    .secondary()
-                    .frame(80.0, 16.0),
-                label("Предмет")
-                    .font(Font::Caption)
-                    .secondary()
-                    .grow(),
-            ))
-            .spacing(6.0)
-            .padding(Insets { top: 0.0, leading: PAD, bottom: 4.0, trailing: PAD }),
-        ),
 
         when(
             move || has_lessons(),

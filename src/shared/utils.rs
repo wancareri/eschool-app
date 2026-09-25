@@ -4,6 +4,19 @@ use day::prelude::Color;
 
 use crate::shared::colors;
 
+/// Short weekday label from a 1-based day index (1 = Monday).
+pub fn weekday_short(dow: u32) -> &'static str {
+    match dow {
+        1 => "Пн",
+        2 => "Вт",
+        3 => "Ср",
+        4 => "Чт",
+        5 => "Пт",
+        6 => "Сб",
+        _ => "Вс",
+    }
+}
+
 /// Weekday name from a 1-based day index (1 = Monday).
 pub fn weekday_name(dow: u32) -> &'static str {
     match dow {
