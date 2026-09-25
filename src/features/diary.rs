@@ -351,6 +351,43 @@ fn fallback_class_id(
     }
 }
 
+/// Warm week_cache[idx] without touching the current index: called at the START of a
+/// swipe animation so the incoming page can draw real lessons while it slides in
+/// instead of the spinner its `is_loaded` gate shows on a cache miss.
+pub fn prefetch_week(state: AppState, idx: i32) {
+    if idx < 0 { return; }
+    let weeks = state.all_weeks.get();
+    if idx as usize >= weeks.len() { return; }
+    if state.week_cache.with(|c| c.contains_key(&idx)) { return; }
+    let (school_id, class_id, profile_id) = auth::get_stored_ids();
+    if school_id.is_empty() || class_id.is_empty() || profile_id.is_empty() { return; }
+    let Some(token) = auth::get_token() else { return; };
+    let uuid = weeks[idx as usize].uuid.clone();
+
+    std::thread::spawn(move || {
+        let client = blocking::build_client(&token);
+        match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &uuid)) {
+            Ok(raw) => {
+                if let Ok(lessons) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
+                    day::reactive::on_main(move || {
+                        if let Some(state) = AppState::get_main() {
+                            if state.week_cache.with(|c| c.contains_key(&idx)) {
+                                return;
+                            }
+                            let mut wc = state.week_cache.get();
+                            wc.insert(idx, lessons);
+                            cache::save_json("week_cache", &wc);
+                            state.week_cache.set(wc);
+                            nslog::nslog(&format!("[Diary] prefetch idx={idx} OK"));
+                        }
+                    });
+                }
+            }
+            Err(_) => {}
+        }
+    });
+}
+
 /// Load lessons for a specific week by index in all_weeks.
 pub fn load_week(state: AppState, new_index: i32) {
     let weeks = state.all_weeks.get();

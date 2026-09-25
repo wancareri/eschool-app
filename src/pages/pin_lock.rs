@@ -85,14 +85,26 @@ fn dot(index: usize, state: AppState) -> impl Piece {
         input.len() > index
     };
     let error = state.pin_error;
+    let s_accent = state;
 
-    zstack((
-        label(move || {
-            if error.get() { "●" } else if filled() { "●" } else { "○" }
-        })
-        .font(Font::Title2),
-    ))
-    .frame(24.0, 24.0)
+    // UIKit back-end ignores TextAlign on labels, and a glyph dot reads as text —
+    // a drawn circle keeps the state colors (accent/error) under our control.
+    when(
+        move || error.get() || filled(),
+        move || {
+            circle()
+                .fill(move || {
+                    if error.get() {
+                        colors::ERROR
+                    } else {
+                        Color::hex(s_accent.accent_color.get())
+                    }
+                })
+                .frame(16.0, 16.0)
+                .any()
+        },
+    )
+    .otherwise(move || circle().stroke(colors::SECONDARY, 1.5).frame(16.0, 16.0).any())
 }
 
 fn numpad(state: AppState) -> impl Piece {

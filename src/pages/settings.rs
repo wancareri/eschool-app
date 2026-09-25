@@ -385,13 +385,12 @@ fn pin_setup_modal(show_setup: Signal<bool>, pin_enabled: Signal<bool>) -> impl 
 }
 
 fn setup_dot(index: usize, input: Signal<String>) -> impl Piece {
-    zstack((
-        label(move || {
-            if input.get().len() > index { "●" } else { "○" }
-        })
-        .font(Font::Title2),
-    ))
-    .frame(24.0, 24.0)
+    let accent = AppState::ambient();
+    when(
+        move || input.get().len() > index,
+        move || circle().fill(move || Color::hex(accent.accent_color.get())).frame(16.0, 16.0).any(),
+    )
+    .otherwise(move || circle().stroke(colors::SECONDARY, 1.5).frame(16.0, 16.0).any())
 }
 
 fn setup_numpad(

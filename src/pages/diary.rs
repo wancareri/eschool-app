@@ -183,7 +183,7 @@ fn lessons_at(state: AppState, offset: i32) -> Vec<DaySchedule> {
 }
 
 fn pager_go(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>, dir: i32) {
-    start_week_swipe(state, drag_x, page_width, dir, 280);
+    start_week_swipe(state, drag_x, page_width, dir, 180);
 }
 
 fn start_week_swipe(
@@ -207,6 +207,7 @@ fn start_week_swipe(
         return;
     }
     WEEK_SWIPE_BUSY.store(true, Ordering::Relaxed);
+    features::diary::prefetch_week(state, new_idx);
     let w = page_width.get();
     let target = if dir > 0 { -w } else { w };
     with_animation(AnimSpec::ease_out(dur_ms), || {
@@ -246,6 +247,7 @@ fn spawn_week_slide(set_drag: day::reactive::Setter<f64>, w: f64, dur_ms: u32, n
                 return;
             }
             let target = if dir > 0 { -w } else { w };
+            features::diary::prefetch_week(state, idx + dir);
             with_animation(AnimSpec::ease_out(dur_ms), || {
                 set_drag.set(target);
             });
@@ -297,7 +299,7 @@ fn pager_drag(
                 let actual_dx = drag_x.get();
                 if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
                     let dir = if actual_dx < 0.0 { 1 } else { -1 };
-                    start_week_swipe(state, drag_x, page_width, dir, 220);
+                    start_week_swipe(state, drag_x, page_width, dir, 140);
                     return;
                 }
                 if was_horiz {
