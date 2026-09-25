@@ -131,8 +131,12 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
     if key_str.is_empty() {
         spacer().frame(72.0, 72.0).any()
     } else if key_str == "⌫" {
-        button("⌫")
-            .action(move || {
+        label("⌫")
+            .font(Font::LargeTitle)
+            .secondary()
+            .align(TextAlign::Center)
+            .frame(72.0, 72.0)
+            .on_tap(move || {
                 let mut input = s.pin_input.get();
                 if !input.is_empty() {
                     input.pop();
@@ -140,13 +144,16 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                     s.pin_error.set(false);
                 }
             })
+            .a11y(|b| b.role(Role::Button))
             .id("pin-backspace")
-            .bordered()
-            .frame(72.0, 72.0)
             .any()
     } else {
-        button(key_clone2.clone())
-            .action(move || {
+        label(key_clone2.clone())
+            .font(Font::LargeTitle)
+            .color(move || Color::hex(state.accent_color.get()))
+            .align(TextAlign::Center)
+            .frame(72.0, 72.0)
+            .on_tap(move || {
                 let mut input = s.pin_input.get();
                 if input.len() >= PIN_LENGTH {
                     return;
@@ -171,9 +178,8 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                     }
                 }
             })
+            .a11y(|b| b.role(Role::Button))
             .id(format!("pin-key-{key_clone2}"))
-            .bordered()
-            .frame(72.0, 72.0)
             .any()
     }
 }

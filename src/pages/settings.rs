@@ -326,8 +326,12 @@ fn setup_numpad(
         if k.is_empty() {
             spacer().frame(70.0, 44.0).any()
         } else if k == "⌫" {
-            button("⌫")
-                .action(move || {
+            label("⌫")
+                .font(Font::LargeTitle)
+                .secondary()
+                .align(TextAlign::Center)
+                .frame(70.0, 44.0)
+                .on_tap(move || {
                     let mut v = state.get();
                     if !v.is_empty() {
                         v.pop();
@@ -335,12 +339,17 @@ fn setup_numpad(
                         error.set("".into());
                     }
                 })
+                .a11y(|b| b.role(Role::Button))
                 .id(format!("sk-{k2}"))
-                .frame(70.0, 44.0)
                 .any()
         } else {
-            button(k.clone())
-                .action(move || {
+            let accent = AppState::ambient();
+            label(k.clone())
+                .font(Font::LargeTitle)
+                .color(move || Color::hex(accent.accent_color.get()))
+                .align(TextAlign::Center)
+                .frame(70.0, 44.0)
+                .on_tap(move || {
                     let mut v = state.get();
                     if v.len() >= 4 { return; }
                     v.push_str(&k);
@@ -364,8 +373,8 @@ fn setup_numpad(
                         }
                     }
                 })
+                .a11y(|b| b.role(Role::Button))
                 .id(format!("sk-{k2}"))
-                .frame(70.0, 44.0)
                 .any()
         }
     }
