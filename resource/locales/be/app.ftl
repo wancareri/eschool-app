@@ -3,7 +3,7 @@
 app_title = ESchool
 
 nav_diary = Дзённік
-nav_schedule = Навучанне
+nav_schedule = Расклад
 nav_teachers = Настаўнікі
 nav_settings = Налады
 nav_login = Уліковы запіс
@@ -36,6 +36,6 @@ field_rating = Ацэнка
 field_color = Колер
 
 diary_title = Дзённік
-schedule_title = Навучанне
+schedule_title = Расклад
 teachers_title = Настаўнікі
 settings_title = Налады

@@ -6,18 +6,20 @@ use crate::widgets;
 use crate::res;
 use day::prelude::*;
 use day_piece_pullrefresh::pull_to_refresh;
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 
 const PAD: f64 = 20.0;
 const SWIPE_THRESHOLD: f64 = 36.0;
 const SWIPE_AXIS_LOCK: f64 = 8.0;
 const SWIPE_EDGE_DAMP: f64 = 0.3;
 
-// A swipe's `load_week` lands only after its slide thread sleeps, so a swipe
-// inside that window reads the stale index and targets the same week. One
-// flight at a time; extra swipes queue here and chain after the load.
-static WEEK_SWIPE_BUSY: AtomicBool = AtomicBool::new(false);
-static WEEK_SWIPE_QUEUE: AtomicI32 = AtomicI32::new(0);
+// Every swipe bumps SWIPE_GEN and records its landing target in SWIPE_PENDING.
+// The landing of a flight whose generation is stale returns without touching
+// drag/index (its prefetch already warmed the cache), so a gesture during a
+// flight can never be stomped by the old flight's load; basing the next swipe
+// on PENDING (not the still-unchanged index) makes N rapid swipes land N pages.
+static SWIPE_GEN: AtomicU64 = AtomicU64::new(0);
+static SWIPE_PENDING: AtomicI32 = AtomicI32::new(-1);
 
 pub fn get_screen_width() -> f64 {
     #[cfg(target_os = "ios")]
@@ -33,6 +35,23 @@ pub fn get_screen_width() -> f64 {
         }
     }
     390.0
+}
+
+#[allow(deprecated)] // same UIScreen::mainScreen pattern as get_screen_width above
+pub fn get_screen_height() -> f64 {
+    #[cfg(target_os = "ios")]
+    {
+        use objc2::MainThreadMarker;
+        use objc2_ui_kit::UIScreen;
+        if let Some(mtm) = MainThreadMarker::new() {
+            let screen = UIScreen::mainScreen(mtm);
+            let bounds = screen.bounds();
+            if bounds.size.height > 50.0 {
+                return bounds.size.height as f64;
+            }
+        }
+    }
+    844.0
 }
 
 pub fn render() -> impl Piece {
@@ -193,65 +212,50 @@ fn start_week_swipe(
     dir: i32,
     dur_ms: u32,
 ) {
-    if WEEK_SWIPE_BUSY.load(Ordering::Relaxed) {
-        WEEK_SWIPE_QUEUE.fetch_add(dir, Ordering::Relaxed);
-        return;
-    }
-    let idx = state.current_week_index.get();
+    let pending = SWIPE_PENDING.load(Ordering::Relaxed);
+    let base = if pending >= 0 { pending } else { state.current_week_index.get() };
     let total = state.all_weeks.get().len() as i32;
-    let new_idx = idx + dir;
+    let new_idx = base + dir;
     if new_idx < 0 || new_idx >= total {
-        with_animation(AnimSpec::ease_out(180), || {
-            drag_x.set(0.0);
-        });
+        // Out of range: never touch a committed flight — only spring a resting drag.
+        if pending < 0 {
+            with_animation(AnimSpec::ease_out(180), || {
+                drag_x.set(0.0);
+            });
+        }
         return;
     }
-    WEEK_SWIPE_BUSY.store(true, Ordering::Relaxed);
+    SWIPE_PENDING.store(new_idx, Ordering::Relaxed);
+    let my_gen = SWIPE_GEN.fetch_add(1, Ordering::Relaxed) + 1;
     features::diary::prefetch_week(state, new_idx);
     let w = page_width.get();
     let target = if dir > 0 { -w } else { w };
     with_animation(AnimSpec::ease_out(dur_ms), || {
         drag_x.set(target);
     });
-    spawn_week_slide(drag_x.setter(), w, dur_ms, new_idx);
+    spawn_week_slide(drag_x.setter(), dur_ms, new_idx, my_gen);
 }
 
-fn spawn_week_slide(set_drag: day::reactive::Setter<f64>, w: f64, dur_ms: u32, new_idx: i32) {
+fn spawn_week_slide(
+    set_drag: day::reactive::Setter<f64>,
+    dur_ms: u32,
+    new_idx: i32,
+    my_gen: u64,
+) {
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(dur_ms as u64));
         day::reactive::on_main(move || {
+            if SWIPE_GEN.load(Ordering::Relaxed) != my_gen {
+                // Superseded by a newer swipe: it owns drag/index now.
+                return;
+            }
             day::reactive::batch(|| {
                 if let Some(state) = AppState::get_main() {
                     features::diary::load_week(state, new_idx);
                 }
                 set_drag.set(0.0);
             });
-            let q = WEEK_SWIPE_QUEUE.swap(0, Ordering::Relaxed);
-            if q == 0 {
-                WEEK_SWIPE_BUSY.store(false, Ordering::Relaxed);
-                return;
-            }
-            let dir = q.signum();
-            if q.abs() > 1 {
-                WEEK_SWIPE_QUEUE.store(q - dir, Ordering::Relaxed);
-            }
-            let Some(state) = AppState::get_main() else {
-                WEEK_SWIPE_BUSY.store(false, Ordering::Relaxed);
-                return;
-            };
-            let idx = state.current_week_index.get();
-            let total = state.all_weeks.get().len() as i32;
-            if idx + dir < 0 || idx + dir >= total {
-                WEEK_SWIPE_QUEUE.store(0, Ordering::Relaxed);
-                WEEK_SWIPE_BUSY.store(false, Ordering::Relaxed);
-                return;
-            }
-            let target = if dir > 0 { -w } else { w };
-            features::diary::prefetch_week(state, idx + dir);
-            with_animation(AnimSpec::ease_out(dur_ms), || {
-                set_drag.set(target);
-            });
-            spawn_week_slide(set_drag, w, dur_ms, idx + dir);
+            SWIPE_PENDING.store(-1, Ordering::Relaxed);
         });
     });
 }
@@ -294,9 +298,20 @@ fn pager_drag(
                 }
             }
             DragPhase::Ended => {
-                let was_horiz = axis.get() == Some(true);
+                let mut was_horiz = axis.get() == Some(true);
+                let mut actual_dx = drag_x.get();
+                // A fast fling can arrive as Began→Ended with no Changed large
+                // enough to resolve the axis; honor it from the raw delta.
+                if !was_horiz
+                    && axis.get().is_none()
+                    && dx.abs() >= SWIPE_THRESHOLD
+                    && dx.abs() > dy.abs()
+                {
+                    was_horiz = true;
+                    actual_dx = dx;
+                    drag_x.set(dx);
+                }
                 axis.set(None);
-                let actual_dx = drag_x.get();
                 if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
                     let dir = if actual_dx < 0.0 { 1 } else { -1 };
                     start_week_swipe(state, drag_x, page_width, dir, 140);
@@ -705,10 +720,20 @@ fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
 }
 
 fn quarter_summary_header() -> impl Piece {
+    // frame(w, 0.0) forced the cell node's height to zero (FrameLayout reports
+    // Some(0.0) as-is) and a stretched label sits flush-left on UIKit; the
+    // zstack keeps hug height while width() pins the column and OverlayLayout
+    // centers the text.
     row((
         label("Предмет").font(Font::Caption).secondary().grow(),
-        label("Ср. балл").font(Font::Caption).secondary().frame(72.0, 0.0).align(TextAlign::Center),
-        label("Выставл.").font(Font::Caption).secondary().frame(68.0, 0.0).align(TextAlign::Center),
+        zstack((
+            label("Ср. балл").font(Font::Caption).secondary().align(TextAlign::Center),
+        ))
+        .width(72.0),
+        zstack((
+            label("Выставл.").font(Font::Caption).secondary().align(TextAlign::Center),
+        ))
+        .width(68.0),
     ))
     .spacing(8.0)
     .padding(Insets { top: 6.0, leading: PAD, bottom: 6.0, trailing: PAD })
@@ -717,12 +742,12 @@ fn quarter_summary_header() -> impl Piece {
 fn year_summary_header() -> impl Piece {
     row((
         label("Предмет").font(Font::Caption).secondary().grow(),
-        label("I").font(Font::Caption).secondary().frame(28.0, 0.0).align(TextAlign::Center),
-        label("II").font(Font::Caption).secondary().frame(28.0, 0.0).align(TextAlign::Center),
-        label("III").font(Font::Caption).secondary().frame(28.0, 0.0).align(TextAlign::Center),
-        label("IV").font(Font::Caption).secondary().frame(28.0, 0.0).align(TextAlign::Center),
-        label("Ср.").font(Font::Caption).secondary().frame(42.0, 0.0).align(TextAlign::Center),
-        label("Год").font(Font::Caption).secondary().frame(42.0, 0.0).align(TextAlign::Center),
+        zstack((label("I").font(Font::Caption).secondary().align(TextAlign::Center),)).width(28.0),
+        zstack((label("II").font(Font::Caption).secondary().align(TextAlign::Center),)).width(28.0),
+        zstack((label("III").font(Font::Caption).secondary().align(TextAlign::Center),)).width(28.0),
+        zstack((label("IV").font(Font::Caption).secondary().align(TextAlign::Center),)).width(28.0),
+        zstack((label("Ср.").font(Font::Caption).secondary().align(TextAlign::Center),)).width(42.0),
+        zstack((label("Год").font(Font::Caption).secondary().align(TextAlign::Center),)).width(42.0),
     ))
     .spacing(4.0)
     .padding(Insets { top: 6.0, leading: 12.0, bottom: 6.0, trailing: 12.0 })
@@ -817,65 +842,60 @@ fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
             column((
                 row((
                     label(subj_name).font(Font::Body).grow(),
-                    // 1. Выходящая: средний балл по оценкам (реактивно!)
-                    label(move || {
-                        let cur_q = (st1.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                        let marks = get_quarter_marks_map(st1, cur_q);
-                        let avg = marks.get(&sj1).and_then(|v| {
-                            if v.is_empty() { None } else { Some(v.iter().sum::<f64>() / v.len() as f64) }
-                        });
-                        match avg {
-                            Some(v) => format!("{:.2}", v),
-                            None => "—".into(),
-                        }
-                    })
-                    .font(Font::Headline)
-                    .color(move || {
-                        let cur_q = (st2.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                        let marks = get_quarter_marks_map(st2, cur_q);
-                        let avg = marks.get(&sj2).and_then(|v| {
-                            if v.is_empty() { None } else { Some(v.iter().sum::<f64>() / v.len() as f64) }
-                        });
-                        match avg {
-                            Some(v) => utils::avg_grade_color(v),
-                            None => colors::SECONDARY,
-                        }
-                    })
-                    .frame(72.0, 0.0)
-                    .align(TextAlign::Center),
+                    // 1. Расчётный средний балл по оценкам четверти (реактивно!)
+                    zstack((
+                        label(move || {
+                            let cur_q = (st1.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+                            let marks = get_quarter_marks_map(st1, cur_q);
+                            let avg = marks.get(&sj1).and_then(|v| {
+                                if v.is_empty() { None } else { Some(v.iter().sum::<f64>() / v.len() as f64) }
+                            });
+                            match avg {
+                                Some(v) => format!("{:.2}", v),
+                                None => "—".into(),
+                            }
+                        })
+                        .font(Font::Headline)
+                        .color(move || {
+                            let cur_q = (st2.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+                            let marks = get_quarter_marks_map(st2, cur_q);
+                            let avg = marks.get(&sj2).and_then(|v| {
+                                if v.is_empty() { None } else { Some(v.iter().sum::<f64>() / v.len() as f64) }
+                            });
+                            match avg {
+                                Some(v) => utils::avg_grade_color(v),
+                                None => colors::SECONDARY,
+                            }
+                        })
+                        .align(TextAlign::Center),
+                    ))
+                    .width(72.0),
 
-                    // 2. Выставленная: выставленная итоговая оценка (реактивно!)
-                    label(move || {
-                        let cur_q = (st3.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                        let off = get_quarter_official_map(st3, cur_q);
-                        let marks = get_quarter_marks_map(st3, cur_q);
-                        let final_val = off.get(&sj3).and_then(|v| v.last()).map(|m| m.value).or_else(|| {
-                            marks.get(&sj3).and_then(|v| {
-                                if v.is_empty() { None } else { Some((v.iter().sum::<f64>() / v.len() as f64).round()) }
-                            })
-                        });
-                        match final_val {
-                            Some(v) => format!("{:.0}", v),
-                            None => "—".into(),
-                        }
-                    })
-                    .font(Font::Headline)
-                    .color(move || {
-                        let cur_q = (st4.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                        let off = get_quarter_official_map(st4, cur_q);
-                        let marks = get_quarter_marks_map(st4, cur_q);
-                        let final_val = off.get(&sj4).and_then(|v| v.last()).map(|m| m.value).or_else(|| {
-                            marks.get(&sj4).and_then(|v| {
-                                if v.is_empty() { None } else { Some((v.iter().sum::<f64>() / v.len() as f64).round()) }
-                            })
-                        });
-                        match final_val {
-                            Some(v) => utils::avg_grade_color(v),
-                            None => colors::SECONDARY,
-                        }
-                    })
-                    .frame(68.0, 0.0)
-                    .align(TextAlign::Center),
+                    // 2. Официальная, выставленная учителем в конце четверти;
+                    // без неё — прочерк, среднее не подставляется.
+                    zstack((
+                        label(move || {
+                            let cur_q = (st3.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+                            let off = get_quarter_official_map(st3, cur_q);
+                            let final_val = off.get(&sj3).and_then(|v| v.last()).map(|m| m.value);
+                            match final_val {
+                                Some(v) => format!("{:.0}", v),
+                                None => "—".into(),
+                            }
+                        })
+                        .font(Font::Headline)
+                        .color(move || {
+                            let cur_q = (st4.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+                            let off = get_quarter_official_map(st4, cur_q);
+                            let final_val = off.get(&sj4).and_then(|v| v.last()).map(|m| m.value);
+                            match final_val {
+                                Some(v) => utils::avg_grade_color(v),
+                                None => colors::SECONDARY,
+                            }
+                        })
+                        .align(TextAlign::Center),
+                    ))
+                    .width(68.0),
                 ))
                 .spacing(8.0)
                 .padding(Insets { top: 8.0, leading: PAD, bottom: 8.0, trailing: PAD }),
@@ -928,36 +948,38 @@ fn year_q_cell(state: AppState, subject: String, q: usize) -> impl Piece {
     let s2 = state;
     let sj1 = subject.clone();
     let sj2 = subject;
-    label(move || {
-        let marks = get_quarter_marks_map(s1, q);
-        if let Some(v) = marks.get(&*sj1) {
-            if !v.is_empty() {
-                return format!("{:.0}", (v.iter().sum::<f64>() / v.len() as f64).round());
-            }
-        }
-        let yqd = s1.year_quarter_data.get();
-        if let Some((_, m)) = yqd.get(q) {
-            if let Some(v) = m.get(&*sj1) {
+    zstack((
+        label(move || {
+            let marks = get_quarter_marks_map(s1, q);
+            if let Some(v) = marks.get(&*sj1) {
                 if !v.is_empty() {
                     return format!("{:.0}", (v.iter().sum::<f64>() / v.len() as f64).round());
                 }
             }
-        }
-        "—".into()
-    })
-    .font(Font::Subheadline)
-    .color(move || {
-        let marks = get_quarter_marks_map(s2, q);
-        let avg = marks.get(&*sj2).and_then(|v| {
-            if v.is_empty() { None } else { Some(v.iter().sum::<f64>() / v.len() as f64) }
-        });
-        match avg {
-            Some(v) => utils::avg_grade_color(v),
-            None => colors::SECONDARY,
-        }
-    })
-    .align(TextAlign::Center)
-    .frame(28.0, 0.0)
+            let yqd = s1.year_quarter_data.get();
+            if let Some((_, m)) = yqd.get(q) {
+                if let Some(v) = m.get(&*sj1) {
+                    if !v.is_empty() {
+                        return format!("{:.0}", (v.iter().sum::<f64>() / v.len() as f64).round());
+                    }
+                }
+            }
+            "—".into()
+        })
+        .font(Font::Subheadline)
+        .color(move || {
+            let marks = get_quarter_marks_map(s2, q);
+            let avg = marks.get(&*sj2).and_then(|v| {
+                if v.is_empty() { None } else { Some(v.iter().sum::<f64>() / v.len() as f64) }
+            });
+            match avg {
+                Some(v) => utils::avg_grade_color(v),
+                None => colors::SECONDARY,
+            }
+        })
+        .align(TextAlign::Center),
+    ))
+    .width(28.0)
 }
 
 fn calc_year_avg(state: AppState, subject: &str) -> Option<f64> {
@@ -980,23 +1002,25 @@ fn year_avg_cell(state: AppState, subject: String) -> impl Piece {
     let s2 = state;
     let sj1 = subject.clone();
     let sj2 = subject;
-    label(move || {
-        let avg = calc_year_avg(s1, &sj1);
-        match avg {
-            Some(v) => format!("{:.2}", v),
-            None => "—".into(),
-        }
-    })
-    .font(Font::Headline)
-    .color(move || {
-        let avg = calc_year_avg(s2, &sj2);
-        match avg {
-            Some(v) => utils::avg_grade_color(v),
-            None => colors::SECONDARY,
-        }
-    })
-    .align(TextAlign::Center)
-    .frame(42.0, 0.0)
+    zstack((
+        label(move || {
+            let avg = calc_year_avg(s1, &sj1);
+            match avg {
+                Some(v) => format!("{:.2}", v),
+                None => "—".into(),
+            }
+        })
+        .font(Font::Headline)
+        .color(move || {
+            let avg = calc_year_avg(s2, &sj2);
+            match avg {
+                Some(v) => utils::avg_grade_color(v),
+                None => colors::SECONDARY,
+            }
+        })
+        .align(TextAlign::Center),
+    ))
+    .width(42.0)
 }
 
 fn year_final_cell(state: AppState, subject: String) -> impl Piece {
@@ -1004,33 +1028,27 @@ fn year_final_cell(state: AppState, subject: String) -> impl Piece {
     let s2 = state;
     let sj1 = subject.clone();
     let sj2 = subject;
-    label(move || {
-        let off = s1.official_marks.get();
-        if let Some(om) = off.get(&*sj1).and_then(|v| v.last()) {
-            format!("{:.0}", om.value)
-        } else {
-            let avg = calc_year_avg(s1, &sj1);
-            match avg {
-                Some(v) => format!("{:.0}", v.round()),
+    zstack((
+        label(move || {
+            // Strictly the official year mark — a calculated average is not a
+            // teacher's decision, so an unset mark renders as a dash.
+            let off = s1.official_marks.get();
+            match off.get(&*sj1).and_then(|v| v.last()) {
+                Some(om) => format!("{:.0}", om.value),
                 None => "—".into(),
             }
-        }
-    })
-    .font(Font::Headline)
-    .color(move || {
-        let off = s2.official_marks.get();
-        let val = if let Some(om) = off.get(&*sj2).and_then(|v| v.last()) {
-            Some(om.value)
-        } else {
-            calc_year_avg(s2, &sj2).map(|v| v.round())
-        };
-        match val {
-            Some(v) => utils::avg_grade_color(v),
-            None => colors::SECONDARY,
-        }
-    })
-    .align(TextAlign::Center)
-    .frame(42.0, 0.0)
+        })
+        .font(Font::Headline)
+        .color(move || {
+            let off = s2.official_marks.get();
+            match off.get(&*sj2).and_then(|v| v.last()) {
+                Some(om) => utils::avg_grade_color(om.value),
+                None => colors::SECONDARY,
+            }
+        })
+        .align(TextAlign::Center),
+    ))
+    .width(42.0)
 }
 
 // ── Structs ────────────────────────────────────────────────────────────

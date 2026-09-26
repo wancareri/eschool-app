@@ -80,6 +80,7 @@ pub struct AppState {
     pub bell_times: Signal<Vec<BellTime>>,
     pub timetable_days: Signal<Vec<TimetableDay>>,
     pub schedule_loading: Signal<bool>,
+    pub schedule_day: Signal<u32>,
 
     // ── dev ────────────────────────────────────────────────────────────────
     pub log_version: Signal<u64>,
@@ -91,6 +92,12 @@ pub struct AppState {
     // ── connection status ──────────────────────────────────────────────────
     pub conn_status: Signal<ConnStatus>,
     pub show_network_modal: Signal<bool>,
+    // Shared across the four conn_status island instances so a change made on
+    // one tab is visible on the others instead of four diverging local copies.
+    pub island_expanded: Signal<bool>,
+    pub island_text_opacity: Signal<f64>,
+    pub island_scale: Signal<f64>,
+    pub island_fx: Signal<f64>,
 }
 
 impl Ambient for AppState {
@@ -162,10 +169,15 @@ impl Ambient for AppState {
             bell_times: Signal::new(Vec::new()),
             timetable_days: Signal::new(Vec::new()),
             schedule_loading: Signal::new(false),
+            schedule_day: Signal::new(crate::shared::utils::today_dow()),
             subjects_teachers: Signal::new(Vec::new()),
             teachers_loading: Signal::new(false),
             conn_status: Signal::new(ConnStatus::Idle),
             show_network_modal: Signal::new(false),
+            island_expanded: Signal::new(false),
+            island_text_opacity: Signal::new(0.0),
+            island_scale: Signal::new(1.0),
+            island_fx: Signal::new(1.0),
             log_version: Signal::new(0u64),
         };
 

@@ -6,17 +6,23 @@ use day::prelude::*;
 
 static COLLAPSE_GEN: AtomicU64 = AtomicU64::new(0);
 
-fn expand_island(setter_exp: Setter<bool>, setter_op: Setter<f64>) {
-    with_animation(Animation::ease_out(220), move || {
-        setter_exp.set(true);
+fn expand_island(state: AppState) {
+    let exp = state.island_expanded.setter();
+    let op = state.island_text_opacity.setter();
+    let sc = state.island_scale.setter();
+    let fx = state.island_fx.setter();
+    // Masked pop-in: the capsule starts invisible (fx 0) and scaled 0.85, so
+    // the width can reach its final value without the corner-growth artifact;
+    // the fade+scale that follows reveals it from its own center.
+    with_animation(AnimSpec::ease_out(0), move || {
+        exp.set(true);
+        sc.set(0.85);
+        fx.set(0.0);
+        op.set(1.0);
     });
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(40));
-        day::reactive::on_main(move || {
-            with_animation(Animation::ease_out(180), move || {
-                setter_op.set(1.0);
-            });
-        });
+    with_animation(AnimSpec::ease_out(220), move || {
+        sc.set(1.0);
+        fx.set(1.0);
     });
 }
 
@@ -34,7 +40,10 @@ fn collapse_island(setter_exp: Setter<bool>, setter_op: Setter<f64>) {
     });
 }
 
-fn schedule_collapse(setter_exp: Setter<bool>, setter_op: Setter<f64>) {
+fn schedule_collapse(state: AppState) {
+    // Setters (Send) cross the thread boundary — AppState/Signal cannot.
+    let setter_exp = state.island_expanded.setter();
+    let setter_op = state.island_text_opacity.setter();
     let gen_id = COLLAPSE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(3000));
@@ -98,21 +107,23 @@ fn accent_dark_bg(hex: u32, alpha: f64) -> Color {
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
-    let expanded = Signal::new(true);
-    let text_opacity = Signal::new(1.0);
-    let setter_exp = expanded.setter();
-    let setter_op = text_opacity.setter();
 
-    // Initial collapse after 3 seconds
-    schedule_collapse(setter_exp, setter_op);
+    // Shared signals: all four mounted instances show one state — a change
+    // made on one tab is already applied when another tab comes back.
+    let expanded = state.island_expanded;
+    let text_opacity = state.island_text_opacity;
 
-    // Watch for connection status updates to re-expand island
+    // Watch for connection status updates to reveal the island (full → collapse
+    // after 3 s). Nothing on mount: the island starts compact, so the initial
+    // callback (old_st == None) must not count as a change.
     watch(
         move || state.conn_status.get(),
         move |new_st, old_st| {
-            if old_st != Some(new_st) {
-                expand_island(setter_exp, setter_op);
-                schedule_collapse(setter_exp, setter_op);
+            if let Some(old) = old_st {
+                if old != new_st {
+                    expand_island(state);
+                    schedule_collapse(state);
+                }
             }
         },
     );
@@ -197,19 +208,10 @@ pub fn render() -> impl Piece {
     })
     .corner_radius(14.0)
     .animation(Animation::ease_out(220))
+    .scale(move || state.island_scale.get())
+    .opacity(move || state.island_fx.get())
     .on_tap(move || {
-        let cur_st = state.conn_status.get();
-        if cur_st == ConnStatus::Error || cur_st == ConnStatus::Offline {
-            state.show_network_modal.set(true);
-        } else {
-            let cur = expanded.get();
-            if !cur {
-                expand_island(setter_exp, setter_op);
-                schedule_collapse(setter_exp, setter_op);
-            } else {
-                collapse_island(setter_exp, setter_op);
-            }
-        }
+        state.show_network_modal.set(true);
     });
 
     apply_glass_blur(content)

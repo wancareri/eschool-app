@@ -5,6 +5,12 @@ use crate::res;
 use crate::shared::{biometric, colors, nslog, pin};
 use day::prelude::*;
 use day_piece_texteditor::text_editor;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+// Retarget-safe switch: a new switch (picker tap or drag commit) bumps the
+// generation, and only the still-current landing commits displayed_tab —
+// requests are never dropped while an animation is in flight.
+static SWITCH_GEN: AtomicU64 = AtomicU64::new(0);
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
@@ -18,14 +24,12 @@ pub fn render() -> impl Piece {
     );
     let displayed_tab = Signal::new(current_tab.get());
     let tab_dx = Signal::new(0.0f64);
-    let incoming: Signal<Option<(usize, f64)>> = Signal::new(None);
-    let animating = Signal::new(false);
     let pager_w = crate::pages::diary::get_screen_width();
 
     day::reactive::watch(
         move || current_tab.get(),
         move |&t, _| {
-            start_switch(t, displayed_tab, incoming, tab_dx, animating, pager_w);
+            start_switch(t, displayed_tab, tab_dx, pager_w);
         },
     );
     day::reactive::watch(
@@ -33,14 +37,7 @@ pub fn render() -> impl Piece {
         move |&shown, _| {
             let want = current_tab.get();
             if want != shown {
-                start_switch(
-                    want,
-                    displayed_tab,
-                    incoming,
-                    tab_dx,
-                    animating,
-                    pager_w,
-                );
+                start_switch(want, displayed_tab, tab_dx, pager_w);
             }
         },
     );
@@ -70,14 +67,18 @@ pub fn render() -> impl Piece {
         },
     );
 
-    
     let axis: Signal<Option<bool>> = Signal::new(None);
+    let drag_base = Signal::new(0.0f64);
     let drag_handler = move |drag: Drag| {
         let dx = drag.translation.x;
         let dy = drag.translation.y;
         match drag.phase {
             DragPhase::Began => {
                 axis.set(None);
+                // The finger takes the pager over: any in-flight switch landing
+                // is invalidated and the drag continues from the current offset.
+                SWITCH_GEN.fetch_add(1, Ordering::Relaxed);
+                drag_base.set(tab_dx.get());
             }
             DragPhase::Changed => {
                 let mut horiz = axis.get();
@@ -85,17 +86,55 @@ pub fn render() -> impl Piece {
                     horiz = Some(dx.abs() >= dy.abs() * 0.7);
                     axis.set(horiz);
                 }
+                if horiz == Some(false) && dx.abs() > 24.0 && dx.abs() > dy.abs() * 1.2 {
+                    horiz = Some(true);
+                    axis.set(horiz);
+                }
+                if horiz == Some(true) {
+                    let shown = displayed_tab.get();
+                    let mut disp = dx;
+                    if shown == 0 && disp > 0.0 {
+                        disp *= 0.3;
+                    }
+                    if shown == 3 && disp < 0.0 {
+                        disp *= 0.3;
+                    }
+                    tab_dx.set(drag_base.get() + disp);
+                }
             }
             DragPhase::Ended => {
-                let was_horiz = axis.get() == Some(true);
+                let mut was_horiz = axis.get() == Some(true);
+                if !was_horiz
+                    && axis.get().is_none()
+                    && dx.abs() >= 40.0
+                    && dx.abs() > dy.abs()
+                {
+                    was_horiz = true;
+                    tab_dx.set(drag_base.get() + dx);
+                }
                 axis.set(None);
-                if was_horiz && dx.abs() >= 40.0 {
-                    let cur = current_tab.get();
-                    if dx < -40.0 && cur < 3 {
-                        current_tab.set(cur + 1);
-                    } else if dx > 40.0 && cur > 0 {
-                        current_tab.set(cur - 1);
+                let disp = tab_dx.get() - drag_base.get();
+                if was_horiz && disp.abs() >= 40.0 {
+                    let shown = displayed_tab.get();
+                    if disp < 0.0 && shown < 3 {
+                        current_tab.set(shown + 1);
+                        return;
                     }
+                    if disp > 0.0 && shown > 0 {
+                        current_tab.set(shown - 1);
+                        return;
+                    }
+                }
+                // No commit: the Began cancel killed any in-flight landing, so
+                // slide home and drop the picker back to the displayed tab —
+                // otherwise current_tab and displayed_tab would diverge and a
+                // re-tap of the highlighted segment would do nothing.
+                with_animation(AnimSpec::ease_out(180), move || {
+                    tab_dx.set(0.0);
+                });
+                let shown = displayed_tab.get();
+                if current_tab.get() != shown {
+                    current_tab.set(shown);
                 }
             }
         }
@@ -123,23 +162,21 @@ pub fn render() -> impl Piece {
 
         scroll(column((
             zstack((
+                // Full four-page carousel: idle pages sit at ±w/±2w, tab_dx
+                // drags them like diary week cards, and a switch keeps the
+                // old page visually continuous until the landing batch.
                 each(
-                    items(move || vec![displayed_tab.get()], |t: &usize| *t),
+                    items(move || vec![0usize, 1, 2, 3], |t| *t),
                     move |slot| {
                         let t = slot.with(|t: &usize| *t);
                         tab_body(state, t, pin_enabled)
-                            .translation(move || tab_dx.get(), 0.0)
-                    },
-                ),
-                each(
-                    items(
-                        move || incoming.get().map(|k| vec![k]).unwrap_or_default(),
-                        |k: &(usize, f64)| k.0,
-                    ),
-                    move |slot| {
-                        let (t, dir) = slot.with(|k: &(usize, f64)| *k);
-                        tab_body(state, t, pin_enabled)
-                            .translation(move || tab_dx.get() + dir * pager_w, 0.0)
+                            .translation(
+                                move || {
+                                    tab_dx.get()
+                                        + (t as f64 - displayed_tab.get() as f64) * pager_w
+                                },
+                                0.0,
+                            )
                     },
                 ),
             ))
@@ -162,34 +199,34 @@ pub fn render() -> impl Piece {
     .any())
 }
 
-fn start_switch(
-    target: usize,
-    displayed_tab: Signal<usize>,
-    incoming: Signal<Option<(usize, f64)>>,
-    tab_dx: Signal<f64>,
-    animating: Signal<bool>,
-    w: f64,
-) {
+fn start_switch(target: usize, displayed_tab: Signal<usize>, tab_dx: Signal<f64>, w: f64) {
     let shown = displayed_tab.get();
-    if animating.get() || target == shown {
+    if target == shown {
+        // Retarget onto the page already displayed (e.g. the picker tapped
+        // back mid-flight): cancel and slide home.
+        SWITCH_GEN.fetch_add(1, Ordering::Relaxed);
+        with_animation(AnimSpec::ease_out(180), move || {
+            tab_dx.set(0.0);
+        });
         return;
     }
     let dir = if target > shown { 1.0 } else { -1.0 };
-    animating.set(true);
-    incoming.set(Some((target, dir)));
+    let dist = (target as i32 - shown as i32).abs() as f64;
+    let my_gen = SWITCH_GEN.fetch_add(1, Ordering::Relaxed) + 1;
     with_animation(AnimSpec::ease_out(280), move || {
-        tab_dx.set(-dir * w);
+        // The target page sits `dist` slots away, so it lands at 0 only after
+        // tab_dx covers the whole gap (a picker jump of 0 → 2 is two pages).
+        tab_dx.set(-dir * dist * w);
     });
     let d = displayed_tab.setter();
-    let i = incoming.setter();
     let dx = tab_dx.setter();
-    let a = animating.setter();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(280));
         day::reactive::on_main(move || {
+            if SWITCH_GEN.load(Ordering::Relaxed) != my_gen {
+                return;
+            }
             day::reactive::batch(|| {
-                a.set(false);
-                i.set(None);
                 dx.set(0.0);
                 d.set(target);
             });

@@ -48,6 +48,17 @@ pub fn format_date_header(dow: u32, ts: u64) -> String {
     format!("{}, {}", dow_name, format_date_short(ts))
 }
 
+/// Current weekday as a 1-based index (1 = Monday), computed from the system clock
+/// using the same Europe/Minsk day-rollover convention as the timestamp formatters.
+pub fn today_dow() -> u32 {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let epoch_days = ((secs + 12 * 3600) / 86_400) as i64;
+    (((epoch_days + 3) % 7 + 1) as u32).clamp(1, 7)
+}
+
 pub fn grade_color(mark: &str) -> Color {
     match mark.trim().parse::<u32>() {
         Ok(9..=10) => colors::GRADE_EXCELLENT,
