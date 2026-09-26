@@ -124,8 +124,7 @@ pub fn render() -> impl Piece {
             move || {
                 label(move || match state.conn_status.get() {
                     ConnStatus::Connecting => "Обновление…",
-                    ConnStatus::Connected => "Подключено",
-                    ConnStatus::Idle => "В сети",
+                    ConnStatus::Connected | ConnStatus::Idle => "Обновлено",
                     ConnStatus::Offline => "Оффлайн",
                     ConnStatus::Error => "Ошибка сети",
                 })
@@ -170,7 +169,9 @@ pub fn render() -> impl Piece {
     })
     .corner_radius(14.0)
     .on_tap(move || {
-        super::bottom_sheet::present(state);
+        state
+            .show_network_modal
+            .set(Some(String::from("net")));
     });
 
     apply_glass_blur(content)

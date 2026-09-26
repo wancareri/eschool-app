@@ -1,30 +1,25 @@
 use crate::app::AppState;
+use crate::res;
 use day::prelude::*;
 
-/// Compact accent-colored spinner.  Pass the desired point-size (e.g. 14.0).
+/// Compact accent-colored spinner: the `spinner.svg` loader-circle vector spun
+/// by the frame clock, tinted with the app accent. Replaces the native
+/// UIActivityIndicatorView, whose fixed 20×20 intrinsic size ignored the
+/// requested frame and rendered in the system grey. The display link only runs
+/// while this piece is mounted, so an idle app never wakes it.
 pub fn render(state: AppState, size: f64) -> impl Piece {
-    #[cfg(target_os = "ios")]
-    {
-        use day_uikit::UiKitExt;
-        let hex = state.accent_color.get();
-        let r = ((hex >> 16) & 0xFF) as f64 / 255.0;
-        let g = ((hex >> 8) & 0xFF) as f64 / 255.0;
-        let b = (hex & 0xFF) as f64 / 255.0;
-        spinner()
+    let angle = Signal::new(0.0);
+    let spin = angle;
+    zstack((
+        vector(res::vectors::spinner)
             .frame(size, size)
-            .uikit(move |view, _class, _mtm| {
-                if let Some(ai) = view.downcast_ref::<objc2_ui_kit::UIActivityIndicatorView>() {
-                    let color = objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(r, g, b, 1.0);
-                    unsafe { ai.setColor(Some(&color)) };
-                }
-            })
-            .any()
-    }
-    #[cfg(not(target_os = "ios"))]
-    {
-        let _ = state;
-        spinner()
-            .frame(size, size)
-            .any()
-    }
+            .tint(Color::hex(state.accent_color.get()))
+            .rotation(move || spin.get())
+            .any(),
+        frame_clock(move |dt| {
+            // ~one turn per second; untracked so the tick never subscribes.
+            let next = angle.get_untracked() + dt.as_secs_f64() * 360.0;
+            angle.set(if next >= 360.0 { next - 360.0 } else { next });
+        }),
+    ))
 }

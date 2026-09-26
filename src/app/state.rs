@@ -96,6 +96,9 @@ pub struct AppState {
 
     // ── connection status ──────────────────────────────────────────────────
     pub conn_status: Signal<ConnStatus>,
+    /// `Some` presents the network-status sheet as a fullscreen cover (the
+    /// value is the cover's route key; the cover is unrouted).
+    pub show_network_modal: Signal<Option<String>>,
     // Shared across the four conn_status island instances so a change made on
     // one tab is visible on the others instead of four diverging local copies.
     pub island_expanded: Signal<bool>,
@@ -176,6 +179,7 @@ impl Ambient for AppState {
             subjects_teachers: Signal::new(Vec::new()),
             teachers_loading: Signal::new(false),
             conn_status: Signal::new(ConnStatus::Idle),
+            show_network_modal: Signal::new(None),
             island_expanded: Signal::new(false),
             log_version: Signal::new(0u64),
         };
