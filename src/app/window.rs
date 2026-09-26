@@ -111,23 +111,17 @@ fn window_shell(primary: bool) -> impl Piece {
 
 fn build_nav(primary: bool) -> impl Piece {
     let state = AppState::ambient();
-    let show_modal = state.show_network_modal;
-    let s_modal = state;
 
-    // Necessary: multi-child root zstack makes iOS content_frame pad by the home
-    // inset and lifts the tab bar; single-child body keeps full-bleed layout.
-    when(
-        move || !show_modal.get(),
-        move || nav_body(state, primary).any(),
-    )
-    .otherwise(move || {
-        zstack((
-            nav_body(s_modal, primary),
-            crate::widgets::bottom_sheet::network_error_sheet(s_modal),
-        ))
-        .grow()
-        .any()
-    })
+    // The sheet is a cover: day never attaches a cover's view to this page (it
+    // lives in its own modal VC, its node measures 0×0), so the subview walk to
+    // the tab host still passes through a single-child chain and the page keeps
+    // its full-bleed frame. A root-level sheet SIBLING broke that walk —
+    // scroll_leaf saw two children, the content got pinned inside the safe area,
+    // and the tab bar lifted on every open.
+    zstack((
+        nav_body(state, primary),
+        crate::widgets::bottom_sheet::network_error_sheet(state),
+    ))
     .grow()
 }
 

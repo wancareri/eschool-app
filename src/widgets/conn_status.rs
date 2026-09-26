@@ -211,7 +211,9 @@ pub fn render() -> impl Piece {
     .scale(move || state.island_scale.get())
     .opacity(move || state.island_fx.get())
     .on_tap(move || {
-        state.show_network_modal.set(true);
+        state
+            .show_network_modal
+            .set(Some(String::from("net")));
     });
 
     apply_glass_blur(content)

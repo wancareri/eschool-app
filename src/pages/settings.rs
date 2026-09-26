@@ -22,14 +22,19 @@ pub fn render() -> impl Piece {
             day::prefs::set("app.settings_tab", &t.to_string());
         },
     );
-    let displayed_tab = Signal::new(current_tab.get());
-    let tab_dx = Signal::new(0.0f64);
+    let displayed_tab = state.settings_displayed;
+    let tab_dx = state.settings_dx;
     let pager_w = crate::pages::diary::get_screen_width();
 
+    // A watch cb runs inside the drain, where with_animation defers past its own
+    // scope and the write lands instantly (day-core anim.rs edge case — a
+    // teleport). Hop to a clean main-queue turn instead; start_switch re-derives
+    // the shared pager signals there via get_main (Signals are !Send, so nothing
+    // crosses the hop itself).
     day::reactive::watch(
         move || current_tab.get(),
         move |&t, _| {
-            start_switch(t, displayed_tab, tab_dx, pager_w);
+            day::reactive::on_main(move || start_switch(t, pager_w));
         },
     );
     day::reactive::watch(
@@ -37,7 +42,7 @@ pub fn render() -> impl Piece {
         move |&shown, _| {
             let want = current_tab.get();
             if want != shown {
-                start_switch(want, displayed_tab, tab_dx, pager_w);
+                day::reactive::on_main(move || start_switch(want, pager_w));
             }
         },
     );
@@ -199,8 +204,15 @@ pub fn render() -> impl Piece {
     .any())
 }
 
-fn start_switch(target: usize, displayed_tab: Signal<usize>, tab_dx: Signal<f64>, w: f64) {
-    let shown = displayed_tab.get();
+fn start_switch(target: usize, w: f64) {
+    // Reached from an on_main hop: the shared signals are read here, on the
+    // main thread, so the with_animation writes below drain synchronously with
+    // the intent still ambient.
+    let Some(state) = AppState::get_main() else {
+        return;
+    };
+    let tab_dx = state.settings_dx;
+    let shown = state.settings_displayed.get();
     if target == shown {
         // Retarget onto the page already displayed (e.g. the picker tapped
         // back mid-flight): cancel and slide home.
@@ -218,17 +230,18 @@ fn start_switch(target: usize, displayed_tab: Signal<usize>, tab_dx: Signal<f64>
         // tab_dx covers the whole gap (a picker jump of 0 → 2 is two pages).
         tab_dx.set(-dir * dist * w);
     });
-    let d = displayed_tab.setter();
-    let dx = tab_dx.setter();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(280));
         day::reactive::on_main(move || {
             if SWITCH_GEN.load(Ordering::Relaxed) != my_gen {
                 return;
             }
+            let Some(state) = AppState::get_main() else {
+                return;
+            };
             day::reactive::batch(|| {
-                dx.set(0.0);
-                d.set(target);
+                state.settings_dx.set(0.0);
+                state.settings_displayed.set(target);
             });
         });
     });

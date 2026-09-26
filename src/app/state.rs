@@ -56,6 +56,11 @@ pub struct AppState {
     pub ui_reload_token: Signal<u32>,
     pub current_section: Signal<crate::Section>,
     pub settings_tab: Signal<usize>,
+    // Pager visuals of the settings carousel: shared (not per-mount) so an
+    // in-flight switch landing survives a remount and start_switch can read and
+    // write them from an on_main hop, where per-render Signals cannot travel.
+    pub settings_displayed: Signal<usize>,
+    pub settings_dx: Signal<f64>,
 
     // ── diary ────────────────────────────────────────────────────────────
     pub lessons: Signal<Vec<DaySchedule>>,
@@ -91,7 +96,9 @@ pub struct AppState {
 
     // ── connection status ──────────────────────────────────────────────────
     pub conn_status: Signal<ConnStatus>,
-    pub show_network_modal: Signal<bool>,
+    /// `Some` presents the network-status sheet as a fullscreen cover (the
+    /// value is the cover's route key; the cover is unrouted).
+    pub show_network_modal: Signal<Option<String>>,
     // Shared across the four conn_status island instances so a change made on
     // one tab is visible on the others instead of four diverging local copies.
     pub island_expanded: Signal<bool>,
@@ -151,6 +158,8 @@ impl Ambient for AppState {
             ui_reload_token: Signal::new(0),
             current_section: Signal::new(saved_section),
             settings_tab: Signal::new(saved_tab),
+            settings_displayed: Signal::new(saved_tab),
+            settings_dx: Signal::new(0.0),
             lessons: Signal::new(Vec::new()),
             lessons_loading: Signal::new(false),
             current_week: Signal::new(String::new()),
@@ -173,7 +182,7 @@ impl Ambient for AppState {
             subjects_teachers: Signal::new(Vec::new()),
             teachers_loading: Signal::new(false),
             conn_status: Signal::new(ConnStatus::Idle),
-            show_network_modal: Signal::new(false),
+            show_network_modal: Signal::new(None),
             island_expanded: Signal::new(false),
             island_text_opacity: Signal::new(0.0),
             island_scale: Signal::new(1.0),
