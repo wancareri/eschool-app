@@ -111,18 +111,10 @@ fn window_shell(primary: bool) -> impl Piece {
 
 fn build_nav(primary: bool) -> impl Piece {
     let state = AppState::ambient();
-
-    // The sheet is a cover: day never attaches a cover's view to this page (it
-    // lives in its own modal VC, its node measures 0×0), so the subview walk to
-    // the tab host still passes through a single-child chain and the page keeps
-    // its full-bleed frame. A root-level sheet SIBLING broke that walk —
-    // scroll_leaf saw two children, the content got pinned inside the safe area,
-    // and the tab bar lifted on every open.
-    zstack((
-        nav_body(state, primary),
-        crate::widgets::bottom_sheet::network_error_sheet(state),
-    ))
-    .grow()
+    // The status sheet is a native dialog (widgets::bottom_sheet::present),
+    // mounted outside the tree entirely — the page root stays a single-child
+    // chain and keeps its full-bleed frame.
+    nav_body(state, primary)
 }
 
 fn nav_body(state: AppState, primary: bool) -> impl Piece {

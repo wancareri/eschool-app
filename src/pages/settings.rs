@@ -165,31 +165,31 @@ pub fn render() -> impl Piece {
         .segmented()
         .padding(Insets { top: 8.0, leading: 20.0, bottom: 16.0, trailing: 20.0 }),
 
-        scroll(column((
-            zstack((
-                // Full four-page carousel: idle pages sit at ±w/±2w, tab_dx
-                // drags them like diary week cards, and a switch keeps the
-                // old page visually continuous until the landing batch.
-                each(
-                    items(move || vec![0usize, 1, 2, 3], |t| *t),
-                    move |slot| {
-                        let t = slot.with(|t: &usize| *t);
-                        tab_body(state, t, pin_enabled)
-                            .translation(
-                                move || {
-                                    tab_dx.get()
-                                        + (t as f64 - displayed_tab.get() as f64) * pager_w
-                                },
-                                0.0,
-                            )
-                    },
-                ),
-            ))
-            .align(Alignment::TopLeading)
-            .width(pager_w),
+        // Full four-page carousel: every page carries its own scroll, so a
+        // short page ends with its content instead of inheriting the longest
+        // page's length from one shared scroll. Idle pages sit at ±w/±2w,
+        // tab_dx drags them like diary week cards, and a switch keeps the
+        // old page visually continuous until the landing batch.
+        zstack((
+            each(
+                items(move || vec![0usize, 1, 2, 3], |t| *t),
+                move |slot| {
+                    let t = slot.with(|t: &usize| *t);
+                    scroll(tab_body(state, t, pin_enabled))
+                        .translation(
+                            move || {
+                                tab_dx.get()
+                                    + (t as f64 - displayed_tab.get() as f64) * pager_w
+                            },
+                            0.0,
+                        )
+                        .width(pager_w)
+                        .grow_h()
+                },
+            ),
         ))
-        .spacing(0.0)
-        .grow())
+        .align(Alignment::TopLeading)
+        .width(pager_w)
         .grow()
     ))
     .grow()
