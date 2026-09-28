@@ -1,7 +1,7 @@
 //! Diary data loading — all school data fetching for the diary, schedule, and teachers.
 
 use crate::app::AppState;
-use crate::app::OfficialMark;
+use crate::app::FinalMarks;
 use crate::features::auth;
 use eschool_api::client::blocking;
 use eschool_api::client::endpoints;
@@ -38,7 +38,7 @@ pub fn load_all(state: AppState) {
     let set_subjects_teachers = state.subjects_teachers.setter();
     let set_lessons = state.lessons.setter();
     let set_quarter_all_marks = state.quarter_all_marks.setter();
-    let set_quarter_official_marks = state.quarter_official_marks.setter();
+    let set_final_marks = state.final_marks.setter();
     let set_lessons_loading = state.lessons_loading.setter();
     let set_is_authenticated = state.is_authenticated.setter();
     let set_conn = state.conn_status.setter();
@@ -103,11 +103,9 @@ pub fn load_all(state: AppState) {
         }
         set_quarter_all_marks.clone().set(cached_q_all);
     }
-    if let Some(cached_q_off) = cache::load_json::<Vec<std::collections::HashMap<String, Vec<OfficialMark>>>>("quarter_official_marks") {
-        if let Some(m) = cached_q_off.get(cur_q) {
-            state.official_marks.set(m.clone());
-        }
-        set_quarter_official_marks.clone().set(cached_q_off);
+    if let Some(cached_fm) = cache::load_json::<FinalMarks>("final_marks") {
+        nslog::nslog("[Cache] Loading cached final marks");
+        set_final_marks.clone().set(cached_fm);
     }
     if let Some(name) = cache::load("user_full_name") { set_full_name.set(name); }
     if let Some(school) = cache::load("user_school_name") { set_school_name.set(school); }
@@ -210,11 +208,8 @@ pub fn load_all(state: AppState) {
         // Initialize per-quarter storage
         {
             let mut q_all: Vec<std::collections::HashMap<String, Vec<f64>>> = Vec::new();
-            let mut q_off: Vec<std::collections::HashMap<String, Vec<OfficialMark>>> = Vec::new();
             q_all.resize(4, std::collections::HashMap::new());
-            q_off.resize(4, std::collections::HashMap::new());
             set_quarter_all_marks.clone().set(q_all);
-            set_quarter_official_marks.clone().set(q_off);
         }
 
         // 4 — week activities → current week → lessons
@@ -314,12 +309,45 @@ pub fn load_all(state: AppState) {
 
         // 7 — subjects with teachers
         nslog::nslog("[Diary] Loading teachers...");
+        let mut uuid_to_title: std::collections::HashMap<String, String> = std::collections::HashMap::new();
         if let Ok(subjects) = blocking::api_get::<Vec<SubjectWithTeacher>>(
             &client,
             &endpoints::subjects(&user.school_id, &user.profile_id, &class_id),
         ) {
+            uuid_to_title = subjects.iter().map(|s| (s.id.clone(), s.subject_title.clone())).collect();
             set_subjects_teachers.set(subjects.clone());
             cache::save_json("subjects_teachers", &subjects);
+        }
+        if uuid_to_title.is_empty() {
+            // Fall back to the cached list so finals still key correctly offline.
+            if let Some(cached) = cache::load_json::<Vec<SubjectWithTeacher>>("subjects_teachers") {
+                uuid_to_title = cached.iter().map(|s| (s.id.clone(), s.subject_title.clone())).collect();
+            }
+        }
+
+        // 8 — final marks (/final/whole): the ONLY trustworthy source for the
+        // «Выставл.» column. A lesson mark carries an author and a kind on
+        // ordinary grades too, so heuristics over the lessons feed displayed
+        // marks no one had ever set as a quarter final.
+        if uuid_to_title.is_empty() {
+            // Without a subject list the uuids can't be keyed; keep whatever
+            // the cache already holds rather than overwriting it with nothing.
+            nslog::nslog("[Diary] final marks: no subject map, skipping fetch");
+        } else {
+            match blocking::api_get_raw(
+                &client,
+                &endpoints::final_marks(&user.school_id, &class_id, &user.profile_id),
+            ) {
+                Ok(raw) => match parse_final_marks(&raw, &uuid_to_title) {
+                    Some(finals) => {
+                        nslog::nslog(&format!("[Diary] final marks for {} subjects", finals.len()));
+                        set_final_marks.clone().set(finals.clone());
+                        cache::save_json("final_marks", &finals);
+                    }
+                    None => nslog::nslog("[Diary] final marks: unexpected payload shape"),
+                },
+                Err(e) => nslog::nslog(&format!("[Diary] final marks failed: {e}")),
+            }
         }
 
         set_loading.set(false);
@@ -539,16 +567,13 @@ pub fn load_week(state: AppState, new_index: i32) {
     });
 }
 
-/// Extract all marks for a quarter from week_cache.
+/// Extract all marks for a quarter from week_cache (lesson averages only —
+/// final marks come from `/final/whole`, see [`crate::app::FinalMarks`]).
 pub fn extract_marks_for_quarter(
     cache: &std::collections::HashMap<i32, Vec<DaySchedule>>,
     quarter: usize,
-) -> (
-    std::collections::HashMap<String, Vec<f64>>,
-    std::collections::HashMap<String, Vec<OfficialMark>>,
-) {
+) -> std::collections::HashMap<String, Vec<f64>> {
     let mut marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
-    let mut official: std::collections::HashMap<String, Vec<OfficialMark>> = std::collections::HashMap::new();
 
     let (start, end) = if quarter < 4 {
         QUARTER_RANGES[quarter]
@@ -568,18 +593,6 @@ pub fn extract_marks_for_quarter(
                                     .or_default()
                                     .push(*val);
                             }
-                            if let Some(&first_val) = parsed.first() {
-                                let has_author = lm.author.as_ref().map(|a| !a.is_empty()).unwrap_or(false);
-                                if has_author || lm.kind.is_some() {
-                                    official.entry(slot.subject_title.clone())
-                                        .or_default()
-                                        .push(OfficialMark {
-                                            value: first_val,
-                                            kind: lm.kind.clone().unwrap_or_default(),
-                                            author: lm.author.clone().unwrap_or_default(),
-                                        });
-                                }
-                            }
                         }
                     }
                 }
@@ -587,7 +600,40 @@ pub fn extract_marks_for_quarter(
         }
     }
 
-    (marks, official)
+    marks
+}
+
+/// Parse `/final/whole` into `{subject title → {period → mark}}`.
+///
+/// The payload keys marks by subject uuid:
+/// `{ "marks": { "<uuid>": { "FIRST_QUARTER": {"mark":"5"}, …, "YEAR": {…} } } }`,
+/// so uuids are mapped to titles through the subjects list; entries for
+/// subjects we don't know are skipped.
+fn parse_final_marks(
+    raw: &str,
+    uuid_to_title: &std::collections::HashMap<String, String>,
+) -> Option<FinalMarks> {
+    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let marks = v.get("marks")?.as_object()?;
+    let mut out: FinalMarks = std::collections::HashMap::new();
+    for (uuid, periods) in marks {
+        let Some(title) = uuid_to_title.get(uuid) else { continue };
+        let Some(periods) = periods.as_object() else { continue };
+        for (period, cell) in periods {
+            let mark = cell
+                .get("mark")
+                .and_then(|m| m.as_str())
+                .or_else(|| cell.as_str())
+                .unwrap_or_default();
+            if mark.is_empty() {
+                continue;
+            }
+            out.entry(title.clone())
+                .or_default()
+                .insert(period.clone(), mark.to_string());
+        }
+    }
+    Some(out)
 }
 
 /// Load all weeks for a quarter and accumulate marks.
@@ -609,9 +655,7 @@ pub fn load_quarter(state: AppState, quarter: usize) {
     let set_current_quarter = state.current_quarter.setter();
     let set_marks_loading = state.marks_loading.setter();
     let set_quarter_all_marks = state.quarter_all_marks.setter();
-    let set_quarter_official_marks = state.quarter_official_marks.setter();
     let set_quarter_marks = state.quarter_marks.setter();
-    let set_official_marks = state.official_marks.setter();
     let set_conn = state.conn_status.setter();
 
     set_current_quarter.set(quarter);
@@ -619,22 +663,17 @@ pub fn load_quarter(state: AppState, quarter: usize) {
     set_conn.set(crate::app::ConnStatus::Connecting);
 
     // 1. Immediately extract any existing marks from week_cache so UI displays instantly!
-    let (cached_marks, cached_official) = state.week_cache.with(|c| {
+    let cached_marks = state.week_cache.with(|c| {
         extract_marks_for_quarter(c, quarter)
     });
     let mut q_all = state.quarter_all_marks.get();
-    let mut q_off = state.quarter_official_marks.get();
     if q_all.len() <= quarter {
         q_all.resize(quarter + 1, std::collections::HashMap::new());
-        q_off.resize(quarter + 1, std::collections::HashMap::new());
     }
     if !cached_marks.is_empty() {
         q_all[quarter] = cached_marks.clone();
-        q_off[quarter] = cached_official.clone();
         set_quarter_all_marks.set(q_all.clone());
-        set_quarter_official_marks.set(q_off.clone());
         set_quarter_marks.set(cached_marks);
-        set_official_marks.set(cached_official);
     }
 
     let actual_end = end.min(weeks.len());
@@ -645,18 +684,13 @@ pub fn load_quarter(state: AppState, quarter: usize) {
     nslog::nslog(&format!("[Diary] load_quarter q={} weeks={}", quarter + 1, week_info.len()));
 
     let init_q_all = state.quarter_all_marks.get();
-    let init_q_off = state.quarter_official_marks.get();
 
     std::thread::spawn(move || {
         let client = blocking::build_client(&token);
         let mut all_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
-        let mut all_official: std::collections::HashMap<String, Vec<OfficialMark>> = std::collections::HashMap::new();
 
         if let Some(existing) = init_q_all.get(quarter) {
             all_marks = existing.clone();
-        }
-        if let Some(existing_off) = init_q_off.get(quarter) {
-            all_official = existing_off.clone();
         }
 
         for (week_idx, week_uuid) in &week_info {
@@ -683,18 +717,6 @@ pub fn load_quarter(state: AppState, quarter: usize) {
                                                 .or_default()
                                                 .push(*val);
                                         }
-                                        if let Some(&first_val) = parsed.first() {
-                                            let has_author = lm.author.as_ref().map(|a| !a.is_empty()).unwrap_or(false);
-                                            if has_author || lm.kind.is_some() {
-                                                all_official.entry(slot.subject_title.clone())
-                                                    .or_default()
-                                                    .push(OfficialMark {
-                                                        value: first_val,
-                                                        kind: lm.kind.clone().unwrap_or_default(),
-                                                        author: lm.author.clone().unwrap_or_default(),
-                                                    });
-                                            }
-                                        }
                                     }
                                 }
                             }
@@ -708,21 +730,15 @@ pub fn load_quarter(state: AppState, quarter: usize) {
         // Store per-quarter
         {
             let mut q_all = init_q_all.clone();
-            let mut q_off = init_q_off.clone();
             if q_all.len() <= quarter {
                 q_all.resize(quarter + 1, std::collections::HashMap::new());
-                q_off.resize(quarter + 1, std::collections::HashMap::new());
             }
             q_all[quarter] = all_marks.clone();
-            q_off[quarter] = all_official.clone();
             set_quarter_all_marks.set(q_all.clone());
-            set_quarter_official_marks.set(q_off.clone());
             cache::save_json("quarter_all_marks", &q_all);
-            cache::save_json("quarter_official_marks", &q_off);
         }
 
         set_quarter_marks.set(all_marks);
-        set_official_marks.set(all_official);
 
         day::reactive::on_main(|| {
             if let Some(state) = AppState::get_main() {
@@ -758,10 +774,8 @@ pub fn load_year(state: AppState) {
     let set_current_quarter = state.current_quarter.setter();
     let set_marks_loading = state.marks_loading.setter();
     let set_quarter_all_marks = state.quarter_all_marks.setter();
-    let set_quarter_official_marks = state.quarter_official_marks.setter();
     let set_year_quarter_data = state.year_quarter_data.setter();
     let set_quarter_marks = state.quarter_marks.setter();
-    let set_official_marks = state.official_marks.setter();
     let set_conn = state.conn_status.setter();
 
     set_current_quarter.set(4);
@@ -776,8 +790,7 @@ pub fn load_year(state: AppState) {
     for q in 0..4 {
         let m = current_q_all.get(q).filter(|m| !m.is_empty()).cloned().unwrap_or_else(|| {
             state.week_cache.with(|c| {
-                let (km, _) = extract_marks_for_quarter(c, q);
-                km
+                extract_marks_for_quarter(c, q)
             })
         });
         initial_yqd.push((quarter_labels[q].to_string(), m));
@@ -800,14 +813,11 @@ pub fn load_year(state: AppState) {
         let client = blocking::build_client(&token);
         let mut year_data: Vec<(String, std::collections::HashMap<String, Vec<f64>>)> = Vec::new();
         let mut all_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
-        let mut all_official: std::collections::HashMap<String, Vec<OfficialMark>> = std::collections::HashMap::new();
 
         let mut q_all_marks: Vec<std::collections::HashMap<String, Vec<f64>>> = Vec::new();
-        let mut q_official_marks: Vec<std::collections::HashMap<String, Vec<OfficialMark>>> = Vec::new();
 
         for q in 0..4 {
             let mut q_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
-            let mut q_off: std::collections::HashMap<String, Vec<OfficialMark>> = std::collections::HashMap::new();
 
             for (week_idx, week_uuid) in &q_weeks[q] {
                 match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, week_uuid)) {
@@ -836,22 +846,6 @@ pub fn load_year(state: AppState) {
                                                     .or_default()
                                                     .push(*val);
                                             }
-                                            if let Some(&first_val) = parsed.first() {
-                                                let has_author = lm.author.as_ref().map(|a| !a.is_empty()).unwrap_or(false);
-                                                if has_author || lm.kind.is_some() {
-                                                    let om = OfficialMark {
-                                                        value: first_val,
-                                                        kind: lm.kind.clone().unwrap_or_default(),
-                                                        author: lm.author.clone().unwrap_or_default(),
-                                                    };
-                                                    q_off.entry(slot.subject_title.clone())
-                                                        .or_default()
-                                                        .push(om.clone());
-                                                    all_official.entry(slot.subject_title.clone())
-                                                        .or_default()
-                                                        .push(om);
-                                                }
-                                            }
                                         }
                                     }
                                 }
@@ -864,16 +858,12 @@ pub fn load_year(state: AppState) {
 
             year_data.push((quarter_labels[q].to_string(), q_marks.clone()));
             q_all_marks.push(q_marks);
-            q_official_marks.push(q_off);
         }
 
         set_quarter_all_marks.set(q_all_marks.clone());
-        set_quarter_official_marks.set(q_official_marks.clone());
         set_year_quarter_data.set(year_data);
         set_quarter_marks.set(all_marks);
-        set_official_marks.set(all_official);
         cache::save_json("quarter_all_marks", &q_all_marks);
-        cache::save_json("quarter_official_marks", &q_official_marks);
 
         day::reactive::on_main(|| {
             if let Some(state) = AppState::get_main() {
@@ -899,7 +889,6 @@ pub fn reset_marks(state: AppState) {
     state.loaded_mark_weeks.set(std::collections::HashSet::new());
     state.quarter_marks.set(std::collections::HashMap::new());
     state.quarter_all_marks.set(Vec::new());
-    state.quarter_official_marks.set(Vec::new());
 }
 
 /// Get week indices for a quarter.

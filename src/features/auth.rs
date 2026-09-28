@@ -67,6 +67,7 @@ pub fn logout(state: AppState) {
     state.bell_times.set(Vec::new());
     state.timetable_days.set(Vec::new());
     state.subjects_teachers.set(Vec::new());
+    state.final_marks.set(crate::app::FinalMarks::new());
 }
 
 pub fn logout_keys() {

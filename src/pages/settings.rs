@@ -176,11 +176,17 @@ fn tab_strip(
                 .font(Font::Subheadline)
                 .align(TextAlign::Center)
                 .color(move || {
-                    if (pos.get() - i as f64).abs() < 0.5 {
-                        Color::hex(0xFFFFFF)
-                    } else {
-                        colors::SECONDARY
-                    }
+                    // Rides the pill continuously: full white when the pill centers
+                    // on the slot, fading linearly to the secondary tone one slot
+                    // away — the old |Δ|<0.5 check snapped the color at mid-slide.
+                    let t = (1.0 - (pos.get() - i as f64).abs()).clamp(0.0, 1.0);
+                    let s = colors::SECONDARY;
+                    Color::rgba(
+                        s.r + (1.0 - s.r) * t,
+                        s.g + (1.0 - s.g) * t,
+                        s.b + (1.0 - s.b) * t,
+                        1.0,
+                    )
                 }),
         ))
         .width(slot_w)

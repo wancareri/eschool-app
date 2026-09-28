@@ -1,4 +1,4 @@
-use crate::app::{AppState, OfficialMark};
+use crate::app::AppState;
 use crate::features;
 use eschool_api::entities::*;
 use crate::shared::{colors, utils};
@@ -125,10 +125,6 @@ fn select_quarter(state: AppState, q: usize) {
     if let Some(marks) = q_all.get(q) {
         if !marks.is_empty() {
             state.quarter_marks.set(marks.clone());
-            let q_off = state.quarter_official_marks.get();
-            if let Some(off) = q_off.get(q) {
-                state.official_marks.set(off.clone());
-            }
         }
     }
     state.current_quarter.set(q);
@@ -803,22 +799,39 @@ fn get_quarter_marks_map(state: AppState, q: usize) -> std::collections::HashMap
         }
     }
     state.week_cache.with(|c| {
-        let (m, _) = features::diary::extract_marks_for_quarter(c, q);
-        m
+        features::diary::extract_marks_for_quarter(c, q)
     })
 }
 
-fn get_quarter_official_map(state: AppState, q: usize) -> std::collections::HashMap<String, Vec<OfficialMark>> {
-    let q_off = state.quarter_official_marks.get();
-    if let Some(m) = q_off.get(q) {
-        if !m.is_empty() {
-            return m.clone();
-        }
+/// Period key inside `/final/whole` for a quarter column (4 = the year tab).
+fn quarter_period(q: usize) -> &'static str {
+    match q {
+        0 => "FIRST_QUARTER",
+        1 => "SECOND_QUARTER",
+        2 => "THIRD_QUARTER",
+        3 => "FOURTH_QUARTER",
+        _ => "YEAR",
     }
-    state.week_cache.with(|c| {
-        let (_, off) = features::diary::extract_marks_for_quarter(c, q);
-        off
+}
+
+/// The teacher-set final mark for a subject in a period («Выставл.» / «Год»),
+/// straight from `/final/whole`. An unset final is a dash — never an average.
+fn final_mark(state: AppState, subject: &str, period: &str) -> Option<String> {
+    state.final_marks.with(|marks| {
+        marks.get(subject).and_then(|periods| periods.get(period)).cloned()
     })
+}
+
+/// Renders a final mark: a number as an integer grade, anything else as-is,
+/// and an unset final as a dash.
+fn final_mark_text(mark: Option<String>) -> String {
+    match mark {
+        Some(v) => match v.parse::<f64>() {
+            Ok(f) => format!("{:.0}", f),
+            Err(_) => v,
+        },
+        None => "—".into(),
+    }
 }
 
 fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
@@ -871,24 +884,19 @@ fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
                     ))
                     .width(72.0),
 
-                    // 2. Официальная, выставленная учителем в конце четверти;
-                    // без неё — прочерк, среднее не подставляется.
+                    // 2. Итоговая оценка четверти, выставленная учителем
+                    // (/final/whole); без неё — прочерк, среднее не подставляется.
                     zstack((
                         label(move || {
                             let cur_q = (st3.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                            let off = get_quarter_official_map(st3, cur_q);
-                            let final_val = off.get(&sj3).and_then(|v| v.last()).map(|m| m.value);
-                            match final_val {
-                                Some(v) => format!("{:.0}", v),
-                                None => "—".into(),
-                            }
+                            final_mark_text(final_mark(st3, &sj3, quarter_period(cur_q)))
                         })
                         .font(Font::Headline)
                         .color(move || {
                             let cur_q = (st4.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                            let off = get_quarter_official_map(st4, cur_q);
-                            let final_val = off.get(&sj4).and_then(|v| v.last()).map(|m| m.value);
-                            match final_val {
+                            match final_mark(st4, &sj4, quarter_period(cur_q))
+                                .and_then(|v| v.parse::<f64>().ok())
+                            {
                                 Some(v) => utils::avg_grade_color(v),
                                 None => colors::SECONDARY,
                             }
@@ -1030,19 +1038,15 @@ fn year_final_cell(state: AppState, subject: String) -> impl Piece {
     let sj2 = subject;
     zstack((
         label(move || {
-            // Strictly the official year mark — a calculated average is not a
-            // teacher's decision, so an unset mark renders as a dash.
-            let off = s1.official_marks.get();
-            match off.get(&*sj1).and_then(|v| v.last()) {
-                Some(om) => format!("{:.0}", om.value),
-                None => "—".into(),
-            }
+            // Strictly the official year mark («Годовая», /final/whole) — a
+            // calculated average is not a teacher's decision, so an unset mark
+            // renders as a dash.
+            final_mark_text(final_mark(s1, &sj1, "YEAR"))
         })
         .font(Font::Headline)
         .color(move || {
-            let off = s2.official_marks.get();
-            match off.get(&*sj2).and_then(|v| v.last()) {
-                Some(om) => utils::avg_grade_color(om.value),
+            match final_mark(s2, &sj2, "YEAR").and_then(|v| v.parse::<f64>().ok()) {
+                Some(v) => utils::avg_grade_color(v),
                 None => colors::SECONDARY,
             }
         })

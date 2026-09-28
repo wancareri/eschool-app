@@ -19,13 +19,11 @@ pub enum ConnStatus {
     Error,
 }
 
-/// An official mark set by a teacher.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct OfficialMark {
-    pub value: f64,
-    pub kind: String,
-    pub author: String,
-}
+/// Teacher-set final marks from `/final/whole`: subject title → period
+/// (`FIRST_QUARTER`…`FOURTH_QUARTER`, `YEAR`) → mark as the API spelled it.
+/// This is the ONLY source for the «Выставл.» column — the lessons feed cannot
+/// tell a quarter mark from an ordinary lesson grade.
+pub type FinalMarks = std::collections::HashMap<String, std::collections::HashMap<String, String>>;
 
 const TOKEN_KEY: &str = "auth.token";
 const FULL_NAME_KEY: &str = "auth.full_name";
@@ -68,13 +66,13 @@ pub struct AppState {
     pub loaded_mark_weeks: Signal<std::collections::HashSet<String>>,
     pub current_quarter: Signal<usize>,
     pub quarter_marks: Signal<std::collections::HashMap<String, Vec<f64>>>,
-    pub official_marks: Signal<std::collections::HashMap<String, Vec<OfficialMark>>>,
+    /// `/final/whole` — teacher-set quarter/final marks (see [`FinalMarks`]).
+    pub final_marks: Signal<FinalMarks>,
     pub marks_loading: Signal<bool>,
     pub year_quarter_data: Signal<Vec<(String, std::collections::HashMap<String, Vec<f64>>)>>,
 
     // ── per-quarter storage (index 0..3) ─────────────────────────────────
     pub quarter_all_marks: Signal<Vec<std::collections::HashMap<String, Vec<f64>>>>,
-    pub quarter_official_marks: Signal<Vec<std::collections::HashMap<String, Vec<OfficialMark>>>>,
 
     // ── schedule ─────────────────────────────────────────────────────────
     pub bell_times: Signal<Vec<BellTime>>,
@@ -162,11 +160,10 @@ impl Ambient for AppState {
             loaded_mark_weeks: Signal::new(std::collections::HashSet::new()),
             current_quarter: Signal::new(0),
             quarter_marks: Signal::new(std::collections::HashMap::new()),
-            official_marks: Signal::new(std::collections::HashMap::new()),
+            final_marks: Signal::new(FinalMarks::new()),
             marks_loading: Signal::new(false),
             year_quarter_data: Signal::new(Vec::new()),
             quarter_all_marks: Signal::new(Vec::new()),
-            quarter_official_marks: Signal::new(Vec::new()),
             bell_times: Signal::new(Vec::new()),
             timetable_days: Signal::new(Vec::new()),
             schedule_loading: Signal::new(false),
