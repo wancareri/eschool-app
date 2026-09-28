@@ -97,3 +97,8 @@ pub fn parse_marks(mark_str: &str) -> Vec<f64> {
     result
 }
 
+/// `08:30:00` → `08:30` — the API's bell times carry seconds, the UI never shows them.
+pub fn strip_seconds(t: &str) -> String {
+    t.get(..5).unwrap_or(t).to_string()
+}
+

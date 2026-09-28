@@ -5,12 +5,6 @@ use crate::res;
 use crate::shared::{biometric, colors, nslog, pin};
 use day::prelude::*;
 use day_piece_texteditor::text_editor;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-// Retarget-safe switch: a new switch (picker tap or drag commit) bumps the
-// generation, and only the still-current landing commits displayed_tab —
-// requests are never dropped while an animation is in flight.
-static SWITCH_GEN: AtomicU64 = AtomicU64::new(0);
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
@@ -22,30 +16,38 @@ pub fn render() -> impl Piece {
             day::prefs::set("app.settings_tab", &t.to_string());
         },
     );
-    let displayed_tab = state.settings_displayed;
-    let tab_dx = state.settings_dx;
     let pager_w = crate::pages::diary::get_screen_width();
 
-    // A watch cb runs inside the drain, where with_animation defers past its own
-    // scope and the write lands instantly (day-core anim.rs edge case — a
-    // teleport). Hop to a clean main-queue turn instead; start_switch re-derives
-    // the shared pager signals there via get_main (Signals are !Send, so nothing
-    // crosses the hop itself).
-    day::reactive::watch(
-        move || current_tab.get(),
-        move |&t, _| {
-            day::reactive::on_main(move || start_switch(t, pager_w));
-        },
-    );
-    day::reactive::watch(
-        move || displayed_tab.get(),
-        move |&shown, _| {
-            let want = current_tab.get();
-            if want != shown {
-                day::reactive::on_main(move || start_switch(want, pager_w));
-            }
-        },
-    );
+    // The pager's own report: a tab write that came FROM a scroll event is
+    // skipped by the scroll-back watch below (no scroll → scroll ping-pong).
+    let last_scroll_idx: Signal<Option<usize>> = Signal::new(None);
+    // Picker segment / accent jump: the strip animates there natively.
+    let tap_target: Signal<Option<ScrollTarget>> = Signal::new(None);
+    // First mount lands on the persisted tab without sliding through the rest.
+    let initial_target: Signal<Option<ScrollTarget>> = Signal::new(Some(ScrollTarget::Offset(
+        Point::new(pager_w * current_tab.get() as f64, 0.0),
+    )));
+
+    // A tab change from OUTSIDE the pager (picker segment, accent jump) scrolls
+    // the strip there. The first callback is the mount one — the strip is
+    // already positioned by scroll_jump — so only later changes act.
+    {
+        let last = last_scroll_idx;
+        let tap = tap_target;
+        day::reactive::watch(
+            move || current_tab.get(),
+            move |&t, old| {
+                if old.is_none() || last.get() == Some(t) {
+                    return;
+                }
+                tap.set(Some(ScrollTarget::Offset(Point::new(
+                    pager_w * t as f64,
+                    0.0,
+                ))));
+            },
+        );
+    }
+
     let show_setup = Signal::new(false);
     let pin_enabled = Signal::new(crate::shared::pin::is_enabled());
 
@@ -72,79 +74,6 @@ pub fn render() -> impl Piece {
         },
     );
 
-    let axis: Signal<Option<bool>> = Signal::new(None);
-    let drag_base = Signal::new(0.0f64);
-    let drag_handler = move |drag: Drag| {
-        let dx = drag.translation.x;
-        let dy = drag.translation.y;
-        match drag.phase {
-            DragPhase::Began => {
-                axis.set(None);
-                // The finger takes the pager over: any in-flight switch landing
-                // is invalidated and the drag continues from the current offset.
-                SWITCH_GEN.fetch_add(1, Ordering::Relaxed);
-                drag_base.set(tab_dx.get());
-            }
-            DragPhase::Changed => {
-                let mut horiz = axis.get();
-                if horiz.is_none() && (dx.abs() > 10.0 || dy.abs() > 10.0) {
-                    horiz = Some(dx.abs() >= dy.abs() * 0.7);
-                    axis.set(horiz);
-                }
-                if horiz == Some(false) && dx.abs() > 24.0 && dx.abs() > dy.abs() * 1.2 {
-                    horiz = Some(true);
-                    axis.set(horiz);
-                }
-                if horiz == Some(true) {
-                    let shown = displayed_tab.get();
-                    let mut disp = dx;
-                    if shown == 0 && disp > 0.0 {
-                        disp *= 0.3;
-                    }
-                    if shown == 3 && disp < 0.0 {
-                        disp *= 0.3;
-                    }
-                    tab_dx.set(drag_base.get() + disp);
-                }
-            }
-            DragPhase::Ended => {
-                let mut was_horiz = axis.get() == Some(true);
-                if !was_horiz
-                    && axis.get().is_none()
-                    && dx.abs() >= 40.0
-                    && dx.abs() > dy.abs()
-                {
-                    was_horiz = true;
-                    tab_dx.set(drag_base.get() + dx);
-                }
-                axis.set(None);
-                let disp = tab_dx.get() - drag_base.get();
-                if was_horiz && disp.abs() >= 40.0 {
-                    let shown = displayed_tab.get();
-                    if disp < 0.0 && shown < 3 {
-                        current_tab.set(shown + 1);
-                        return;
-                    }
-                    if disp > 0.0 && shown > 0 {
-                        current_tab.set(shown - 1);
-                        return;
-                    }
-                }
-                // No commit: the Began cancel killed any in-flight landing, so
-                // slide home and drop the picker back to the displayed tab —
-                // otherwise current_tab and displayed_tab would diverge and a
-                // re-tap of the highlighted segment would do nothing.
-                with_animation(AnimSpec::ease_out(180), move || {
-                    tab_dx.set(0.0);
-                });
-                let shown = displayed_tab.get();
-                if current_tab.get() != shown {
-                    current_tab.set(shown);
-                }
-            }
-        }
-    };
-
     when(
         move || show_setup.get(),
         move || pin_setup_modal(show_setup, pin_enabled)
@@ -165,35 +94,32 @@ pub fn render() -> impl Piece {
         .segmented()
         .padding(Insets { top: 8.0, leading: 20.0, bottom: 16.0, trailing: 20.0 }),
 
-        // Full four-page carousel: every page carries its own scroll, so a
-        // short page ends with its content instead of inheriting the longest
-        // page's length from one shared scroll. Idle pages sit at ±w/±2w,
-        // tab_dx drags them like diary week cards, and a switch keeps the
-        // old page visually continuous until the landing batch.
-        zstack((
-            each(
-                items(move || vec![0usize, 1, 2, 3], |t| *t),
-                move |slot| {
-                    let t = slot.with(|t: &usize| *t);
-                    scroll(tab_body(state, t, pin_enabled))
-                        .translation(
-                            move || {
-                                tab_dx.get()
-                                    + (t as f64 - displayed_tab.get() as f64) * pager_w
-                            },
-                            0.0,
-                        )
-                        .width(pager_w)
-                        .grow_h()
-                },
-            ),
-        ))
-        .align(Alignment::TopLeading)
+        // Four-page native pager: UIKit owns the finger physics (paging
+        // snap with its velocity throw), every page keeps its own vertical
+        // scroll, and scroll events keep settings_tab in step with the strip.
+        scroll(row((
+            scroll(tab_body(state, 0, pin_enabled)).width(pager_w),
+            scroll(tab_body(state, 1, pin_enabled)).width(pager_w),
+            scroll(tab_body(state, 2, pin_enabled)).width(pager_w),
+            scroll(tab_body(state, 3, pin_enabled)).width(pager_w),
+        )))
+        .horizontal()
+        .paging(true)
+        .scroll_target(tap_target)
+        .scroll_jump(initial_target)
+        .on_scroll(move |p| {
+            let idx = ((p.x / pager_w).round() as usize).min(3);
+            last_scroll_idx.set(Some(idx));
+            // Only a settled offset (on a page edge) commits — mid-flight
+            // offsets must not step the picker highlight.
+            if (p.x - idx as f64 * pager_w).abs() < 0.5 && idx != current_tab.get() {
+                current_tab.set(idx);
+            }
+        })
         .width(pager_w)
         .grow()
     ))
-    .grow()
-    .on_drag(drag_handler),
+    .grow(),
 
     // Sticky status indicator in top-left corner
     widgets::conn_status::render()
@@ -202,49 +128,6 @@ pub fn render() -> impl Piece {
     .align(Alignment::TopLeading)
     .grow()
     .any())
-}
-
-fn start_switch(target: usize, w: f64) {
-    // Reached from an on_main hop: the shared signals are read here, on the
-    // main thread, so the with_animation writes below drain synchronously with
-    // the intent still ambient.
-    let Some(state) = AppState::get_main() else {
-        return;
-    };
-    let tab_dx = state.settings_dx;
-    let shown = state.settings_displayed.get();
-    if target == shown {
-        // Retarget onto the page already displayed (e.g. the picker tapped
-        // back mid-flight): cancel and slide home.
-        SWITCH_GEN.fetch_add(1, Ordering::Relaxed);
-        with_animation(AnimSpec::ease_out(180), move || {
-            tab_dx.set(0.0);
-        });
-        return;
-    }
-    let dir = if target > shown { 1.0 } else { -1.0 };
-    let dist = (target as i32 - shown as i32).abs() as f64;
-    let my_gen = SWITCH_GEN.fetch_add(1, Ordering::Relaxed) + 1;
-    with_animation(AnimSpec::ease_out(280), move || {
-        // The target page sits `dist` slots away, so it lands at 0 only after
-        // tab_dx covers the whole gap (a picker jump of 0 → 2 is two pages).
-        tab_dx.set(-dir * dist * w);
-    });
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(280));
-        day::reactive::on_main(move || {
-            if SWITCH_GEN.load(Ordering::Relaxed) != my_gen {
-                return;
-            }
-            let Some(state) = AppState::get_main() else {
-                return;
-            };
-            day::reactive::batch(|| {
-                state.settings_dx.set(0.0);
-                state.settings_displayed.set(target);
-            });
-        });
-    });
 }
 
 fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piece {

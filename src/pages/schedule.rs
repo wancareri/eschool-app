@@ -358,7 +358,11 @@ fn day_lesson_rows(state: AppState, dow: u32) -> Vec<LessonRow> {
         rows.push(LessonRow {
             key: format!("{dow}:{i}:{}", ts.time_of_bells.number),
             num: ts.time_of_bells.number,
-            time: format!("{}–{}", ts.time_of_bells.start_time, ts.time_of_bells.end_time),
+            time: format!(
+                "{}–{}",
+                utils::strip_seconds(&ts.time_of_bells.start_time),
+                utils::strip_seconds(&ts.time_of_bells.end_time)
+            ),
             subject,
         });
     }

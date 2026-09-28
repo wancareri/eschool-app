@@ -29,11 +29,10 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
                     .font(Font::Body),
                 label(move || {
                     s_time.with(|s| {
-                        let t = &s.start_time;
-                        let time = t.get(..5).unwrap_or(t);
+                        let time = utils::strip_seconds(&s.start_time);
                         match &s.topic {
                             Some(topic) if !topic.is_empty() => format!("{time} · {topic}"),
-                            _ => time.to_string(),
+                            _ => time,
                         }
                     })
                 })

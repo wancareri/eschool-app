@@ -1,5 +1,5 @@
 /// Dynamic Island connection status indicator — frosted glass capsule with Lucide icons.
-/// All state flips are instant: the appear animation was removed by request.
+/// Appear is instant; collapse first fades the text, then shrinks the capsule.
 use std::sync::atomic::{AtomicU64, Ordering};
 use crate::app::{AppState, ConnStatus};
 use crate::res;
@@ -7,14 +7,31 @@ use day::prelude::*;
 
 static COLLAPSE_GEN: AtomicU64 = AtomicU64::new(0);
 
+fn collapse_island(setter_exp: Setter<bool>, setter_op: Setter<f64>) {
+    with_animation(Animation::ease_out(130), move || {
+        setter_op.set(0.0);
+    });
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(140));
+        day::reactive::on_main(move || {
+            with_animation(Animation::ease_out(220), move || {
+                setter_exp.set(false);
+            });
+        });
+    });
+}
+
 fn schedule_collapse(state: AppState) {
-    // Setters are Send and deliver on the main queue themselves.
+    // Setters (Send) cross the thread boundary — AppState/Signal cannot.
     let setter_exp = state.island_expanded.setter();
+    let setter_op = state.island_text_opacity.setter();
     let gen_id = COLLAPSE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(3000));
         if COLLAPSE_GEN.load(Ordering::SeqCst) == gen_id {
-            setter_exp.set(false);
+            day::reactive::on_main(move || {
+                collapse_island(setter_exp, setter_op);
+            });
         }
     });
 }
@@ -75,6 +92,7 @@ pub fn render() -> impl Piece {
     // Shared signals: all four mounted instances show one state — a change
     // made on one tab is already applied when another tab comes back.
     let expanded = state.island_expanded;
+    let text_opacity = state.island_text_opacity;
 
     // Watch for connection status updates to reveal the island (full → collapse
     // after 3 s). Nothing on mount: the island starts compact, so the initial
@@ -84,7 +102,12 @@ pub fn render() -> impl Piece {
         move |new_st, old_st| {
             if let Some(old) = old_st {
                 if old != new_st {
-                    state.island_expanded.set(true);
+                    // Instant appear, capsule included: the zero-duration ambient
+                    // beats the capsule's implicit .animation for this reflow.
+                    with_animation(AnimSpec::ease_out(0), move || {
+                        state.island_expanded.set(true);
+                        state.island_text_opacity.set(1.0);
+                    });
                     schedule_collapse(state);
                 }
             }
@@ -134,6 +157,7 @@ pub fn render() -> impl Piece {
                     ConnStatus::Offline => Color::hex(0x8E8E93),
                     ConnStatus::Error => Color::hex(0xEF4444),
                 })
+                .opacity(move || text_opacity.get())
                 .padding(Insets { top: 0.0, leading: 6.0, bottom: 0.0, trailing: 3.0 })
             },
         ),
@@ -168,6 +192,7 @@ pub fn render() -> impl Piece {
         }
     })
     .corner_radius(14.0)
+    .animation(Animation::ease_out(220))
     .on_tap(move || {
         state
             .show_network_modal

@@ -1,4 +1,5 @@
 use crate::app::AppState;
+use crate::shared::utils;
 use day::prelude::*;
 
 pub fn render(state: AppState, number: u32) -> impl Piece {
@@ -6,14 +7,14 @@ pub fn render(state: AppState, number: u32) -> impl Piece {
         state.bell_times.get()
             .iter()
             .find(|b| b.number == number)
-            .map(|b| strip_seconds(&b.start_time))
+            .map(|b| utils::strip_seconds(&b.start_time))
             .unwrap_or_default()
     };
     let end = move || {
         state.bell_times.get()
             .iter()
             .find(|b| b.number == number)
-            .map(|b| strip_seconds(&b.end_time))
+            .map(|b| utils::strip_seconds(&b.end_time))
             .unwrap_or_default()
     };
     row((
@@ -37,8 +38,4 @@ pub fn render(state: AppState, number: u32) -> impl Piece {
     .background(Color::rgba(0.95, 0.95, 0.97, 1.0))
     .corner_radius(8.0)
     .padding(Insets { top: 0.0, leading: 20.0, bottom: 4.0, trailing: 20.0 })
-}
-
-fn strip_seconds(t: &str) -> String {
-    t.get(..5).unwrap_or(t).to_string()
 }
