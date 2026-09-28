@@ -35,6 +35,12 @@ pub fn render() -> impl Piece {
     // a different tab — that write was the bounce to «Основные» after a color change.
     // Tab 0 IS the mount offset: nothing to restore there, so start unguarded.
     let built_tab = current_tab.get();
+    // The reload token this pager was built under: a token bump unmounts this
+    // pager, and the DYING instance's last scroll reports (x collapsing to 0)
+    // must not zero the shared tab — the fresh instance would then mount on
+    // «Основные» unguarded. Instance-local signals stay harmless either way.
+    let built_tok = state.ui_reload_token.get();
+    let reload_tok = state.ui_reload_token;
     let restore: Signal<Option<(usize, u32)>> =
         Signal::new(if built_tab == 0 { None } else { Some((built_tab, 0)) });
 
@@ -113,6 +119,9 @@ pub fn render() -> impl Piece {
         .scroll_target(tap_target)
         .scroll_jump(initial_target)
         .on_scroll(move |p| {
+            if reload_tok.get() != built_tok {
+                return;
+            }
             strip_pos.set((p.x / pager_w).clamp(0.0, 3.0));
             let idx = ((p.x / pager_w).round() as usize).min(3);
             let settled = (p.x - idx as f64 * pager_w).abs() < 0.5;
