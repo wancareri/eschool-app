@@ -30,6 +30,13 @@ pub fn render() -> impl Piece {
     // The strip's pill rides this every scroll event — page offset / page width,
     // so it moves exactly as far as the finger, not one segment at a time.
     let strip_pos: Signal<f64> = Signal::new(current_tab.get() as f64);
+    // The tab this pager was BUILT for. It mounts at offset 0 regardless, so until
+    // the restore has actually landed, scroll reports must not be allowed to commit
+    // a different tab — that write was the bounce to «Основные» after a color change.
+    // Tab 0 IS the mount offset: nothing to restore there, so start unguarded.
+    let built_tab = current_tab.get();
+    let restore: Signal<Option<(usize, u32)>> =
+        Signal::new(if built_tab == 0 { None } else { Some((built_tab, 0)) });
 
     // A tab change from OUTSIDE the pager (picker segment, accent jump) scrolls
     // the strip there. The first callback is the mount one — the strip is
@@ -108,10 +115,31 @@ pub fn render() -> impl Piece {
         .on_scroll(move |p| {
             strip_pos.set((p.x / pager_w).clamp(0.0, 3.0));
             let idx = ((p.x / pager_w).round() as usize).min(3);
+            let settled = (p.x - idx as f64 * pager_w).abs() < 0.5;
+            if let Some((want, tries)) = restore.get() {
+                // Restoring: never commit from here. Landing on the built tab ends the
+                // restore; settling on the wrong edge re-arms the native jump (bounded,
+                // so a pager that simply refuses can't lock the user out).
+                if settled {
+                    if idx == want {
+                        restore.set(None);
+                        last_scroll_idx.set(Some(idx));
+                    } else if tries < 5 {
+                        tap_target.set(Some(ScrollTarget::Offset(Point::new(
+                            pager_w * want as f64,
+                            0.0,
+                        ))));
+                        restore.set(Some((want, tries + 1)));
+                    } else {
+                        restore.set(None);
+                    }
+                }
+                return;
+            }
             last_scroll_idx.set(Some(idx));
             // Only a settled offset (on a page edge) commits — mid-flight
             // offsets must not step the picker highlight.
-            if (p.x - idx as f64 * pager_w).abs() < 0.5 && idx != current_tab.get() {
+            if settled && idx != current_tab.get() {
                 current_tab.set(idx);
             }
         })
@@ -261,23 +289,182 @@ fn profile_section(state: AppState) -> impl Piece {
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
+/// Preset stops of the accent strip, left to right.
+const ACCENT_STOPS: [u32; 5] = [
+    colors::BLUE,
+    colors::GREEN,
+    colors::PURPLE,
+    colors::ORANGE,
+    colors::RED,
+];
+
 fn appearance_section(state: AppState) -> impl Piece {
+    // Thumb position, shared by the strip and the preset rows: both drive it.
+    let accent_pos: Signal<f64> = Signal::new(accent_pos_of(state.accent_color.get()));
     column((
         form((
             section(
                 (
                     label("Акцентный цвет").font(Font::Headline),
-                    accent_option(state, "Синий", colors::BLUE),
-                    accent_option(state, "Зелёный", colors::GREEN),
-                    accent_option(state, "Фиолетовый", colors::PURPLE),
-                    accent_option(state, "Оранжевый", colors::ORANGE),
-                    accent_option(state, "Красный", colors::RED),
+                    accent_strip(state, accent_pos),
+                    accent_option(state, "Синий", colors::BLUE, accent_pos),
+                    accent_option(state, "Зелёный", colors::GREEN, accent_pos),
+                    accent_option(state, "Фиолетовый", colors::PURPLE, accent_pos),
+                    accent_option(state, "Оранжевый", colors::ORANGE, accent_pos),
+                    accent_option(state, "Красный", colors::RED, accent_pos),
                 )
             ).title("Цвета"),
         )),
     ))
     .spacing(0.0)
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
+}
+
+/// Push an accent through every live consumer — the signal plus the UIKit tint
+/// cascade. Nothing here remounts; the nav reload waits for [`accent_commit`].
+fn accent_apply(state: AppState, hex: u32) {
+    colors::set_accent(hex);
+    state.accent_color.set(hex);
+    #[cfg(target_os = "ios")]
+    colors::apply_ios_tint(hex);
+}
+
+/// Land an accent: persist it and reload the nav once so the baked `.icon_tint`s
+/// recolor. The settings pager restores its own tab across that reload (the
+/// `on_scroll` guard in `render`), so a color change no longer drops the user
+/// onto «Основные».
+fn accent_commit(state: AppState, hex: u32) {
+    let v = hex.to_string();
+    let fresh = day::prefs::get("app.accent_color").as_deref() != Some(v.as_str());
+    day::prefs::set("app.accent_color", &v);
+    accent_apply(state, hex);
+    // The reload below is a parity toggle between two `when` arms, so a duplicate
+    // commit (some backends deliver a tap as a zero-length drag too) would cancel
+    // itself out — bump only for a value that actually changed.
+    if fresh {
+        let tok = state.ui_reload_token.get();
+        state.ui_reload_token.set(tok + 1);
+    }
+}
+
+/// The preset colour under `t ∈ [0,1]` of the strip — linear RGB between stops.
+fn strip_color_at(t: f64) -> u32 {
+    let t = t.clamp(0.0, 1.0) * (ACCENT_STOPS.len() - 1) as f64;
+    let i = (t.floor() as usize).min(ACCENT_STOPS.len() - 2);
+    let f = t - i as f64;
+    let a = ACCENT_STOPS[i];
+    let b = ACCENT_STOPS[i + 1];
+    let mix = |shift: u32| {
+        let av = (a >> shift) & 0xff;
+        let bv = (b >> shift) & 0xff;
+        (av as f64 + (bv as f64 - av as f64) * f).round() as u32
+    };
+    (mix(16) << 16) | (mix(8) << 8) | mix(0)
+}
+
+/// Where the thumb sits for an accent already in hand: the strip position whose
+/// colour is nearest (sampled — the strip only carries preset hues anyway).
+fn accent_pos_of(hex: u32) -> f64 {
+    let (hr, hg, hb) = ((hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff);
+    let mut best = 0.0;
+    let mut best_d = f64::MAX;
+    for s in 0..=100 {
+        let t = s as f64 / 100.0;
+        let c = strip_color_at(t);
+        let (cr, cg, cb) = ((c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff);
+        let d = (hr as i64 - cr as i64).pow(2)
+            + (hg as i64 - cg as i64).pow(2)
+            + (hb as i64 - cb as i64).pow(2);
+        if (d as f64) < best_d {
+            best_d = d as f64;
+            best = t;
+        }
+    }
+    best
+}
+
+/// The strip's thumb: a white capsule riding `t`, kept whole at either cap.
+fn strip_thumb(d: &mut Draw, t: f64, size: Size) {
+    const W: f64 = 8.0;
+    let half = W / 2.0;
+    let (lo, hi) = if size.width >= W {
+        (half, size.width - half)
+    } else {
+        (size.width / 2.0, size.width / 2.0)
+    };
+    let x = (t.clamp(0.0, 1.0) * size.width).clamp(lo, hi);
+    let r = Rect::new(x - W / 2.0, 0.0, W, size.height);
+    d.fill(Shape::RoundedRect(r, W / 2.0), Color::WHITE);
+    d.stroke(
+        Shape::RoundedRect(r.inset(0.5), W / 2.0 - 0.5),
+        Color::BLACK.with_alpha(0.4),
+        1.0,
+    );
+}
+
+/// Live half of the strip gesture: park the thumb at `x` and push the accent.
+/// The width comes from the draw pass (a plain Cell — see [`accent_strip`]).
+fn strip_pick_at(width: &std::cell::Cell<f64>, pos: Signal<f64>, state: AppState, x: f64) {
+    let w = width.get();
+    if w <= 0.0 {
+        return;
+    }
+    let t = (x / w).clamp(0.0, 1.0);
+    pos.set(t);
+    accent_apply(state, strip_color_at(t));
+}
+
+/// The accent strip — a capsule gradient across the preset palette with a
+/// draggable thumb. Every consumer of `accent_color` is reactive, so the accent
+/// follows the thumb while the finger is down: where the pill has already passed,
+/// the color has changed; where it hasn't, not yet. Prefs and the single nav
+/// reload (baked `.icon_tint`s) land when the gesture ends.
+fn accent_strip(state: AppState, pos: Signal<f64>) -> impl Piece {
+    const H: f64 = 36.0;
+    // Canvas width, reported by the draw pass — the pick needs it because gesture
+    // locations arrive in the node's own (unknown-until-laid-out) space. A plain
+    // Cell, not a Signal: writing it from inside the draw must not feed back into
+    // the reactive graph that re-runs the draw.
+    let width = std::rc::Rc::new(std::cell::Cell::new(0.0));
+    let w_draw = width.clone();
+    let w_drag = width.clone();
+    let w_tap = width.clone();
+
+    canvas(move |d, size| {
+        w_draw.set(size.width);
+        let r = Rect::new(0.0, 0.0, size.width, size.height);
+        let stops: Vec<(f64, Color)> = ACCENT_STOPS
+            .iter()
+            .enumerate()
+            .map(|(i, hex)| {
+                (
+                    i as f64 / (ACCENT_STOPS.len() - 1) as f64,
+                    Color::hex(*hex),
+                )
+            })
+            .collect();
+        d.fill(
+            Shape::RoundedRect(r, size.height / 2.0),
+            LinearGradient::new(UnitPoint::LEADING, UnitPoint::TRAILING, stops),
+        );
+        strip_thumb(d, pos.get(), size);
+    })
+    .height(H)
+    .grow_w()
+    .on_drag(move |drag| {
+        strip_pick_at(&w_drag, pos, state, drag.location.x);
+        // Live while the finger is down; the landing (prefs + the one nav reload)
+        // waits for the release so a drag doesn't reload the nav sixty times a second.
+        if let DragPhase::Ended = drag.phase {
+            accent_commit(state, strip_color_at(pos.get()));
+        }
+    })
+    .on_tap_at(move |p| {
+        strip_pick_at(&w_tap, pos, state, p.x);
+        accent_commit(state, strip_color_at(pos.get()));
+    })
+    .a11y(|a| a.label("Акцентный цвет"))
+    .id("accent-strip")
 }
 
 fn system_settings() -> impl Piece {
@@ -288,24 +475,20 @@ fn system_settings() -> impl Piece {
     ),))
 }
 
-fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
+fn accent_option(
+    state: AppState,
+    lbl: &'static str,
+    hex: u32,
+    pos: Signal<f64>,
+) -> impl Piece {
     let s = state;
     button(move || {
         if s.accent_color.get() == hex { format!("\u{2713} \u{25CF} {lbl}") } else { format!("\u{25CF} {lbl}") }
     })
     .id(format!("accent-{hex}"))
     .action(move || {
-        day::prefs::set("app.accent_color", &hex.to_string());
-        colors::set_accent(hex);
-        state.accent_color.set(hex);
-        #[cfg(target_os = "ios")]
-        colors::apply_ios_tint(hex);
-        state.current_section.set(crate::Section::Settings);
-        state.settings_tab.set(1);
-        day::prefs::set("app.section", "settings");
-        day::prefs::set("app.settings_tab", "1");
-        let cur_tok = state.ui_reload_token.get();
-        state.ui_reload_token.set(cur_tok + 1);
+        pos.set(accent_pos_of(hex));
+        accent_commit(state, hex);
     })
 }
 
