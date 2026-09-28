@@ -110,16 +110,43 @@ pub fn render() -> impl Piece {
                 if old != new_st {
                     // Kill any pending hide/collapse before arming new ones.
                     let _ = COLLAPSE_GEN.fetch_add(1, Ordering::SeqCst);
-                    if *new_st == ConnStatus::Connecting {
-                        // Refresh started: the text fades out, the icon
-                        // crossfades into the spinner, and once the text is gone
-                        // the capsule shrinks back to the circle.
-                        with_animation(AnimSpec::ease_out(130), move || {
-                            state.island_text_opacity.set(0.0);
-                        });
-                        with_animation(AnimSpec::ease_out(220), move || {
-                            spinner_op.set(1.0);
-                        });
+                    let connecting = *new_st == ConnStatus::Connecting;
+                    // Park hidden text at 0 synchronously — the label is not
+                    // mounted, so this instant write is invisible, and the insert
+                    // below must start from 0 to fade in.
+                    if !connecting && !expanded.get() && state.island_text_opacity.get() != 0.0 {
+                        state.island_text_opacity.set(0.0);
+                    }
+                    // This watch is a reaction running INSIDE the drain of the
+                    // status write, and `with_animation` cannot capture intent
+                    // from an in-progress drain (day-core anim.rs) — hop to the
+                    // main queue, where the mutations drain under a live ambient.
+                    let sp = spinner_op.setter();
+                    let exp = state.island_expanded.setter();
+                    let txt = state.island_text_opacity.setter();
+                    day::reactive::on_main(move || {
+                        if connecting {
+                            // Refresh started: the text fades out and the icon
+                            // crossfades into the spinner; the shrink to the
+                            // circle follows on its own timer below.
+                            with_animation(AnimSpec::ease_out(130), move || {
+                                txt.set(0.0);
+                            });
+                            with_animation(AnimSpec::ease_out(220), move || {
+                                sp.set(1.0);
+                            });
+                        } else {
+                            // Data arrived: open the capsule (inserting the label
+                            // at 0), fade the text in with the stretch and
+                            // crossfade the spinner into the icon — one ease-out.
+                            with_animation(AnimSpec::ease_out(220), move || {
+                                sp.set(0.0);
+                                exp.set(true);
+                                txt.set(1.0);
+                            });
+                        }
+                    });
+                    if connecting {
                         let setter_exp = state.island_expanded.setter();
                         let gen_id = COLLAPSE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
                         day::reactive::on_main_delayed(140, move || {
@@ -130,19 +157,6 @@ pub fn render() -> impl Piece {
                             }
                         });
                     } else {
-                        // Data arrived. Park hidden text at 0 first (safe: the
-                        // label is not mounted), then — one ease-out — open the
-                        // capsule (which inserts the label at 0) and fade the
-                        // text in with the stretch while the spinner crossfades
-                        // into the icon.
-                        if !expanded.get() && state.island_text_opacity.get() != 0.0 {
-                            state.island_text_opacity.set(0.0);
-                        }
-                        with_animation(AnimSpec::ease_out(220), move || {
-                            spinner_op.set(0.0);
-                            state.island_expanded.set(true);
-                            state.island_text_opacity.set(1.0);
-                        });
                         schedule_collapse(state);
                     }
                 }
