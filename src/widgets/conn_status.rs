@@ -66,7 +66,7 @@ fn apply_glass_blur(piece: impl Decorate) -> impl Piece {
         effect_view.setUserInteractionEnabled(false);
 
         let view_layer: Retained<CALayer> = view.layer();
-        view_layer.setCornerRadius(14.0);
+        view_layer.setCornerRadius(12.5);
         view_layer.setMasksToBounds(true);
 
         view.insertSubview_atIndex(&effect_view, 0);
@@ -116,7 +116,7 @@ pub fn render() -> impl Piece {
 
     let icon_piece = when(
         move || state.conn_status.get() == ConnStatus::Connecting,
-        move || super::spinner::render(state, 10.0).any(),
+        move || super::spinner::render(state, 13.0).any(),
     )
     .otherwise(move || {
         when(
@@ -143,7 +143,9 @@ pub fn render() -> impl Piece {
     let content = row((
         icon_piece,
         when(
-            move || expanded.get(),
+            move || {
+                expanded.get() && state.conn_status.get() != ConnStatus::Connecting
+            },
             move || {
                 label(move || match state.conn_status.get() {
                     ConnStatus::Connecting => "Обновление…",
@@ -163,7 +165,7 @@ pub fn render() -> impl Piece {
         ),
     ))
     .align(VAlign::Center)
-    .padding(Insets { top: 6.0, leading: 9.0, bottom: 6.0, trailing: 9.0 })
+    .padding(Insets { top: 6.0, leading: 6.0, bottom: 6.0, trailing: 6.0 })
     .background(move || {
         let dark = day::dark_mode();
         match state.conn_status.get() {
@@ -191,7 +193,9 @@ pub fn render() -> impl Piece {
             }
         }
     })
-    .corner_radius(14.0)
+    // Half of the 25 pt box: CALayer does not clamp a larger radius, and 14 on
+    // 25 overshoots into a self-intersecting lens (the "eye").
+    .corner_radius(12.5)
     .animation(Animation::ease_out(220))
     .on_tap(move || {
         state

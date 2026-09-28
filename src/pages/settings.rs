@@ -196,31 +196,45 @@ fn tab_strip(
     let tab = |i: usize, title: &'static str| {
         let tab = current_tab;
         let pos = strip_pos;
-        // zstack outside, width on the zstack: a stretched label sits flush-left
-        // on UIKit, the overlay centers it — the same shape the summary header
-        // ("Выставл.") uses.
-        zstack((
-            label(title)
-                .font(Font::Subheadline)
-                .align(TextAlign::Center)
-                .color(move || {
-                    // Rides the pill continuously: full white when the pill centers
-                    // on the slot, fading linearly to the secondary tone one slot
-                    // away — the old |Δ|<0.5 check snapped the color at mid-slide.
-                    let t = (1.0 - (pos.get() - i as f64).abs()).clamp(0.0, 1.0);
-                    let s = colors::SECONDARY;
-                    Color::rgba(
-                        s.r + (1.0 - s.r) * t,
-                        s.g + (1.0 - s.g) * t,
-                        s.b + (1.0 - s.b) * t,
-                        1.0,
-                    )
-                }),
-        ))
-        .width(slot_w)
-        .on_tap(move || tab.set(i))
-        .a11y(|b| b.role(Role::Button))
-        .any()
+        // The title is centred in the slot and spans roughly `g` of it
+        // (Subheadline ≈ 7.5 pt per glyph) — that maps the pill's slot-local
+        // edges onto individual glyphs. zstack outside, width on the zstack:
+        // a stretched label sits flush-left on UIKit, the overlay centers it.
+        let n = title.chars().count();
+        let g = ((n as f64 * 7.5) / slot_w).clamp(0.1, 1.0);
+        let cw = g / n as f64;
+        let half = (slot_w - 2.0) / (2.0 * slot_w);
+        let letters: Vec<AnyPiece> = title
+            .chars()
+            .enumerate()
+            .map(|(k, ch)| {
+                let x0 = 0.5 - g / 2.0 + k as f64 * cw;
+                label(ch.to_string())
+                    .font(Font::Subheadline)
+                    .color(move || {
+                        // Coverage of this glyph by the sliding pill: white where
+                        // the pill has already crossed, the secondary tone ahead
+                        // of it, blended inside the boundary glyph.
+                        let d = pos.get() - i as f64;
+                        let (pl, pr) = (0.5 + d - half, 0.5 + d + half);
+                        let cov = (pr.min(x0 + cw) - pl.max(x0)).max(0.0) / cw;
+                        let t = cov.clamp(0.0, 1.0);
+                        let s = colors::SECONDARY;
+                        Color::rgba(
+                            s.r + (1.0 - s.r) * t,
+                            s.g + (1.0 - s.g) * t,
+                            s.b + (1.0 - s.b) * t,
+                            1.0,
+                        )
+                    })
+                    .any()
+            })
+            .collect();
+        zstack((row(PieceVec(letters)),))
+            .width(slot_w)
+            .on_tap(move || tab.set(i))
+            .a11y(move |b| b.role(Role::Button).label(title))
+            .any()
     };
 
     zstack((
@@ -289,29 +303,17 @@ fn profile_section(state: AppState) -> impl Piece {
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
-/// Preset stops of the accent strip, left to right.
-const ACCENT_STOPS: [u32; 5] = [
-    colors::BLUE,
-    colors::GREEN,
-    colors::PURPLE,
-    colors::ORANGE,
-    colors::RED,
-];
-
 fn appearance_section(state: AppState) -> impl Piece {
-    // Thumb position, shared by the strip and the preset rows: both drive it.
-    let accent_pos: Signal<f64> = Signal::new(accent_pos_of(state.accent_color.get()));
     column((
         form((
             section(
                 (
                     label("Акцентный цвет").font(Font::Headline),
-                    accent_strip(state, accent_pos),
-                    accent_option(state, "Синий", colors::BLUE, accent_pos),
-                    accent_option(state, "Зелёный", colors::GREEN, accent_pos),
-                    accent_option(state, "Фиолетовый", colors::PURPLE, accent_pos),
-                    accent_option(state, "Оранжевый", colors::ORANGE, accent_pos),
-                    accent_option(state, "Красный", colors::RED, accent_pos),
+                    accent_option(state, "Синий", colors::BLUE),
+                    accent_option(state, "Зелёный", colors::GREEN),
+                    accent_option(state, "Фиолетовый", colors::PURPLE),
+                    accent_option(state, "Оранжевый", colors::ORANGE),
+                    accent_option(state, "Красный", colors::RED),
                 )
             ).title("Цвета"),
         )),
@@ -347,126 +349,6 @@ fn accent_commit(state: AppState, hex: u32) {
     }
 }
 
-/// The preset colour under `t ∈ [0,1]` of the strip — linear RGB between stops.
-fn strip_color_at(t: f64) -> u32 {
-    let t = t.clamp(0.0, 1.0) * (ACCENT_STOPS.len() - 1) as f64;
-    let i = (t.floor() as usize).min(ACCENT_STOPS.len() - 2);
-    let f = t - i as f64;
-    let a = ACCENT_STOPS[i];
-    let b = ACCENT_STOPS[i + 1];
-    let mix = |shift: u32| {
-        let av = (a >> shift) & 0xff;
-        let bv = (b >> shift) & 0xff;
-        (av as f64 + (bv as f64 - av as f64) * f).round() as u32
-    };
-    (mix(16) << 16) | (mix(8) << 8) | mix(0)
-}
-
-/// Where the thumb sits for an accent already in hand: the strip position whose
-/// colour is nearest (sampled — the strip only carries preset hues anyway).
-fn accent_pos_of(hex: u32) -> f64 {
-    let (hr, hg, hb) = ((hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff);
-    let mut best = 0.0;
-    let mut best_d = f64::MAX;
-    for s in 0..=100 {
-        let t = s as f64 / 100.0;
-        let c = strip_color_at(t);
-        let (cr, cg, cb) = ((c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff);
-        let d = (hr as i64 - cr as i64).pow(2)
-            + (hg as i64 - cg as i64).pow(2)
-            + (hb as i64 - cb as i64).pow(2);
-        if (d as f64) < best_d {
-            best_d = d as f64;
-            best = t;
-        }
-    }
-    best
-}
-
-/// The strip's thumb: a white capsule riding `t`, kept whole at either cap.
-fn strip_thumb(d: &mut Draw, t: f64, size: Size) {
-    const W: f64 = 8.0;
-    let half = W / 2.0;
-    let (lo, hi) = if size.width >= W {
-        (half, size.width - half)
-    } else {
-        (size.width / 2.0, size.width / 2.0)
-    };
-    let x = (t.clamp(0.0, 1.0) * size.width).clamp(lo, hi);
-    let r = Rect::new(x - W / 2.0, 0.0, W, size.height);
-    d.fill(Shape::RoundedRect(r, W / 2.0), Color::WHITE);
-    d.stroke(
-        Shape::RoundedRect(r.inset(0.5), W / 2.0 - 0.5),
-        Color::BLACK.with_alpha(0.4),
-        1.0,
-    );
-}
-
-/// Live half of the strip gesture: park the thumb at `x` and push the accent.
-/// The width comes from the draw pass (a plain Cell — see [`accent_strip`]).
-fn strip_pick_at(width: &std::cell::Cell<f64>, pos: Signal<f64>, state: AppState, x: f64) {
-    let w = width.get();
-    if w <= 0.0 {
-        return;
-    }
-    let t = (x / w).clamp(0.0, 1.0);
-    pos.set(t);
-    accent_apply(state, strip_color_at(t));
-}
-
-/// The accent strip — a capsule gradient across the preset palette with a
-/// draggable thumb. Every consumer of `accent_color` is reactive, so the accent
-/// follows the thumb while the finger is down: where the pill has already passed,
-/// the color has changed; where it hasn't, not yet. Prefs and the single nav
-/// reload (baked `.icon_tint`s) land when the gesture ends.
-fn accent_strip(state: AppState, pos: Signal<f64>) -> impl Piece {
-    const H: f64 = 36.0;
-    // Canvas width, reported by the draw pass — the pick needs it because gesture
-    // locations arrive in the node's own (unknown-until-laid-out) space. A plain
-    // Cell, not a Signal: writing it from inside the draw must not feed back into
-    // the reactive graph that re-runs the draw.
-    let width = std::rc::Rc::new(std::cell::Cell::new(0.0));
-    let w_draw = width.clone();
-    let w_drag = width.clone();
-    let w_tap = width.clone();
-
-    canvas(move |d, size| {
-        w_draw.set(size.width);
-        let r = Rect::new(0.0, 0.0, size.width, size.height);
-        let stops: Vec<(f64, Color)> = ACCENT_STOPS
-            .iter()
-            .enumerate()
-            .map(|(i, hex)| {
-                (
-                    i as f64 / (ACCENT_STOPS.len() - 1) as f64,
-                    Color::hex(*hex),
-                )
-            })
-            .collect();
-        d.fill(
-            Shape::RoundedRect(r, size.height / 2.0),
-            LinearGradient::new(UnitPoint::LEADING, UnitPoint::TRAILING, stops),
-        );
-        strip_thumb(d, pos.get(), size);
-    })
-    .height(H)
-    .grow_w()
-    .on_drag(move |drag| {
-        strip_pick_at(&w_drag, pos, state, drag.location.x);
-        // Live while the finger is down; the landing (prefs + the one nav reload)
-        // waits for the release so a drag doesn't reload the nav sixty times a second.
-        if let DragPhase::Ended = drag.phase {
-            accent_commit(state, strip_color_at(pos.get()));
-        }
-    })
-    .on_tap_at(move |p| {
-        strip_pick_at(&w_tap, pos, state, p.x);
-        accent_commit(state, strip_color_at(pos.get()));
-    })
-    .a11y(|a| a.label("Акцентный цвет"))
-    .id("accent-strip")
-}
-
 fn system_settings() -> impl Piece {
     form((day_piece_settings::settings_sections(
         crate::THEME_KEY,
@@ -475,21 +357,13 @@ fn system_settings() -> impl Piece {
     ),))
 }
 
-fn accent_option(
-    state: AppState,
-    lbl: &'static str,
-    hex: u32,
-    pos: Signal<f64>,
-) -> impl Piece {
+fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
     let s = state;
     button(move || {
         if s.accent_color.get() == hex { format!("\u{2713} \u{25CF} {lbl}") } else { format!("\u{25CF} {lbl}") }
     })
     .id(format!("accent-{hex}"))
-    .action(move || {
-        pos.set(accent_pos_of(hex));
-        accent_commit(state, hex);
-    })
+    .action(move || accent_commit(state, hex))
 }
 
 fn pin_section(_state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
