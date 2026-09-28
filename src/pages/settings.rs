@@ -47,17 +47,18 @@ pub fn render() -> impl Piece {
     // A reload remount can swallow the mount jump: the scroll applies before the
     // pager's contentSize exists, scrollRectToVisible no-ops, no event fires — the
     // content stays on page 0 while the strip shows the built tab. Re-send the
-    // animated target while the restore is pending; an already-landed pager ignores
-    // the redundant targets, and the flag stops the timers once `restore` completes.
-    // Setters are Send (a plain Signal is not), hence `.setter()` in the timers.
+    // target via the INSTANT jump signal (an animated target would visibly slide
+    // the page in — the reload must read as a pure recolor); an already-landed
+    // pager ignores the redundant jumps, and the flag stops the timers once
+    // `restore` completes. Setters are Send (a plain Signal is not).
     let restore_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     if built_tab != 0 {
         for ms in [50u32, 160, 360, 700] {
-            let tap = tap_target.setter();
+            let jump = initial_target.setter();
             let done = restore_done.clone();
             day::reactive::on_main_delayed(ms, move || {
                 if !done.load(std::sync::atomic::Ordering::Relaxed) {
-                    tap.set(Some(ScrollTarget::Offset(Point::new(
+                    jump.set(Some(ScrollTarget::Offset(Point::new(
                         pager_w * built_tab as f64,
                         0.0,
                     ))));
@@ -161,7 +162,7 @@ pub fn render() -> impl Piece {
                         rd.store(true, std::sync::atomic::Ordering::Relaxed);
                         last_scroll_idx.set(Some(idx));
                     } else if tries < 5 {
-                        tap_target.set(Some(ScrollTarget::Offset(Point::new(
+                        initial_target.set(Some(ScrollTarget::Offset(Point::new(
                             pager_w * want as f64,
                             0.0,
                         ))));

@@ -165,20 +165,6 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
     #[cfg(target_os = "ios")]
     crate::shared::colors::apply_ios_tint(state.accent_color.get());
 
-    day::reactive::watch(
-        move || section.get(),
-        move |&s, _| {
-            let name = match s {
-                crate::Section::Diary => "diary",
-                crate::Section::Schedule => "schedule",
-                crate::Section::Teachers => "teachers",
-                crate::Section::Settings => "settings",
-                _ => "diary",
-            };
-            day::prefs::set("app.section", name);
-        },
-    );
-
     let sel = nav(section)
         .style(day::prelude::NavStyle::Tabs)
         .title(move || {
@@ -219,7 +205,7 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
         .icon_tint(accent);
 
     if primary {
-        sel.id("nav").restore("app.section").any()
+        sel.id("nav").any()
     } else {
         sel.id("nav").local().any()
     }
