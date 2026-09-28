@@ -44,6 +44,28 @@ pub fn render() -> impl Piece {
     let restore: Signal<Option<(usize, u32)>> =
         Signal::new(if built_tab == 0 { None } else { Some((built_tab, 0)) });
 
+    // A reload remount can swallow the mount jump: the scroll applies before the
+    // pager's contentSize exists, scrollRectToVisible no-ops, no event fires — the
+    // content stays on page 0 while the strip shows the built tab. Re-send the
+    // animated target while the restore is pending; an already-landed pager ignores
+    // the redundant targets, and the flag stops the timers once `restore` completes.
+    // Setters are Send (a plain Signal is not), hence `.setter()` in the timers.
+    let restore_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    if built_tab != 0 {
+        for ms in [50u32, 160, 360, 700] {
+            let tap = tap_target.setter();
+            let done = restore_done.clone();
+            day::reactive::on_main_delayed(ms, move || {
+                if !done.load(std::sync::atomic::Ordering::Relaxed) {
+                    tap.set(Some(ScrollTarget::Offset(Point::new(
+                        pager_w * built_tab as f64,
+                        0.0,
+                    ))));
+                }
+            });
+        }
+    }
+
     // A tab change from OUTSIDE the pager (picker segment, accent jump) scrolls
     // the strip there. The first callback is the mount one — the strip is
     // already positioned by scroll_jump — so only later changes act.
@@ -93,7 +115,11 @@ pub fn render() -> impl Piece {
     when(
         move || show_setup.get(),
         move || pin_setup_modal(show_setup, pin_enabled)
-    ).otherwise(move || zstack((
+    ).otherwise(move || {
+        // Per-build clone: the outer closure is Fn (it may rebuild), while the
+        // inner `on_scroll` takes its flag by move — a Signal would be Copy.
+        let rd = restore_done.clone();
+        zstack((
         column((
         column((
             label(move || res::str::settings_title().format())
@@ -132,6 +158,7 @@ pub fn render() -> impl Piece {
                 if settled {
                     if idx == want {
                         restore.set(None);
+                        rd.store(true, std::sync::atomic::Ordering::Relaxed);
                         last_scroll_idx.set(Some(idx));
                     } else if tries < 5 {
                         tap_target.set(Some(ScrollTarget::Offset(Point::new(
@@ -141,6 +168,7 @@ pub fn render() -> impl Piece {
                         restore.set(Some((want, tries + 1)));
                     } else {
                         restore.set(None);
+                        rd.store(true, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
                 return;
@@ -163,7 +191,8 @@ pub fn render() -> impl Piece {
     ))
     .align(Alignment::TopLeading)
     .grow()
-    .any())
+    .any()
+    })
 }
 
 /// Sliding tab strip: the pill tracks the pager offset on every scroll event,
