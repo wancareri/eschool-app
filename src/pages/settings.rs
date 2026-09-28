@@ -27,6 +27,9 @@ pub fn render() -> impl Piece {
     let initial_target: Signal<Option<ScrollTarget>> = Signal::new(Some(ScrollTarget::Offset(
         Point::new(pager_w * current_tab.get() as f64, 0.0),
     )));
+    // The strip's pill rides this every scroll event — page offset / page width,
+    // so it moves exactly as far as the finger, not one segment at a time.
+    let strip_pos: Signal<f64> = Signal::new(current_tab.get() as f64);
 
     // A tab change from OUTSIDE the pager (picker segment, accent jump) scrolls
     // the strip there. The first callback is the mount one — the strip is
@@ -87,12 +90,7 @@ pub fn render() -> impl Piece {
         .spacing(6.0)
         .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
 
-        picker(
-            vec!["Основные", "Вид", "Защита", "Dev"],
-            current_tab.clone(),
-        )
-        .segmented()
-        .padding(Insets { top: 8.0, leading: 20.0, bottom: 16.0, trailing: 20.0 }),
+        tab_strip(state, current_tab, strip_pos),
 
         // Four-page native pager: UIKit owns the finger physics (paging
         // snap with its velocity throw), every page keeps its own vertical
@@ -108,6 +106,7 @@ pub fn render() -> impl Piece {
         .scroll_target(tap_target)
         .scroll_jump(initial_target)
         .on_scroll(move |p| {
+            strip_pos.set((p.x / pager_w).clamp(0.0, 3.0));
             let idx = ((p.x / pager_w).round() as usize).min(3);
             last_scroll_idx.set(Some(idx));
             // Only a settled offset (on a page edge) commits — mid-flight
@@ -128,6 +127,79 @@ pub fn render() -> impl Piece {
     .align(Alignment::TopLeading)
     .grow()
     .any())
+}
+
+/// Sliding tab strip: the pill tracks the pager offset on every scroll event,
+/// so it moves exactly as far as the finger — a native UISegmentedControl can
+/// only hop between segments. Labels flip over as the pill passes their slot,
+/// and a tap commits the tab; the pill then rides the pager's own animation in
+/// on the didScroll events it produces.
+fn tab_strip(
+    state: AppState,
+    current_tab: Signal<usize>,
+    strip_pos: Signal<f64>,
+) -> impl Piece {
+    let pager_w = crate::pages::diary::get_screen_width();
+    let track_w = pager_w - 40.0;
+    let slot_w = track_w / 4.0;
+
+    let track = rounded_rectangle(9.0)
+        .fill(move || {
+            if day::dark_mode() {
+                Color::rgba(0.22, 0.22, 0.24, 1.0)
+            } else {
+                Color::rgba(0.90, 0.90, 0.92, 1.0)
+            }
+        })
+        .frame(track_w, 32.0);
+
+    // zstack centers children: the pill starts at (track_w - pill_w)/2, so the
+    // translation back from that to slot `pos` is slot_w * (pos - 1.5).
+    let pill = rounded_rectangle(7.0)
+        .fill(move || Color::hex(state.accent_color.get()))
+        .frame(slot_w - 2.0, 28.0)
+        .translation(
+            move || slot_w * (strip_pos.get().clamp(0.0, 3.0) - 1.5),
+            0.0,
+        );
+
+    let tab = |i: usize, title: &'static str| {
+        let tab = current_tab;
+        let pos = strip_pos;
+        label(title)
+            .font(Font::Subheadline)
+            .align(TextAlign::Center)
+            .width(slot_w)
+            .color(move || {
+                if (pos.get() - i as f64).abs() < 0.5 {
+                    Color::hex(0xFFFFFF)
+                } else {
+                    colors::SECONDARY
+                }
+            })
+            .on_tap(move || tab.set(i))
+            .a11y(|b| b.role(Role::Button))
+            .any()
+    };
+
+    zstack((
+        track,
+        pill,
+        row((
+            tab(0, "Основные"),
+            tab(1, "Вид"),
+            tab(2, "Защита"),
+            tab(3, "Dev"),
+        ))
+        .frame(track_w, 32.0),
+    ))
+    .frame(track_w, 32.0)
+    .padding(Insets {
+        top: 8.0,
+        leading: 20.0,
+        bottom: 16.0,
+        trailing: 20.0,
+    })
 }
 
 fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piece {
