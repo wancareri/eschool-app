@@ -1,5 +1,5 @@
 /// Dynamic Island connection status indicator — frosted glass capsule with Lucide icons.
-/// Appear is instant; collapse first fades the text, then shrinks the capsule.
+/// Status changes crossfade spinner↔icon, stretch/shrink the capsule and fade the text.
 use std::sync::atomic::{AtomicU64, Ordering};
 use crate::app::{AppState, ConnStatus};
 use crate::res;
@@ -93,62 +93,101 @@ pub fn render() -> impl Piece {
     // made on one tab is already applied when another tab comes back.
     let expanded = state.island_expanded;
     let text_opacity = state.island_text_opacity;
+    // Spinner opacity for the crossfade: 1 = loader, 0 = status icon.
+    let spinner_op: Signal<f64> = Signal::new(
+        if state.conn_status.get() == ConnStatus::Connecting { 1.0 } else { 0.0 },
+    );
 
-    // Watch for connection status updates to reveal the island (full → collapse
-    // after 3 s). Nothing on mount: the island starts compact, so the initial
-    // callback (old_st == None) must not count as a change.
+    // Watch for connection status updates: a refresh fades the text out and
+    // shrinks back to the circle with the spinner; arrival stretches the capsule
+    // open, fades the text in and crossfades the spinner into the icon. Nothing
+    // on mount: the island starts compact, so the initial callback
+    // (old_st == None) must not count as a change.
     watch(
         move || state.conn_status.get(),
         move |new_st, old_st| {
             if let Some(old) = old_st {
                 if old != new_st {
-                    // Instant appear, capsule included: zero-duration ambient so
-                    // no other animation intent can grab this reflow.
-                    with_animation(AnimSpec::ease_out(0), move || {
-                        state.island_expanded.set(true);
-                        state.island_text_opacity.set(1.0);
-                    });
-                    schedule_collapse(state);
+                    // Kill any pending hide/collapse before arming new ones.
+                    let _ = COLLAPSE_GEN.fetch_add(1, Ordering::SeqCst);
+                    if *new_st == ConnStatus::Connecting {
+                        // Refresh started: the text fades out, the icon
+                        // crossfades into the spinner, and once the text is gone
+                        // the capsule shrinks back to the circle.
+                        with_animation(AnimSpec::ease_out(130), move || {
+                            state.island_text_opacity.set(0.0);
+                        });
+                        with_animation(AnimSpec::ease_out(220), move || {
+                            spinner_op.set(1.0);
+                        });
+                        let setter_exp = state.island_expanded.setter();
+                        let gen_id = COLLAPSE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+                        day::reactive::on_main_delayed(140, move || {
+                            if COLLAPSE_GEN.load(Ordering::SeqCst) == gen_id {
+                                with_animation(AnimSpec::ease_out(220), move || {
+                                    setter_exp.set(false);
+                                });
+                            }
+                        });
+                    } else {
+                        // Data arrived. Park hidden text at 0 first (safe: the
+                        // label is not mounted), then — one ease-out — open the
+                        // capsule (which inserts the label at 0) and fade the
+                        // text in with the stretch while the spinner crossfades
+                        // into the icon.
+                        if !expanded.get() && state.island_text_opacity.get() != 0.0 {
+                            state.island_text_opacity.set(0.0);
+                        }
+                        with_animation(AnimSpec::ease_out(220), move || {
+                            spinner_op.set(0.0);
+                            state.island_expanded.set(true);
+                            state.island_text_opacity.set(1.0);
+                        });
+                        schedule_collapse(state);
+                    }
                 }
             }
         },
     );
 
-    let icon_piece = when(
-        move || state.conn_status.get() == ConnStatus::Connecting,
-        move || super::spinner::render(state, 13.0).any(),
+    let status_icon = when(
+        move || state.conn_status.get() == ConnStatus::Offline,
+        || vector(res::vectors::status_offline).frame(13.0, 13.0).tint(Color::hex(0x8E8E93)).any(),
     )
     .otherwise(move || {
         when(
-            move || state.conn_status.get() == ConnStatus::Offline,
-            || vector(res::vectors::status_offline).frame(13.0, 13.0).tint(Color::hex(0x8E8E93)).any(),
+            move || state.conn_status.get() == ConnStatus::Error,
+            || vector(res::vectors::status_error).frame(13.0, 13.0).tint(Color::hex(0xEF4444)).any(),
         )
         .otherwise(move || {
-            when(
-                move || state.conn_status.get() == ConnStatus::Error,
-                || vector(res::vectors::status_error).frame(13.0, 13.0).tint(Color::hex(0xEF4444)).any(),
-            )
-            .otherwise(move || {
-                vector(res::vectors::status_ok)
-                    .frame(13.0, 13.0)
-                    .tint(move || match state.conn_status.get() {
-                        ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
-                            Color::hex(state.accent_color.get())
-                        }
-                        ConnStatus::Offline => Color::hex(0x8E8E93),
-                        ConnStatus::Error => Color::hex(0xEF4444),
-                    })
-                    .any()
-            })
+            vector(res::vectors::status_ok)
+                .frame(13.0, 13.0)
+                .tint(move || match state.conn_status.get() {
+                    ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
+                        Color::hex(state.accent_color.get())
+                    }
+                    ConnStatus::Offline => Color::hex(0x8E8E93),
+                    ConnStatus::Error => Color::hex(0xEF4444),
+                })
+                .any()
         })
     });
+
+    // Both glyphs share the 13pt slot and crossfade on every status change:
+    // spinner_op 1 = loader, 0 = status icon (inverse opacity).
+    let icon_piece = zstack((
+        super::spinner::render_gated(state, 13.0, move || spinner_op.get() > 0.0)
+            .opacity(move || spinner_op.get())
+            .any(),
+        status_icon
+            .opacity(move || 1.0 - spinner_op.get())
+            .any(),
+    ));
 
     let content = row((
         icon_piece,
         when(
-            move || {
-                expanded.get() && state.conn_status.get() != ConnStatus::Connecting
-            },
+            move || expanded.get(),
             move || {
                 label(move || match state.conn_status.get() {
                     ConnStatus::Connecting => "Обновление…",

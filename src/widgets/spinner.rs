@@ -8,6 +8,17 @@ use day::prelude::*;
 /// requested frame and rendered in the system grey. The display link only runs
 /// while this piece is mounted, so an idle app never wakes it.
 pub fn render(state: AppState, size: f64) -> impl Piece {
+    render_gated(state, size, || true)
+}
+
+/// Like [`render`], but the display link only runs while `active` reports true.
+/// A spinner kept mounted to crossfade its opacity must not keep the clock
+/// ticking once it is invisible.
+pub fn render_gated(
+    state: AppState,
+    size: f64,
+    active: impl Fn() -> bool + 'static,
+) -> impl Piece {
     let angle = Signal::new(0.0);
     let spin = angle;
     zstack((
@@ -16,10 +27,13 @@ pub fn render(state: AppState, size: f64) -> impl Piece {
             .tint(move || Color::hex(state.accent_color.get()))
             .rotation(move || spin.get())
             .any(),
-        frame_clock(move |dt| {
-            // ~one turn per second; untracked so the tick never subscribes.
-            let next = angle.get_untracked() + dt.as_secs_f64() * 360.0;
-            angle.set(if next >= 360.0 { next - 360.0 } else { next });
+        when(active, move || {
+            frame_clock(move |dt| {
+                // ~one turn per second; untracked so the tick never subscribes.
+                let next = angle.get_untracked() + dt.as_secs_f64() * 360.0;
+                angle.set(if next >= 360.0 { next - 360.0 } else { next });
+            })
+            .any()
         }),
     ))
 }
