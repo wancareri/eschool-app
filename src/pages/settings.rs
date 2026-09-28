@@ -143,7 +143,7 @@ fn tab_strip(
     let track_w = pager_w - 40.0;
     let slot_w = track_w / 4.0;
 
-    let track = rounded_rectangle(9.0)
+    let track = capsule()
         .fill(move || {
             if day::dark_mode() {
                 Color::rgba(0.22, 0.22, 0.24, 1.0)
@@ -154,8 +154,10 @@ fn tab_strip(
         .frame(track_w, 32.0);
 
     // zstack centers children: the pill starts at (track_w - pill_w)/2, so the
-    // translation back from that to slot `pos` is slot_w * (pos - 1.5).
-    let pill = rounded_rectangle(7.0)
+    // translation back from that to slot `pos` is slot_w * (pos - 1.5). The pill
+    // is a capsule too — its only way to sit inside the strongly rounded track
+    // ends at the edge slots without poking past the curve.
+    let pill = capsule()
         .fill(move || Color::hex(state.accent_color.get()))
         .frame(slot_w - 2.0, 28.0)
         .translation(
@@ -166,20 +168,25 @@ fn tab_strip(
     let tab = |i: usize, title: &'static str| {
         let tab = current_tab;
         let pos = strip_pos;
-        label(title)
-            .font(Font::Subheadline)
-            .align(TextAlign::Center)
-            .width(slot_w)
-            .color(move || {
-                if (pos.get() - i as f64).abs() < 0.5 {
-                    Color::hex(0xFFFFFF)
-                } else {
-                    colors::SECONDARY
-                }
-            })
-            .on_tap(move || tab.set(i))
-            .a11y(|b| b.role(Role::Button))
-            .any()
+        // zstack outside, width on the zstack: a stretched label sits flush-left
+        // on UIKit, the overlay centers it — the same shape the summary header
+        // ("Выставл.") uses.
+        zstack((
+            label(title)
+                .font(Font::Subheadline)
+                .align(TextAlign::Center)
+                .color(move || {
+                    if (pos.get() - i as f64).abs() < 0.5 {
+                        Color::hex(0xFFFFFF)
+                    } else {
+                        colors::SECONDARY
+                    }
+                }),
+        ))
+        .width(slot_w)
+        .on_tap(move || tab.set(i))
+        .a11y(|b| b.role(Role::Button))
+        .any()
     };
 
     zstack((
