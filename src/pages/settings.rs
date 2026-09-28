@@ -9,13 +9,6 @@ use day_piece_texteditor::text_editor;
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let current_tab = state.settings_tab;
-
-    day::reactive::watch(
-        move || current_tab.get(),
-        move |&t, _| {
-            day::prefs::set("app.settings_tab", &t.to_string());
-        },
-    );
     let pager_w = crate::pages::diary::get_screen_width();
 
     // The pager's own report: a tab write that came FROM a scroll event is

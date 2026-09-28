@@ -102,8 +102,8 @@ pub fn render() -> impl Piece {
         move |new_st, old_st| {
             if let Some(old) = old_st {
                 if old != new_st {
-                    // Instant appear, capsule included: the zero-duration ambient
-                    // beats the capsule's implicit .animation for this reflow.
+                    // Instant appear, capsule included: zero-duration ambient so
+                    // no other animation intent can grab this reflow.
                     with_animation(AnimSpec::ease_out(0), move || {
                         state.island_expanded.set(true);
                         state.island_text_opacity.set(1.0);
@@ -196,7 +196,6 @@ pub fn render() -> impl Piece {
     // Half of the 25 pt box: CALayer does not clamp a larger radius, and 14 on
     // 25 overshoots into a self-intersecting lens (the "eye").
     .corner_radius(12.5)
-    .animation(Animation::ease_out(220))
     .on_tap(move || {
         state
             .show_network_modal

@@ -112,10 +112,6 @@ impl Ambient for AppState {
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(crate::shared::colors::DEFAULT_ACCENT);
 
-        let saved_tab = day::prefs::get("app.settings_tab")
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(0);
-
         let biometric_lock = has_token
             && crate::shared::biometric::is_available()
             && crate::shared::biometric::is_enabled();
@@ -140,7 +136,7 @@ impl Ambient for AppState {
             accent_color: Signal::new(accent),
             ui_reload_token: Signal::new(0),
             current_section: Signal::new(crate::Section::Diary),
-            settings_tab: Signal::new(saved_tab),
+            settings_tab: Signal::new(0),
             lessons: Signal::new(Vec::new()),
             lessons_loading: Signal::new(false),
             current_week: Signal::new(String::new()),
