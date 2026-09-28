@@ -13,7 +13,7 @@ pub fn render(state: AppState, size: f64) -> impl Piece {
     zstack((
         vector(res::vectors::spinner)
             .frame(size, size)
-            .tint(Color::hex(state.accent_color.get()))
+            .tint(move || Color::hex(state.accent_color.get()))
             .rotation(move || spin.get())
             .any(),
         frame_clock(move |dt| {

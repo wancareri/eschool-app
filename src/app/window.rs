@@ -126,28 +126,9 @@ fn build_nav(primary: bool) -> impl Piece {
 }
 
 fn nav_body(state: AppState, primary: bool) -> impl Piece {
-    let s_auth = state;
-    let s_even = state;
-    let s_odd = state;
-
     when(
-        move || s_auth.is_authenticated.get(),
-        move || {
-            let s_tok1 = s_even;
-            let s_tok2 = s_odd;
-            column((
-                when(
-                    move || s_tok1.ui_reload_token.get() % 2 == 0,
-                    move || render_nav_content(s_even, primary),
-                ),
-                when(
-                    move || s_tok2.ui_reload_token.get() % 2 == 1,
-                    move || render_nav_content(s_odd, primary),
-                ),
-            ))
-            .grow()
-            .any()
-        },
+        move || state.is_authenticated.get(),
+        move || render_nav_content(state, primary),
     )
     .otherwise(move || {
         if state.pin_lock_active.get() {
@@ -161,7 +142,6 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
 
 fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
     let section = state.current_section;
-    let accent = Color::hex(state.accent_color.get());
     #[cfg(target_os = "ios")]
     crate::shared::colors::apply_ios_tint(state.accent_color.get());
 
@@ -180,29 +160,24 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
             res::vectors::tab_diary,
             pages::diary::render,
         )
-        .icon_tint(accent)
         .item_icon(
             crate::Section::Schedule,
             res::str::nav_schedule(),
             res::vectors::tab_schedule,
             pages::schedule::render,
         )
-        .icon_tint(accent)
         .item_icon(
             crate::Section::Teachers,
             res::str::nav_teachers(),
             res::vectors::tab_teachers,
             pages::teachers::render,
         )
-        .icon_tint(accent)
-
         .item_icon(
             crate::Section::Settings,
             res::str::nav_settings(),
             res::vectors::tab_settings,
             pages::settings::render,
-        )
-        .icon_tint(accent);
+        );
 
     if primary {
         sel.id("nav").any()

@@ -51,7 +51,6 @@ pub struct AppState {
 
     // ── theme ────────────────────────────────────────────────────────────
     pub accent_color: Signal<u32>,
-    pub ui_reload_token: Signal<u32>,
     pub current_section: Signal<crate::Section>,
     pub settings_tab: Signal<usize>,
 
@@ -134,7 +133,6 @@ impl Ambient for AppState {
             class_label: Signal::new(String::new()),
             is_graduating: Signal::new(false),
             accent_color: Signal::new(accent),
-            ui_reload_token: Signal::new(0),
             current_section: Signal::new(crate::Section::Diary),
             settings_tab: Signal::new(0),
             lessons: Signal::new(Vec::new()),

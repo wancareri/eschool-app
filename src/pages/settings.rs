@@ -14,7 +14,7 @@ pub fn render() -> impl Piece {
     // The pager's own report: a tab write that came FROM a scroll event is
     // skipped by the scroll-back watch below (no scroll → scroll ping-pong).
     let last_scroll_idx: Signal<Option<usize>> = Signal::new(None);
-    // Picker segment / accent jump: the strip animates there natively.
+    // Picker segment: the strip animates there natively.
     let tap_target: Signal<Option<ScrollTarget>> = Signal::new(None);
     // First mount lands on the persisted tab without sliding through the rest.
     let initial_target: Signal<Option<ScrollTarget>> = Signal::new(Some(ScrollTarget::Offset(
@@ -25,25 +25,18 @@ pub fn render() -> impl Piece {
     let strip_pos: Signal<f64> = Signal::new(current_tab.get() as f64);
     // The tab this pager was BUILT for. It mounts at offset 0 regardless, so until
     // the restore has actually landed, scroll reports must not be allowed to commit
-    // a different tab — that write was the bounce to «Основные» after a color change.
-    // Tab 0 IS the mount offset: nothing to restore there, so start unguarded.
+    // a different tab — that write was the bounce to «Основные». Tab 0 IS the mount
+    // offset: nothing to restore there, so start unguarded.
     let built_tab = current_tab.get();
-    // The reload token this pager was built under: a token bump unmounts this
-    // pager, and the DYING instance's last scroll reports (x collapsing to 0)
-    // must not zero the shared tab — the fresh instance would then mount on
-    // «Основные» unguarded. Instance-local signals stay harmless either way.
-    let built_tok = state.ui_reload_token.get();
-    let reload_tok = state.ui_reload_token;
     let restore: Signal<Option<(usize, u32)>> =
         Signal::new(if built_tab == 0 { None } else { Some((built_tab, 0)) });
 
-    // A reload remount can swallow the mount jump: the scroll applies before the
-    // pager's contentSize exists, scrollRectToVisible no-ops, no event fires — the
-    // content stays on page 0 while the strip shows the built tab. Re-send the
-    // target via the INSTANT jump signal (an animated target would visibly slide
-    // the page in — the reload must read as a pure recolor); an already-landed
-    // pager ignores the redundant jumps, and the flag stops the timers once
-    // `restore` completes. Setters are Send (a plain Signal is not).
+    // The mount jump can be swallowed: the scroll applies before the pager's
+    // contentSize exists, scrollRectToVisible no-ops, no event fires — the content
+    // stays on page 0 while the strip shows the built tab. Re-send the target via
+    // the INSTANT jump signal (an animated target would visibly slide the page in);
+    // an already-landed pager ignores the redundant jumps, and the flag stops the
+    // timers once `restore` completes. Setters are Send (a plain Signal is not).
     let restore_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     if built_tab != 0 {
         for ms in [50u32, 160, 360, 700] {
@@ -60,7 +53,7 @@ pub fn render() -> impl Piece {
         }
     }
 
-    // A tab change from OUTSIDE the pager (picker segment, accent jump) scrolls
+    // A tab change from OUTSIDE the pager (picker segment) scrolls
     // the strip there. The first callback is the mount one — the strip is
     // already positioned by scroll_jump — so only later changes act.
     {
@@ -139,9 +132,6 @@ pub fn render() -> impl Piece {
         .scroll_target(tap_target)
         .scroll_jump(initial_target)
         .on_scroll(move |p| {
-            if reload_tok.get() != built_tok {
-                return;
-            }
             strip_pos.set((p.x / pager_w).clamp(0.0, 3.0));
             let idx = ((p.x / pager_w).round() as usize).min(3);
             let settled = (p.x - idx as f64 * pager_w).abs() < 0.5;
@@ -355,7 +345,8 @@ fn appearance_section(state: AppState) -> impl Piece {
 }
 
 /// Push an accent through every live consumer — the signal plus the UIKit tint
-/// cascade. Nothing here remounts; the nav reload waits for [`accent_commit`].
+/// cascade. Nothing remounts: nav glyphs are template icons that follow the
+/// window tint, and every other accent consumer is a reactive closure.
 fn accent_apply(state: AppState, hex: u32) {
     colors::set_accent(hex);
     state.accent_color.set(hex);
@@ -363,22 +354,12 @@ fn accent_apply(state: AppState, hex: u32) {
     colors::apply_ios_tint(hex);
 }
 
-/// Land an accent: persist it and reload the nav once so the baked `.icon_tint`s
-/// recolor. The settings pager restores its own tab across that reload (the
-/// `on_scroll` guard in `render`), so a color change no longer drops the user
-/// onto «Основные».
+/// Land an accent: persist it and push it through every live consumer. The UI
+/// recolors in place — no nav reload, no page remount, the settings pager
+/// stays exactly where the user put it.
 fn accent_commit(state: AppState, hex: u32) {
-    let v = hex.to_string();
-    let fresh = day::prefs::get("app.accent_color").as_deref() != Some(v.as_str());
-    day::prefs::set("app.accent_color", &v);
+    day::prefs::set("app.accent_color", &hex.to_string());
     accent_apply(state, hex);
-    // The reload below is a parity toggle between two `when` arms, so a duplicate
-    // commit (some backends deliver a tap as a zero-length drag too) would cancel
-    // itself out — bump only for a value that actually changed.
-    if fresh {
-        let tok = state.ui_reload_token.get();
-        state.ui_reload_token.set(tok + 1);
-    }
 }
 
 fn system_settings() -> impl Piece {

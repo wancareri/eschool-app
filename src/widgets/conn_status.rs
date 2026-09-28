@@ -129,13 +129,16 @@ pub fn render() -> impl Piece {
                 || vector(res::vectors::status_error).frame(13.0, 13.0).tint(Color::hex(0xEF4444)).any(),
             )
             .otherwise(move || {
-                let st = state.conn_status.get();
-                let tint_color = match st {
-                    ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => Color::hex(state.accent_color.get()),
-                    ConnStatus::Offline => Color::hex(0x8E8E93),
-                    ConnStatus::Error => Color::hex(0xEF4444),
-                };
-                vector(res::vectors::status_ok).frame(13.0, 13.0).tint(tint_color).any()
+                vector(res::vectors::status_ok)
+                    .frame(13.0, 13.0)
+                    .tint(move || match state.conn_status.get() {
+                        ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
+                            Color::hex(state.accent_color.get())
+                        }
+                        ConnStatus::Offline => Color::hex(0x8E8E93),
+                        ConnStatus::Error => Color::hex(0xEF4444),
+                    })
+                    .any()
             })
         })
     });
