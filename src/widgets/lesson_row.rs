@@ -75,9 +75,7 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
                     move || s_has_hw.with(|s| {
                         s.homework.as_ref().map(|h| !h.is_empty()).unwrap_or(false)
                     }),
-                    move || label(move || {
-                        s_hw.with(|s| format!("✎ {}", s.homework.clone().unwrap_or_default()))
-                    })
+                    move || label(move || s_hw.with(|s| s.homework.clone().unwrap_or_default()))
                     .font(Font::Caption)
                     .weight(FontWeight::Semibold)
                     .color(colors::ACCENT)

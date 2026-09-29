@@ -96,6 +96,13 @@ pub struct AppState {
     pub island_expanded: Signal<bool>,
     /// The island label's opacity: fades out before the capsule collapses.
     pub island_text_opacity: Signal<f64>,
+    /// Visual mirror of `conn_status` for the island chrome (capsule tint, icon):
+    /// swapped inside `with_animation` on a status change so the color eases
+    /// instead of snapping with the raw write.
+    pub island_state: Signal<ConnStatus>,
+    /// Label copy of the status: swapped only while the text is invisible, so
+    /// the wording never changes mid-fade.
+    pub island_label: Signal<ConnStatus>,
 }
 
 impl Ambient for AppState {
@@ -159,6 +166,8 @@ impl Ambient for AppState {
             show_network_modal: Signal::new(None),
             island_expanded: Signal::new(false),
             island_text_opacity: Signal::new(1.0),
+            island_state: Signal::new(ConnStatus::Idle),
+            island_label: Signal::new(ConnStatus::Idle),
             log_version: Signal::new(0u64),
         };
 

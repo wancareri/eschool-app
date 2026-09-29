@@ -95,14 +95,16 @@ pub fn render() -> impl Piece {
     let text_opacity = state.island_text_opacity;
     // Spinner opacity for the crossfade: 1 = loader, 0 = status icon.
     let spinner_op: Signal<f64> = Signal::new(
-        if state.conn_status.get() == ConnStatus::Connecting { 1.0 } else { 0.0 },
+        if state.island_state.get() == ConnStatus::Connecting { 1.0 } else { 0.0 },
     );
 
-    // Watch for connection status updates: a refresh fades the text out and
-    // shrinks back to the circle with the spinner; arrival stretches the capsule
-    // open, fades the text in and crossfades the spinner into the icon. Nothing
-    // on mount: the island starts compact, so the initial callback
-    // (old_st == None) must not count as a change.
+    // Watch for connection status updates. The raw write itself carries no
+    // animation intent, so every visual step runs on the main queue under
+    // `with_animation` (an in-progress drain swallows the intent otherwise):
+    // the capsule tint eases with the spinner crossfade, the old wording
+    // fades out untouched, the label copy swaps only once the text is
+    // invisible, and the arrival mounts the label at parked opacity 0
+    // before fading it in — nothing pops.
     watch(
         move || state.conn_status.get(),
         move |new_st, old_st| {
@@ -111,46 +113,55 @@ pub fn render() -> impl Piece {
                     // Kill any pending hide/collapse before arming new ones.
                     let _ = COLLAPSE_GEN.fetch_add(1, Ordering::SeqCst);
                     let connecting = *new_st == ConnStatus::Connecting;
+                    let new = *new_st;
                     // Park hidden text at 0 synchronously — the label is not
-                    // mounted, so this instant write is invisible, and the insert
+                    // mounted, so this instant write is invisible, and the fade
                     // below must start from 0 to fade in.
                     if !connecting && !expanded.get() && state.island_text_opacity.get() != 0.0 {
                         state.island_text_opacity.set(0.0);
                     }
-                    // This watch is a reaction running INSIDE the drain of the
-                    // status write, and `with_animation` cannot capture intent
-                    // from an in-progress drain (day-core anim.rs) — hop to the
-                    // main queue, where the mutations drain under a live ambient.
                     let sp = spinner_op.setter();
                     let exp = state.island_expanded.setter();
                     let txt = state.island_text_opacity.setter();
+                    let st = state.island_state.setter();
+                    let lb = state.island_label.setter();
                     day::reactive::on_main(move || {
                         if connecting {
-                            // Refresh started: the text fades out and the icon
-                            // crossfades into the spinner; the shrink to the
-                            // circle follows on its own timer below.
+                            // Refresh started: glyph → spinner crossfade while
+                            // the capsule tint eases toward the accent. The
+                            // label copy stays on the old wording for now.
+                            with_animation(AnimSpec::ease_out(220), move || {
+                                sp.set(1.0);
+                                st.set(new);
+                            });
                             with_animation(AnimSpec::ease_out(130), move || {
                                 txt.set(0.0);
                             });
-                            with_animation(AnimSpec::ease_out(220), move || {
-                                sp.set(1.0);
-                            });
                         } else {
-                            // Data arrived: open the capsule (inserting the label
-                            // at 0), fade the text in with the stretch and
-                            // crossfade the spinner into the icon — one ease-out.
+                            // Data arrived: mount first — the label enters at
+                            // the parked opacity 0, mirrors update in the same
+                            // animated batch (tint eases, glyph crossfades) —
+                            // then fade the text in as a second, real change.
                             with_animation(AnimSpec::ease_out(220), move || {
                                 sp.set(0.0);
+                                st.set(new);
+                                lb.set(new);
                                 exp.set(true);
+                            });
+                            with_animation(AnimSpec::ease_out(220), move || {
                                 txt.set(1.0);
                             });
                         }
                     });
                     if connecting {
+                        // Swap the wording only after the fade reached 0
+                        // (invisible), then shrink to the circle.
                         let setter_exp = state.island_expanded.setter();
+                        let setter_lb = state.island_label.setter();
                         let gen_id = COLLAPSE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
                         day::reactive::on_main_delayed(140, move || {
                             if COLLAPSE_GEN.load(Ordering::SeqCst) == gen_id {
+                                setter_lb.set(new);
                                 with_animation(AnimSpec::ease_out(220), move || {
                                     setter_exp.set(false);
                                 });
@@ -165,18 +176,18 @@ pub fn render() -> impl Piece {
     );
 
     let status_icon = when(
-        move || state.conn_status.get() == ConnStatus::Offline,
+        move || state.island_state.get() == ConnStatus::Offline,
         || vector(res::vectors::status_offline).frame(13.0, 13.0).tint(Color::hex(0x8E8E93)).any(),
     )
     .otherwise(move || {
         when(
-            move || state.conn_status.get() == ConnStatus::Error,
+            move || state.island_state.get() == ConnStatus::Error,
             || vector(res::vectors::status_error).frame(13.0, 13.0).tint(Color::hex(0xEF4444)).any(),
         )
         .otherwise(move || {
             vector(res::vectors::status_ok)
                 .frame(13.0, 13.0)
-                .tint(move || match state.conn_status.get() {
+                .tint(move || match state.island_state.get() {
                     ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
                         Color::hex(state.accent_color.get())
                     }
@@ -203,14 +214,14 @@ pub fn render() -> impl Piece {
         when(
             move || expanded.get(),
             move || {
-                label(move || match state.conn_status.get() {
+                label(move || match state.island_label.get() {
                     ConnStatus::Connecting => "Обновление…",
                     ConnStatus::Connected | ConnStatus::Idle => "Обновлено",
                     ConnStatus::Offline => "Оффлайн",
                     ConnStatus::Error => "Ошибка сети",
                 })
                 .font(Font::Caption2)
-                .color(move || match state.conn_status.get() {
+                .color(move || match state.island_label.get() {
                     ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => Color::hex(state.accent_color.get()),
                     ConnStatus::Offline => Color::hex(0x8E8E93),
                     ConnStatus::Error => Color::hex(0xEF4444),
@@ -224,7 +235,7 @@ pub fn render() -> impl Piece {
     .padding(Insets { top: 6.0, leading: 6.0, bottom: 6.0, trailing: 6.0 })
     .background(move || {
         let dark = day::dark_mode();
-        match state.conn_status.get() {
+        match state.island_state.get() {
             ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
                 let accent = state.accent_color.get();
                 if dark {
