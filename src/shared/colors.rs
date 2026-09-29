@@ -57,8 +57,31 @@ pub fn apply_ios_tint(hex: u32) {
         if let Some(win_arr) = windows {
             for win in win_arr.iter() {
                 let _: () = objc2::msg_send![&*win, setTintColor: &*color];
+                // UIAppearance only stamps views created AFTER the proxy call: the live
+                // tab bar / nav bar / switches keep the accent they were born with, and a
+                // stamped non-nil tintColor stops window inheritance too. Retint the
+                // native classes the proxies above manage by walking the hierarchy.
+                if let Some(view) = win.downcast_ref::<objc2_ui_kit::UIView>() {
+                    retint_existing(view, &color);
+                }
             }
         }
+    }
+}
+
+/// Recursively retint live UIKit classes that UIAppearance cannot reach retroactively.
+#[cfg(target_os = "ios")]
+unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIColor) {
+    let obj: &objc2::runtime::AnyObject = view.as_ref();
+    if let Some(bar) = obj.downcast_ref::<objc2_ui_kit::UITabBar>() {
+        unsafe { bar.setTintColor(Some(color)) };
+    } else if let Some(bar) = obj.downcast_ref::<objc2_ui_kit::UINavigationBar>() {
+        unsafe { bar.setTintColor(Some(color)) };
+    } else if let Some(sw) = obj.downcast_ref::<objc2_ui_kit::UISwitch>() {
+        sw.setOnTintColor(Some(color));
+    }
+    for sub in view.subviews().iter() {
+        unsafe { retint_existing(&sub, color) };
     }
 }
 
