@@ -2,6 +2,24 @@ use crate::app::AppState;
 use eschool_api::entities::*;
 use day::prelude::*;
 
+/// A пропуск is the «н» mark in the Е-школа journal (some payloads tag the
+/// record via `kind` instead of spelling the mark).
+fn is_absence(s: &LessonSlot) -> bool {
+    let Some(lm) = s.lesson_mark.as_ref() else {
+        return false;
+    };
+    if let Some(k) = lm.kind.as_deref() {
+        let k = k.trim().to_lowercase();
+        if k == "absence" || k == "absent" || k == "пропуск" {
+            return true;
+        }
+    }
+    matches!(
+        lm.mark.as_deref().map(|m| m.trim().to_lowercase()),
+        Some(ref m) if m == "н" || m == "n"
+    )
+}
+
 pub fn render<F>(state: AppState, get_lessons: F) -> impl Piece
 where
     F: Fn() -> Vec<DaySchedule> + Copy + 'static,
@@ -36,6 +54,14 @@ where
                     .collect();
                 if marks.is_empty() { "—".into() }
                 else { format!("{:.2}", marks.iter().sum::<f64>() / marks.len() as f64) }
+            }),
+            super::stat_block::render(state, "Пропусков", move || {
+                let lessons = get_lessons();
+                lessons.iter()
+                    .flat_map(|d| &d.slots)
+                    .filter(|s| is_absence(s))
+                    .count()
+                    .to_string()
             }),
         ))
         .spacing(8.0)
