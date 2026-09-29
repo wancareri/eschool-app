@@ -2,8 +2,7 @@ use eschool_api::entities::*;
 use crate::shared::{colors, utils};
 use day::prelude::*;
 
-const RAIL_WIDTH: f64 = 44.0;
-const RAIL_GAP: f64 = 12.0;
+const RAIL_GAP: f64 = 10.0;
 const DETAIL_LEFT: f64 = 16.0;
 
 fn mark_of(s: &LessonSlot) -> Option<&str> {
@@ -38,9 +37,8 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
                     .secondary()
                     .tabular(),
             ))
-            .width(RAIL_WIDTH)
             .spacing(3.0)
-            .align(HAlign::Leading),
+            .align(HAlign::Center),
             column((
                 label(move || s_title.with(|s| s.subject_title.clone()))
                     .font(Font::Body)
@@ -85,6 +83,7 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
         ))
         .spacing(RAIL_GAP)
         .align(VAlign::Center)
+        .grow()
         .padding(Insets { top: 8.0, leading: 16.0, bottom: 2.0, trailing: 16.0 }),
 
         when(
@@ -129,4 +128,5 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
         divider().padding(Insets { top: 4.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
     ))
     .spacing(0.0)
+    .align(HAlign::Leading)
 }
