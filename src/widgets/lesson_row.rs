@@ -2,9 +2,9 @@ use eschool_api::entities::*;
 use crate::shared::{colors, utils};
 use day::prelude::*;
 
-const RAIL_WIDTH: f64 = 38.0;
-const RAIL_GAP: f64 = 10.0;
-const DETAIL_LEFT: f64 = 16.0 + RAIL_WIDTH + RAIL_GAP;
+const RAIL_WIDTH: f64 = 44.0;
+const RAIL_GAP: f64 = 12.0;
+const DETAIL_LEFT: f64 = 16.0;
 
 fn mark_of(s: &LessonSlot) -> Option<&str> {
     s.lesson_mark
@@ -30,8 +30,8 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
         row((
             column((
                 label(move || s_num.with(|s| s.number.to_string()))
-                    .font(Font::Caption)
-                    .secondary()
+                    .font(Font::Title3)
+                    .bold()
                     .tabular(),
                 label(move || s_time.with(|s| utils::strip_seconds(&s.start_time)))
                     .font(Font::Caption)
@@ -39,8 +39,8 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
                     .tabular(),
             ))
             .width(RAIL_WIDTH)
-            .spacing(1.0)
-            .align(HAlign::Trailing),
+            .spacing(3.0)
+            .align(HAlign::Leading),
             column((
                 label(move || s_title.with(|s| s.subject_title.clone()))
                     .font(Font::Body)
@@ -75,9 +75,16 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
                         .padding(Insets { top: 1.0, leading: 8.0, bottom: 1.0, trailing: 8.0 })
                 },
             ),
+            when(
+                move || s_mark.with(|s| mark_of(s).is_none()),
+                move || label("—")
+                    .font(Font::Title3)
+                    .tabular()
+                    .color(colors::GRAY_400),
+            ),
         ))
         .spacing(RAIL_GAP)
-        .align(VAlign::Top)
+        .align(VAlign::Center)
         .padding(Insets { top: 8.0, leading: 16.0, bottom: 2.0, trailing: 16.0 }),
 
         when(
