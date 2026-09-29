@@ -113,7 +113,7 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
             }),
         ))
         .spacing(RAIL_GAP)
-        .align(VAlign::Top)
+        .align(VAlign::Center)
         .grow()
         .padding(Insets { top: 8.0, leading: 16.0, bottom: 2.0, trailing: 16.0 }),
 
