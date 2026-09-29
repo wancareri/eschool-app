@@ -166,9 +166,16 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
         .action(move || {
             show_summary.set(false);
             let q = s1.current_quarter.get();
-            let weeks = s2.all_weeks.get();
-            let range = features::diary::quarter_week_indices(q);
-            if range.start < weeks.len() { features::diary::load_week(s2, range.start as i32); }
+            let idx = s2.current_week_index.get() as usize;
+            if q < 4 {
+                let range = features::diary::quarter_week_indices(q);
+                if !range.contains(&idx) {
+                    let weeks = s2.all_weeks.get();
+                    if range.start < weeks.len() {
+                        features::diary::load_week(s2, range.start as i32);
+                    }
+                }
+            }
         })
         .id("sub-weeks"),
         button(move || {
