@@ -4,7 +4,6 @@ use day::prelude::*;
 
 const RAIL_WIDTH: f64 = 40.0;
 const RAIL_GAP: f64 = 10.0;
-const DETAIL_LEFT: f64 = 16.0 + RAIL_WIDTH + RAIL_GAP;
 
 fn mark_of(s: &LessonSlot) -> Option<&str> {
     s.lesson_mark
@@ -41,6 +40,7 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
             .width(RAIL_WIDTH)
             .spacing(3.0)
             .align(HAlign::Center),
+
             column((
                 label(move || s_title.with(|s| s.subject_title.clone()))
                     .font(Font::Body)
@@ -53,79 +53,71 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
                         .font(Font::Caption)
                         .secondary(),
                 ),
+                when(
+                    move || s_has_comment.with(|s| {
+                        s.lesson_mark
+                            .as_ref()
+                            .and_then(|m| m.comment.as_ref())
+                            .map(|c| !c.is_empty())
+                            .unwrap_or(false)
+                    }),
+                    move || label(move || {
+                        s_comment.with(|s| {
+                            s.lesson_mark.as_ref().and_then(|m| m.comment.clone()).unwrap_or_default()
+                        })
+                    })
+                    .font(Font::Caption)
+                    .italic()
+                    .secondary()
+                    .padding(Insets { top: 1.0, leading: 0.0, bottom: 1.0, trailing: 0.0 }),
+                ),
+                when(
+                    move || s_has_hw.with(|s| {
+                        s.homework.as_ref().map(|h| !h.is_empty()).unwrap_or(false)
+                    }),
+                    move || label(move || {
+                        s_hw.with(|s| format!("✎ {}", s.homework.clone().unwrap_or_default()))
+                    })
+                    .font(Font::Caption)
+                    .weight(FontWeight::Semibold)
+                    .color(colors::ACCENT)
+                    .padding(Insets { top: 2.0, leading: 0.0, bottom: 2.0, trailing: 0.0 }),
+                ),
+                when(
+                    move || s_has_msg.with(|s| {
+                        s.message.as_ref().map(|m| !m.is_empty()).unwrap_or(false)
+                    }),
+                    move || label(move || {
+                        s_msg.with(|s| {
+                            format!("ℹ {}", s.message.as_ref().map(|m| m.as_str()).unwrap_or(""))
+                        })
+                    })
+                    .font(Font::Caption)
+                    .secondary()
+                    .padding(Insets { top: 1.0, leading: 0.0, bottom: 2.0, trailing: 0.0 }),
+                ),
             ))
             .spacing(1.0)
             .align(HAlign::Leading)
             .grow(),
-            when(
-                move || s_mark.with(|s| mark_of(s).is_some()),
-                move || {
-                    let s_pill = s_mark;
-                    label(move || s_pill.with(|s| mark_of(s).unwrap_or("").to_string()))
-                        .font(Font::Title3)
-                        .bold()
-                        .tabular()
-                        .color(move || s_pill.with(|s| utils::grade_color(mark_of(s).unwrap_or(""))))
-                        .background(move || {
-                            s_pill
-                                .with(|s| utils::grade_color(mark_of(s).unwrap_or("")))
-                                .with_alpha(0.16)
-                        })
-                        .corner_radius(8.0)
-                        .padding(Insets { top: 1.0, leading: 8.0, bottom: 1.0, trailing: 8.0 })
-                },
-            ),
-            when(
-                move || s_mark.with(|s| mark_of(s).is_none()),
-                move || label("—")
-                    .font(Font::Title3)
-                    .tabular()
-                    .color(colors::GRAY_400),
-            ),
+
+            label(move || {
+                s_mark.with(|s| mark_of(s).map(|m| m.to_string()).unwrap_or_else(|| "—".into()))
+            })
+            .font(Font::Title3)
+            .bold()
+            .tabular()
+            .color(move || {
+                s_mark.with(|s| match mark_of(s) {
+                    Some(m) => utils::grade_color(m),
+                    None => colors::GRAY_400,
+                })
+            }),
         ))
         .spacing(RAIL_GAP)
-        .align(VAlign::Center)
+        .align(VAlign::Top)
         .grow()
         .padding(Insets { top: 8.0, leading: 16.0, bottom: 2.0, trailing: 16.0 }),
-
-        when(
-            move || s_has_comment.with(|s| {
-                s.lesson_mark
-                    .as_ref()
-                    .and_then(|m| m.comment.as_ref())
-                    .map(|c| !c.is_empty())
-                    .unwrap_or(false)
-            }),
-            move || label(move || {
-                s_comment
-                    .with(|s| s.lesson_mark.as_ref().and_then(|m| m.comment.clone()).unwrap_or_default())
-            })
-            .font(Font::Caption)
-            .italic()
-            .secondary()
-            .padding(Insets { top: 1.0, leading: DETAIL_LEFT, bottom: 1.0, trailing: 16.0 }),
-        ),
-
-        when(
-            move || s_has_hw.with(|s| s.homework.as_ref().map(|h| !h.is_empty()).unwrap_or(false)),
-            move || label(move || {
-                s_hw.with(|s| format!("✎ {}", s.homework.clone().unwrap_or_default()))
-            })
-            .font(Font::Caption)
-            .weight(FontWeight::Semibold)
-            .color(colors::ACCENT)
-            .padding(Insets { top: 2.0, leading: DETAIL_LEFT, bottom: 2.0, trailing: 16.0 }),
-        ),
-
-        when(
-            move || s_has_msg.with(|s| s.message.as_ref().map(|m| !m.is_empty()).unwrap_or(false)),
-            move || label(move || {
-                s_msg.with(|s| format!("ℹ {}", s.message.as_ref().map(|m| m.as_str()).unwrap_or("")))
-            })
-            .font(Font::Caption)
-            .secondary()
-            .padding(Insets { top: 1.0, leading: DETAIL_LEFT, bottom: 2.0, trailing: 16.0 }),
-        ),
 
         divider().padding(Insets { top: 4.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
     ))
