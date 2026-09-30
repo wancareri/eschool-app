@@ -125,23 +125,42 @@ pub fn render() -> impl Piece {
                     let txt = state.island_text_opacity.setter();
                     let st = state.island_state.setter();
                     let lb = state.island_label.setter();
-                    day::reactive::on_main(move || {
-                        if connecting {
-                            // Refresh started: glyph → spinner crossfade while
-                            // the capsule tint eases toward the accent. The
-                            // label copy stays on the old wording for now.
+                    if connecting {
+                        // Refresh started: only the spinner crossfade and the
+                        // capsule tint respond right away. The wording and the
+                        // shape wait 300 ms — a reload that finishes inside
+                        // that window never fades the text or collapses the
+                        // island, so overlapping loads can't flap it.
+                        day::reactive::on_main(move || {
                             with_animation(AnimSpec::ease_out(220), move || {
                                 sp.set(1.0);
                                 st.set(new);
                             });
-                            with_animation(AnimSpec::ease_out(130), move || {
-                                txt.set(0.0);
-                            });
-                        } else {
-                            // Data arrived: mount first — the label enters at
-                            // the parked opacity 0, mirrors update in the same
-                            // animated batch (tint eases, glyph crossfades) —
-                            // then fade the text in as a second, real change.
+                        });
+                        let gen_id = COLLAPSE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+                        day::reactive::on_main_delayed(300, move || {
+                            if COLLAPSE_GEN.load(Ordering::SeqCst) == gen_id {
+                                with_animation(AnimSpec::ease_out(130), move || {
+                                    txt.set(0.0);
+                                });
+                                // Swap the wording only after the fade reached
+                                // 0 (invisible), then shrink to the circle.
+                                day::reactive::on_main_delayed(140, move || {
+                                    if COLLAPSE_GEN.load(Ordering::SeqCst) == gen_id {
+                                        lb.set(new);
+                                        with_animation(AnimSpec::ease_out(220), move || {
+                                            exp.set(false);
+                                        });
+                                    }
+                                });
+                            }
+                        });
+                    } else {
+                        // Data arrived: mount first — the label enters at
+                        // the parked opacity 0, mirrors update in the same
+                        // animated batch (tint eases, glyph crossfades) —
+                        // then fade the text in as a second, real change.
+                        day::reactive::on_main(move || {
                             with_animation(AnimSpec::ease_out(220), move || {
                                 sp.set(0.0);
                                 st.set(new);
@@ -151,23 +170,7 @@ pub fn render() -> impl Piece {
                             with_animation(AnimSpec::ease_out(220), move || {
                                 txt.set(1.0);
                             });
-                        }
-                    });
-                    if connecting {
-                        // Swap the wording only after the fade reached 0
-                        // (invisible), then shrink to the circle.
-                        let setter_exp = state.island_expanded.setter();
-                        let setter_lb = state.island_label.setter();
-                        let gen_id = COLLAPSE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
-                        day::reactive::on_main_delayed(140, move || {
-                            if COLLAPSE_GEN.load(Ordering::SeqCst) == gen_id {
-                                setter_lb.set(new);
-                                with_animation(AnimSpec::ease_out(220), move || {
-                                    setter_exp.set(false);
-                                });
-                            }
                         });
-                    } else {
                         schedule_collapse(state);
                     }
                 }

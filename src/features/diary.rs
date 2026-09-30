@@ -354,9 +354,16 @@ pub fn load_all(state: AppState) {
         set_conn2.set(crate::app::ConnStatus::Connected);
         nslog::nslog("[Diary] load_all completed");
 
-        // Auto-hide the "Connected" indicator after 2 seconds
+        // Auto-hide the "Connected" indicator after 2 seconds — but only if
+        // no newer load took over (it would be Connecting/Connected now).
         std::thread::sleep(std::time::Duration::from_secs(2));
-        set_conn2.set(crate::app::ConnStatus::Idle);
+        day::reactive::on_main(move || {
+            if let Some(state) = AppState::get_main() {
+                if state.conn_status.get() == crate::app::ConnStatus::Connected {
+                    set_conn2.set(crate::app::ConnStatus::Idle);
+                }
+            }
+        });
     });
 }
 
@@ -536,7 +543,13 @@ pub fn load_week(state: AppState, new_index: i32) {
                         set_c.set(crate::app::ConnStatus::Connected);
                         std::thread::spawn(move || {
                             std::thread::sleep(std::time::Duration::from_secs(2));
-                            set_c.set(crate::app::ConnStatus::Idle);
+                            day::reactive::on_main(move || {
+                                if let Some(s) = AppState::get_main() {
+                                    if s.conn_status.get() == crate::app::ConnStatus::Connected {
+                                        set_c.set(crate::app::ConnStatus::Idle);
+                                    }
+                                }
+                            });
                         });
                     }
                 }
@@ -748,7 +761,13 @@ pub fn load_quarter(state: AppState, quarter: usize) {
                     set_c.set(crate::app::ConnStatus::Connected);
                     std::thread::spawn(move || {
                         std::thread::sleep(std::time::Duration::from_secs(2));
-                        set_c.set(crate::app::ConnStatus::Idle);
+                        day::reactive::on_main(move || {
+                            if let Some(s) = AppState::get_main() {
+                                if s.conn_status.get() == crate::app::ConnStatus::Connected {
+                                    set_c.set(crate::app::ConnStatus::Idle);
+                                }
+                            }
+                        });
                     });
                 }
             }
@@ -873,7 +892,13 @@ pub fn load_year(state: AppState) {
                     set_c.set(crate::app::ConnStatus::Connected);
                     std::thread::spawn(move || {
                         std::thread::sleep(std::time::Duration::from_secs(2));
-                        set_c.set(crate::app::ConnStatus::Idle);
+                        day::reactive::on_main(move || {
+                            if let Some(s) = AppState::get_main() {
+                                if s.conn_status.get() == crate::app::ConnStatus::Connected {
+                                    set_c.set(crate::app::ConnStatus::Idle);
+                                }
+                            }
+                        });
                     });
                 }
             }
