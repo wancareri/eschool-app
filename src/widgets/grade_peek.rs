@@ -1,8 +1,9 @@
-//! Итоги peek — a long-press on a subject row summons a full-width preview
-//! card at a fixed spot on screen: the quarter's marks wrapped into lines
-//! (date over mark), the average at the end of the strip, and a «+» that opens
-//! the two prediction modes — a predicted mark with a live projected average,
-//! and a target-grade plan (which marks would still be needed).
+//! Итоги peek — a tap or long-press on a subject row summons a full-width preview
+//! card at a fixed spot on screen with a scale-and-fade pop: the quarter's marks
+//! wrapped into lines (date over mark), the average at the end of the strip, and
+//! a «+» that opens the two planning modes — predicted marks tapped straight
+//! into the strip (each one highlighted among the real marks), and a target-grade
+//! plan that answers with ONE whole mark to keep reaching, rounded up.
 //!
 //! Signals live here (thread-local), not in `AppState`: the peek is one screen
 //! concern and the row handler reaches it through [`open`].
@@ -27,14 +28,17 @@ struct Peek {
     preds: Signal<Vec<f64>>,
     /// 0 = closed, 1 = predict controls, 2 = goal controls.
     panel: Signal<u8>,
-    /// The mark the predict stepper is parked on.
-    pred_value: Signal<f64>,
-    /// Target quarter average for the goal mode.
+    /// Target quarter average for the goal mode — always a whole mark.
     target: Signal<f64>,
     /// How many marks are still to come (future lessons aren't in the cache).
     k: Signal<usize>,
-    /// Fade-in opacity: 0 on open, animated to 1 one tick later.
+    /// Pop animation: 0 while mounting, animated to 1; back to 0 on the way out.
     shown: Signal<f64>,
+    /// A close is in flight — its unmount is pending; opening again cancels it.
+    closing: Signal<bool>,
+    /// Generation counter: every open/close bumps it, so a stale timer thread
+    /// sees the mismatch and stays out of the way.
+    epoch: Signal<u64>,
 }
 
 impl Peek {
@@ -44,37 +48,68 @@ impl Peek {
             quarter: Signal::new(0),
             preds: Signal::new(Vec::new()),
             panel: Signal::new(0),
-            pred_value: Signal::new(8.0),
-            target: Signal::new(8.0),
+            target: Signal::new(5.0),
             k: Signal::new(5),
             shown: Signal::new(0.0),
+            closing: Signal::new(false),
+            epoch: Signal::new(0),
         }
     }
 
     fn open(&self, subject: String, quarter: usize) {
+        // Idempotent: a long-press release also fires the row's tap, and the
+        // second call must not restart the pop. Re-opening while a close is
+        // still fading cancels that close and pops again instead.
+        if self.subject.get().is_some() && !self.closing.get() {
+            return;
+        }
         self.subject.set(Some(subject));
         self.quarter.set(quarter);
         self.preds.set(Vec::new());
         self.panel.set(0);
-        self.pred_value.set(8.0);
-        self.target.set(8.0);
+        self.target.set(5.0);
         self.k.set(5);
-        // Mount at opacity 0, then one animated write a tick later — the delay
-        // lets the fresh subtree build before the fade lands on it.
-        self.shown.set(0.0);
+        self.closing.set(false);
+        self.epoch.set(self.epoch.get() + 1);
+        let g = self.epoch.get();
         let set = self.shown.setter();
+        // Mount at scale/opacity 0, then one animated write a tick later — the
+        // delay lets the fresh subtree build before the pop lands on it. The
+        // epoch check runs inside `on_main` on the main thread (Signals are not
+        // Send): a newer open/close invalidates this timer's `g`.
+        self.shown.set(0.0);
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(16));
             day::reactive::on_main(move || {
-                with_animation(AnimSpec::ease_out(150), move || set.set(1.0));
+                if peek().epoch.get() == g {
+                    with_animation(AnimSpec::ease_out(220), move || set.set(1.0));
+                }
             });
         });
     }
 
     fn close(&self) {
-        self.subject.set(None);
-        self.preds.set(Vec::new());
-        self.panel.set(0);
+        if self.subject.get().is_none() || self.closing.get() {
+            return;
+        }
+        // Scale/fade the card out first; the subtree unmounts a tick after the
+        // animation lands, and only if nothing re-opened the peek meanwhile.
+        self.closing.set(true);
+        self.epoch.set(self.epoch.get() + 1);
+        let g = self.epoch.get();
+        let set = self.shown.setter();
+        with_animation(AnimSpec::ease_out(150), move || set.set(0.0));
+        let subj = self.subject.setter();
+        let cls = self.closing.setter();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(170));
+            day::reactive::on_main(move || {
+                if peek().epoch.get() == g {
+                    subj.set(None);
+                    cls.set(false);
+                }
+            });
+        });
     }
 }
 
@@ -93,7 +128,7 @@ fn peek() -> Peek {
     })
 }
 
-/// Summon the peek — called from the Итоги row's `on_long_press`.
+/// Summon the peek — called from the Итоги row's tap / long-press.
 pub fn open(subject: String, quarter: usize) {
     peek().open(subject, quarter);
 }
@@ -113,9 +148,28 @@ fn avg_of(v: &[f64]) -> Option<f64> {
     }
 }
 
-/// The goal-mode verdict: (text, color) — recomputed by both the label and its
-/// tint (pure and cheap, and keeps the piece tree flat).
-fn goal_report(state: AppState, pk: Peek) -> (String, Color) {
+/// The accent at a given alpha — one place for the hex → rgba dance.
+fn accent_tint(hex: u32, alpha: f64) -> Color {
+    Color::rgba(
+        ((hex >> 16) & 0xff) as f64 / 255.0,
+        ((hex >> 8) & 0xff) as f64 / 255.0,
+        (hex & 0xff) as f64 / 255.0,
+        alpha,
+    )
+}
+
+/// The goal-mode verdict, split for the layout: a big whole number and the
+/// line under it.
+struct GoalReport {
+    big: String,
+    hint: String,
+    color: Color,
+}
+
+/// The verdict math: how the k remaining marks have to be graded. The answer
+/// is always a WHOLE mark — the needed per-mark average is rounded UP, because
+/// any lower rounding could land just short of the target.
+fn goal_report(state: AppState, pk: Peek) -> GoalReport {
     let q = pk.quarter.get();
     let subj = pk.subject.get().unwrap_or_default();
     let marks = subject_marks(state, &subj, q);
@@ -125,83 +179,78 @@ fn goal_report(state: AppState, pk: Peek) -> (String, Color) {
     let k = pk.k.get() as f64;
 
     if marks.is_empty() {
-        return (
-            "Нет оценок за четверть — считать не от чего.".into(),
-            colors::SECONDARY,
-        );
+        return GoalReport {
+            big: "—".into(),
+            hint: "Нет оценок за четверть — считать не от чего.".into(),
+            color: colors::SECONDARY,
+        };
     }
     if k == 0.0 {
         let cur = sum / n;
         return if cur >= target {
-            (
-                format!("Оценок не осталось: цель {target:.1} уже держится (сейчас {cur:.2})."),
-                colors::SUCCESS,
-            )
+            GoalReport {
+                big: format!("{cur:.1}"),
+                hint: format!("Оценок не осталось — цель {target:.0} держится."),
+                color: colors::SUCCESS,
+            }
         } else {
-            (
-                format!("Оценок не осталось: сейчас {cur:.2} — цели {target:.1} не хватит."),
-                colors::ERROR,
-            )
+            GoalReport {
+                big: format!("{cur:.1}"),
+                hint: format!("Оценок не осталось — цели {target:.0} не хватит."),
+                color: colors::ERROR,
+            }
         };
     }
 
-    // The sum the k remaining marks have to deliver.
-    let need_total = target * (n + k) - sum;
-    if need_total <= PEEK_FLOOR * k + 1e-9 {
+    // The average each of the k remaining marks has to deliver.
+    let per = (target * (n + k) - sum) / k;
+    if per <= PEEK_FLOOR + 1e-9 {
         let with_floor = (sum + PEEK_FLOOR * k) / (n + k);
-        return (
-            format!(
-                "Достаточно любых двоек — итог при всех двойках {with_floor:.2} ≥ цели {target:.1}."
+        return GoalReport {
+            big: "2".into(),
+            hint: format!(
+                "Достаточно любых двоек — итог при всех двойках {with_floor:.2} ≥ цели {target:.0}."
             ),
-            colors::SUCCESS,
-        );
+            color: colors::SUCCESS,
+        };
     }
-    if need_total > PEEK_MAX * k + 1e-9 {
+    if per > PEEK_MAX + 1e-9 {
         let max = (sum + PEEK_MAX * k) / (n + k);
-        return (
-            format!(
-                "Невозможно: даже все десятки дадут {max:.2} — цели {target:.1} не хватит."
+        return GoalReport {
+            big: "10+".into(),
+            hint: format!(
+                "Невозможно: даже все десятки дадут {max:.2} — цели {target:.0} не хватит."
             ),
-            colors::ERROR,
-        );
+            color: colors::ERROR,
+        };
     }
 
-    // Exact minimal sequence: need spread as evenly as integers allow —
-    // `r` marks of ⌈need/k⌉ and the rest of ⌊need/k⌋, summing to exactly `need`.
-    let need = need_total.ceil().min(PEEK_MAX * k);
-    let ki = k as i64;
-    let ni = need as i64;
-    let x = ni / ki;
-    let r = ni % ki;
-    let mut list: Vec<i64> = Vec::with_capacity(ki as usize);
-    for _ in 0..r {
-        list.push(x + 1);
-    }
-    for _ in 0..(ki - r) {
-        list.push(x);
-    }
-    list.sort_unstable_by(|a, b| b.cmp(a));
-    let vals: Vec<String> = list.iter().map(|v| v.to_string()).collect();
-    let shown = if vals.len() > 12 {
-        format!("{}, …", vals[..12].join(", "))
+    let need = per.ceil().clamp(PEEK_MIN, PEEK_MAX);
+    let hint = format!(
+        "На каждую из {} оценок — не ниже {need} (нужно в среднем {per:.2}, округляем вверх).",
+        k as u64
+    );
+    let color = if need <= 6.0 {
+        colors::SUCCESS
+    } else if need <= 8.0 {
+        colors::SECONDARY
     } else {
-        vals.join(", ")
+        colors::ERROR
     };
-    (
-        format!(
-            "Нужно набрать {need} за {ki} оценок (в среднем {:.2}). Например: {shown}.",
-            need / k
-        ),
-        colors::SECONDARY,
-    )
+    GoalReport {
+        big: format!("{need:.0}"),
+        hint,
+        color,
+    }
 }
 
 /// The fullscreen overlay: dim (tap to close) + the card.
 ///
 /// The card is full-width and sits at a FIXED spot — the press point only picks
-/// the subject, so where you long-press never moves the preview. Nothing inside
+/// the subject, so where you tap never moves the preview. Nothing inside
 /// scrolls (the strip wraps instead), so there is no gesture that could slide
-/// content and expose the dim behind the card.
+/// content and expose the dim behind the card. The card pops in and out with a
+/// scale-and-fade; the dim rides the same opacity.
 pub fn overlay(state: AppState) -> impl Piece {
     let pk = peek();
     when(
@@ -213,7 +262,7 @@ pub fn overlay(state: AppState) -> impl Piece {
                     .action(move || peek().close())
                     .background(Color::rgba(0.0, 0.0, 0.0, 0.42))
                     .grow(),
-                build_card(state, pk, w),
+                build_card(state, pk, w).scale(move || 0.92 + 0.08 * pk.shown.get()),
             ))
             .align(Alignment::Center)
             .opacity(move || pk.shown.get())
@@ -223,12 +272,69 @@ pub fn overlay(state: AppState) -> impl Piece {
     .grow()
 }
 
+/// A mode chip for the Предикт/Цель switch: accent-tinted when its mode is
+/// the live one.
+fn seg_chip(state: AppState, pk: Peek, mode: u8, text: &'static str) -> AnyPiece {
+    column((
+        label(text).font(Font::Subheadline).color(move || {
+            if pk.panel.get() == mode {
+                Color::hex(state.accent_color.get())
+            } else {
+                colors::SECONDARY
+            }
+        }),
+    ))
+    .padding(Insets {
+        top: 7.0,
+        leading: 14.0,
+        bottom: 7.0,
+        trailing: 14.0,
+    })
+    .corner_radius(8.0)
+    .background(move || {
+        if pk.panel.get() == mode {
+            accent_tint(state.accent_color.get(), 0.14)
+        } else {
+            Color::rgba(0.0, 0.0, 0.0, 0.06)
+        }
+    })
+    .on_tap(move || {
+        if mode == 2 {
+            // Seed the goal from the current average, as a whole mark.
+            let q = pk.quarter.get();
+            let subj = pk.subject.get().unwrap_or_default();
+            if let Some(a) = avg_of(&subject_marks(state, &subj, q)) {
+                pk.target.set(a.round().clamp(PEEK_MIN, PEEK_MAX));
+            }
+        }
+        pk.panel.set(mode);
+    })
+    .any()
+}
+
 fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
-    let st_sum = state;
     let st_avg = state;
     let st_avg_col = state;
-    let st_seed = state;
-    let st_report = state;
+    let st_sum = state;
+
+    // Header: the subject on the left, a compact ✕ on the right.
+    let header = row((
+        label(move || pk.subject.get().unwrap_or_default())
+            .font(Font::Title3)
+            .grow(),
+        column((label("✕").font(Font::Subheadline),))
+            .padding(Insets {
+                top: 6.0,
+                leading: 9.0,
+                bottom: 6.0,
+                trailing: 9.0,
+            })
+            .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
+            .corner_radius(8.0)
+            .on_tap(move || peek().close()),
+    ))
+    .spacing(8.0)
+    .align(VAlign::Center);
 
     // Real marks: one chip per lesson slot (date over the mark as spelled).
     let real_chips = each(
@@ -263,13 +369,14 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
                 bottom: 6.0,
                 trailing: 8.0,
             })
-            .background(Color::rgba(0.0, 0.0, 0.0, 0.08))
+            .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
             .corner_radius(8.0)
             .any()
         },
     );
 
-    // Predicted chips: accent-tinted, prefixed with «~», tap removes.
+    // Predicted chips: accent-tinted, prefixed with «~», tap removes — they sit
+    // IN the strip among the real marks, highlighted.
     let pred_chips = each(
         items(
             move || {
@@ -301,15 +408,7 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
                 bottom: 6.0,
                 trailing: 8.0,
             })
-            .background(move || {
-                let h = st.accent_color.get();
-                Color::rgba(
-                    ((h >> 16) & 0xff) as f64 / 255.0,
-                    ((h >> 8) & 0xff) as f64 / 255.0,
-                    (h & 0xff) as f64 / 255.0,
-                    0.16,
-                )
-            })
+            .background(move || accent_tint(st.accent_color.get(), 0.16))
             .corner_radius(8.0)
             .on_tap(move || {
                 let mut v = pk_rm.preds.get();
@@ -338,7 +437,7 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
                 format!("{:.2}", sum / n)
             }
         })
-        .font(Font::Headline)
+        .font(Font::Title3)
         .color(move || {
             if !pk.preds.get().is_empty() {
                 return Color::hex(st_avg_col.accent_color.get());
@@ -353,17 +452,17 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
     .spacing(2.0)
     .padding(Insets {
         top: 6.0,
-        leading: 8.0,
+        leading: 10.0,
         bottom: 6.0,
-        trailing: 8.0,
+        trailing: 10.0,
     })
-    .background(Color::rgba(0.0, 0.0, 0.0, 0.14))
+    .background(Color::rgba(0.0, 0.0, 0.0, 0.13))
     .corner_radius(8.0);
 
-    // «+» — opens the panel (predict mode first; seeded from the current avg).
+    // «+» — opens the planning panel (predict mode first).
     let plus_chip = column((
         label("+").font(Font::Title3),
-        label("новая").font(Font::Caption2).color(colors::SECONDARY),
+        label("что если").font(Font::Caption2).color(colors::SECONDARY),
     ))
     .spacing(2.0)
     .padding(Insets {
@@ -372,17 +471,10 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
         bottom: 6.0,
         trailing: 8.0,
     })
-    .background(Color::rgba(0.0, 0.0, 0.0, 0.08))
+    .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
     .corner_radius(8.0)
     .on_tap(move || {
         if pk.panel.get() == 0 {
-            let q = pk.quarter.get();
-            let subj = pk.subject.get().unwrap_or_default();
-            let m = subject_marks(st_seed, &subj, q);
-            let v = avg_of(&m)
-                .map(|a| a.round().clamp(PEEK_MIN, PEEK_MAX))
-                .unwrap_or(8.0);
-            pk.pred_value.set(v);
             pk.panel.set(1);
         } else {
             pk.panel.set(0);
@@ -424,72 +516,76 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
     let mode_row = when(
         move || pk.panel.get() > 0,
         move || {
-            let st = state;
             row((
-                button("Предикт").action(move || pk.panel.set(1)),
-                button("Цель").action(move || {
-                    let q = pk.quarter.get();
-                    let subj = pk.subject.get().unwrap_or_default();
-                    let m = subject_marks(st, &subj, q);
-                    if let Some(a) = avg_of(&m) {
-                        pk.target.set((a * 2.0).round() / 2.0);
-                    }
-                    pk.panel.set(2);
-                }),
-                button("Отмена").action(move || pk.panel.set(0)),
+                seg_chip(state, pk, 1, "Предикт"),
+                seg_chip(state, pk, 2, "Цель"),
+                column((
+                    label("Отмена")
+                        .font(Font::Subheadline)
+                        .color(colors::SECONDARY),
+                ))
+                .padding(Insets {
+                    top: 7.0,
+                    leading: 14.0,
+                    bottom: 7.0,
+                    trailing: 14.0,
+                })
+                .corner_radius(8.0)
+                .background(Color::rgba(0.0, 0.0, 0.0, 0.06))
+                .on_tap(move || pk.panel.set(0))
+                .any(),
             ))
             .spacing(8.0)
             .grow()
         },
     );
 
-    // Predict controls: stepper + projection + append.
+    // Predict controls: tap any digit to append that predicted mark — no add
+    // button, taps stack up, every append lands highlighted in the strip.
     let predict_ui = when(
         move || pk.panel.get() == 1,
         move || {
-            let st = state;
-            column((
-                row((
-                    button("−").action(move || {
-                        let v = pk.pred_value.get() - 1.0;
-                        pk.pred_value.set(v.max(PEEK_MIN));
-                    }),
-                    label(move || format!("{}", pk.pred_value.get()))
-                        .font(Font::Title2)
-                        .width(44.0)
-                        .align(TextAlign::Center),
-                    button("+").action(move || {
-                        let v = pk.pred_value.get() + 1.0;
-                        pk.pred_value.set(v.min(PEEK_MAX));
-                    }),
-                    label("оценка").font(Font::Subheadline).color(colors::SECONDARY),
-                ))
-                .spacing(10.0)
-                .align(VAlign::Center)
-                .grow(),
-                label(move || {
-                    let q = pk.quarter.get();
-                    let subj = pk.subject.get().unwrap_or_default();
-                    let marks = subject_marks(st, &subj, q);
-                    let base = avg_of(&marks).unwrap_or(0.0);
-                    let n = marks.len() as f64 + 1.0;
-                    let new_avg = (marks.iter().sum::<f64>() + pk.pred_value.get()) / n;
-                    if marks.is_empty() {
-                        format!("Первая оценка в четверти: станет {new_avg:.2}")
-                    } else {
-                        format!("Средний станет: {base:.2} → {new_avg:.2}")
-                    }
-                })
-                .font(Font::Footnote)
-                .color(colors::SECONDARY)
-                .grow(),
-                button("Добавить оценку")
-                    .prominent()
-                    .action(move || {
+            let st_nums = state;
+            let num_each = each(
+                items(
+                    // u8 keys — `f64` has no `Hash`, the list is keyed by the mark itself.
+                    move || (1..=10u8).collect::<Vec<u8>>(),
+                    |v: &u8| *v,
+                ),
+                move |item| {
+                    let v = item.get();
+                    let st = st_nums;
+                    column((
+                        label(format!("{v}"))
+                            .font(Font::Headline)
+                            .color(move || Color::hex(st.accent_color.get())),
+                    ))
+                    .padding(Insets {
+                        top: 6.0,
+                        leading: 9.0,
+                        bottom: 6.0,
+                        trailing: 9.0,
+                    })
+                    .min_width(32.0)
+                    .align(HAlign::Center)
+                    .corner_radius(8.0)
+                    .background(move || accent_tint(st.accent_color.get(), 0.12))
+                    .on_tap(move || {
                         let mut p = pk.preds.get();
-                        p.push(pk.pred_value.get());
+                        p.push(v as f64);
                         pk.preds.set(p);
                     })
+                    .any()
+                },
+            );
+            column((
+                label("Тапни оценку — она попадёт в ленту предиктов")
+                    .font(Font::Footnote)
+                    .color(colors::SECONDARY)
+                    .grow(),
+                row((num_each,))
+                    .spacing(8.0)
+                    .fit(RowFit::Wrap { run_spacing: 8.0 })
                     .grow(),
             ))
             .spacing(8.0)
@@ -497,23 +593,23 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
         },
     );
 
-    // Goal controls: target + remaining-count steppers.
+    // Goal controls: whole-mark target + remaining-count steppers.
     let goal_ui = when(
         move || pk.panel.get() == 2,
         move || {
             column((
                 row((
-                    label("Цель:").grow(),
+                    label("Цель по итогу:").grow(),
                     button("−").action(move || {
-                        let v = pk.target.get() - 0.5;
+                        let v = pk.target.get() - 1.0;
                         pk.target.set(v.max(PEEK_MIN));
                     }),
-                    label(move || format!("{:.1}", pk.target.get()))
-                        .font(Font::Headline)
+                    label(move || format!("{:.0}", pk.target.get()))
+                        .font(Font::Title3)
                         .width(44.0)
                         .align(TextAlign::Center),
                     button("+").action(move || {
-                        let v = pk.target.get() + 0.5;
+                        let v = pk.target.get() + 1.0;
                         pk.target.set(v.min(PEEK_MAX));
                     }),
                 ))
@@ -543,26 +639,37 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
                 .align(VAlign::Center)
                 .grow(),
             ))
-            .spacing(8.0)
+            .spacing(10.0)
             .grow()
         },
     );
 
-    // The verdict under the goal controls.
+    // The verdict: the whole mark needed, big and centered, then the math line.
     let verdict = when(
         move || pk.panel.get() == 2,
         move || {
-            label(move || goal_report(st_report, pk).0)
-                .font(Font::Footnote)
-                .color(move || goal_report(st_report, pk).1)
-                .grow()
+            let st_big = state;
+            let st_big_col = state;
+            let st_hint = state;
+            column((
+                label(move || goal_report(st_big, pk).big)
+                    .font(Font::Title)
+                    .color(move || goal_report(st_big_col, pk).color)
+                    .align(TextAlign::Center)
+                    .grow(),
+                label(move || goal_report(st_hint, pk).hint)
+                    .font(Font::Footnote)
+                    .color(colors::SECONDARY)
+                    .align(TextAlign::Center)
+                    .grow(),
+            ))
+            .spacing(4.0)
+            .grow()
         },
     );
 
     section((
-        label(move || pk.subject.get().unwrap_or_default())
-            .font(Font::Title3)
-            .grow(),
+        header,
         strip,
         summary,
         mode_row,

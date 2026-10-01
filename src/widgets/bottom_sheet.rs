@@ -2,6 +2,43 @@ use crate::app::{AppState, ConnStatus};
 use crate::res;
 use day::prelude::*;
 
+/// The rubber band's ceiling: how far the card can be pulled up.
+const MAX_UP: f64 = 70.0;
+/// The lift-gap filler's height: the ceiling plus 14pt that always tuck behind
+/// the card's bottom edge — the filler's top edge then hides under the card and
+/// the card's rounded bottom corners dissolve into filler material instead of
+/// the dim showing through.
+const FILLER_H: f64 = MAX_UP + 14.0;
+
+/// The material that fills the gap under the card while it is pulled up: a
+/// spare section-card surface (the same dynamic grouped-card color on iOS),
+/// parked one MAX_UP below the bottom edge and slid up by exactly the lift
+/// distance — at rest it hides behind the card, while lifted it fills the gap
+/// line-to-line. Interaction off, so a tap in the gap falls through to the dim.
+#[cfg(target_os = "ios")]
+fn gap_filler(drag_y: Signal<f64>) -> AnyPiece {
+    use day_uikit::UiKitExt;
+    use objc2_ui_kit::UIColor;
+    column(())
+        // The tweak sits first: the native view belongs to the column's own
+        // node — the frame wrapper is layout-only and has no view to tweak.
+        .uikit(|view, _class, _mtm| {
+            view.setBackgroundColor(Some(&UIColor::secondarySystemGroupedBackgroundColor()));
+            view.setUserInteractionEnabled(false);
+        })
+        .frame(crate::pages::diary::get_screen_width(), FILLER_H)
+        .translation(0.0, move || MAX_UP + drag_y.get())
+        .any()
+}
+
+#[cfg(not(target_os = "ios"))]
+fn gap_filler(drag_y: Signal<f64>) -> AnyPiece {
+    column(())
+        .frame(crate::pages::diary::get_screen_width(), FILLER_H)
+        .translation(0.0, move || MAX_UP + drag_y.get())
+        .any()
+}
+
 /// Close is just the signal flip: the cover piece runs the native dismissal
 /// itself and keeps its content mounted until the backend reports it hidden.
 fn close_sheet(state: AppState) {
@@ -42,7 +79,6 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                     } else {
                         // Up: rubber band — asymptotes at MAX_UP instead of refusing,
                         // so the sheet yields a little and then visibly resists.
-                        const MAX_UP: f64 = 70.0;
                         -MAX_UP * (1.0 - 1.0 / (1.0 + (-dy) / MAX_UP))
                     };
                     drag_y.set(off);
@@ -142,6 +178,12 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                     .action(move || close_sheet(s_tap))
                     .grow()
                     .any(),
+
+                // The lift gap: pulling the card up would open a hole above the
+                // bottom edge — this parks the same card material one MAX_UP
+                // below and slides it up by exactly the lift distance, so the
+                // hole always shows the sheet, never the dim.
+                gap_filler(drag_y),
 
                 // Bottom sheet card: day's semantic section surface — the platform's
                 // theme-adaptive grouped-card material (secondary system grouped

@@ -856,11 +856,13 @@ fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
             let sj3 = subj_name.clone();
             let sj4 = subj_name.clone();
             let sj5 = subj_name.clone();
+            let sj6 = subj_name.clone();
             let st1 = s_rows;
             let st2 = s_rows;
             let st3 = s_rows;
             let st4 = s_rows;
             let st5 = s_rows;
+            let st6 = s_rows;
             column((
                 row((
                     label(subj_name).font(Font::Body).grow(),
@@ -919,8 +921,14 @@ fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
                 divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
             ))
             .spacing(0.0)
-            // Long-press summons the grade peek — full-width, fixed on screen,
-            // so only the row (subject + quarter) matters, not the press point.
+            // Tap or long-press summons the grade peek — full-width, fixed on
+            // screen, so only the row (subject + quarter) matters, not the press
+            // point. The second event (a long-press release also fires the tap)
+            // is absorbed by the peek's idempotent open.
+            .on_tap(move || {
+                let cur_q = (st6.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+                crate::widgets::grade_peek::open(sj6.clone(), cur_q);
+            })
             .on_long_press(move |_p| {
                 let cur_q = (st5.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
                 crate::widgets::grade_peek::open(sj5.clone(), cur_q);
