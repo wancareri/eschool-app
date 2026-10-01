@@ -7,4 +7,5 @@ pub mod stat_block;
 pub mod week_navigator;
 pub mod week_summary;
 pub mod bottom_sheet;
+pub mod grade_peek;
 pub mod spinner;

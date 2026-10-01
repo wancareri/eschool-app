@@ -616,6 +616,45 @@ pub fn extract_marks_for_quarter(
     marks
 }
 
+/// Dated lesson marks for ONE subject in a quarter — `(date, raw, parsed)`,
+/// date-sorted. Each entry is one lesson slot: the date from its day, the mark
+/// as the API spelled it (`"5"`, `"5/4"`), the parsed values for averages.
+/// Powers the Итоги peek strip; averages elsewhere use
+/// [`extract_marks_for_quarter`], which aggregates the same slots without dates.
+pub fn extract_marks_dated(
+    cache: &std::collections::HashMap<i32, Vec<DaySchedule>>,
+    quarter: usize,
+    subject: &str,
+) -> Vec<(u64, String, Vec<f64>)> {
+    let (start, end) = if quarter < 4 {
+        QUARTER_RANGES[quarter]
+    } else {
+        (0, 36)
+    };
+
+    let mut out: Vec<(u64, String, Vec<f64>)> = Vec::new();
+    for idx in start..end {
+        if let Some(days) = cache.get(&(idx as i32)) {
+            for day in days {
+                for slot in &day.slots {
+                    if slot.subject_title != subject {
+                        continue;
+                    }
+                    let Some(ref lm) = slot.lesson_mark else { continue };
+                    let Some(ref m_str) = lm.mark else { continue };
+                    let parsed = utils::parse_marks(m_str);
+                    if parsed.is_empty() {
+                        continue;
+                    }
+                    out.push((day.date, m_str.clone(), parsed));
+                }
+            }
+        }
+    }
+    out.sort_by_key(|e| e.0);
+    out
+}
+
 /// Parse `/final/whole` into `{subject title → {period → mark}}`.
 ///
 /// The payload keys marks by subject uuid:
