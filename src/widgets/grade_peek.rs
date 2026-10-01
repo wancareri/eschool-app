@@ -1,6 +1,6 @@
-//! Итоги peek — a tap or long-press on a subject row slides a side panel out
-//! from the screen's right edge (the page dims and stays visible to its left):
-//! the quarter's marks wrapped into lines (date over mark), the average at the
+//! Итоги peek — a tap or long-press on a subject row pops a floating window
+//! right under that row (the page dims behind it, the row stays visible
+//! above): the quarter's marks wrapped into lines (date over mark), the average at the
 //! end of the strip, and a «+» that opens the two planning modes — predicted
 //! marks tapped straight into the strip (each one highlighted among the real
 //! marks), and a target-grade plan that answers with ONE whole mark to keep
@@ -25,6 +25,9 @@ const PEEK_FLOOR: f64 = 2.0;
 struct Peek {
     subject: Signal<Option<String>>,
     quarter: Signal<usize>,
+    /// The window's top Y in window coords — the pressed row's bottom edge,
+    /// handed over by [`open`] from the row's own native view.
+    y: Signal<f64>,
     /// Predicted marks appended after the real ones (tap a chip to remove).
     preds: Signal<Vec<f64>>,
     /// 0 = closed, 1 = predict controls, 2 = goal controls.
@@ -47,6 +50,7 @@ impl Peek {
         Self {
             subject: Signal::new(None),
             quarter: Signal::new(0),
+            y: Signal::new(140.0),
             preds: Signal::new(Vec::new()),
             panel: Signal::new(0),
             target: Signal::new(5.0),
@@ -57,7 +61,7 @@ impl Peek {
         }
     }
 
-    fn open(&self, subject: String, quarter: usize) {
+    fn open(&self, subject: String, quarter: usize, y: f64) {
         // Idempotent: a long-press release also fires the row's tap, and the
         // second call must not restart the pop. Re-opening while a close is
         // still fading cancels that close and pops again instead.
@@ -70,6 +74,7 @@ impl Peek {
         // summoned from here.
         let was_mounted = self.subject.get().is_some();
         self.quarter.set(quarter);
+        self.y.set(y);
         self.preds.set(Vec::new());
         self.panel.set(0);
         self.target.set(5.0);
@@ -93,8 +98,8 @@ impl Peek {
         if self.subject.get().is_none() || self.closing.get() {
             return;
         }
-        // Slide the panel back off the right edge first; the subtree unmounts
-        // a tick after the animation lands, and only if nothing re-opened the
+        // Shrink the window back toward the row first; the subtree unmounts
+        // a tick after the pop-out lands, and only if nothing re-opened the
         // peek meanwhile.
         self.closing.set(true);
         self.epoch.set(self.epoch.get() + 1);
@@ -133,10 +138,10 @@ fn peek() -> Peek {
     })
 }
 
-/// One entrance slide: a tick AFTER the panel's subtree is built, animate
+/// One entrance pop: a tick AFTER the window's subtree is built, animate
 /// `shown` to 1. Called from the overlay's build closure (fresh mount — the
 /// subtree has to exist before the animated write lands on it) or from `open`
-/// (re-open during a close slide — no rebuild happens there). The epoch check
+/// (re-open during a close fade — no rebuild happens there). The epoch check
 /// runs inside `on_main` on the main thread (Signals are not Send): a newer
 /// open/close invalidates `g` and this timer stays out of the way.
 fn spawn_pop(g: u64) {
@@ -151,9 +156,10 @@ fn spawn_pop(g: u64) {
     });
 }
 
-/// Summon the peek — called from the Итоги row's tap / long-press.
-pub fn open(subject: String, quarter: usize) {
-    peek().open(subject, quarter);
+/// Summon the peek — called from the Итоги row's tap / long-press with the
+/// row's bottom edge (window coords) the window parks under.
+pub fn open(subject: String, quarter: usize, y: f64) {
+    peek().open(subject, quarter, y);
 }
 
 fn subject_marks(state: AppState, subject: &str, quarter: usize) -> Vec<f64> {
@@ -279,21 +285,48 @@ fn goal_report(state: AppState, pk: Peek) -> GoalReport {
     }
 }
 
-/// The fullscreen overlay: dim (tap to close) + the side panel.
+/// A soft shadow under the popup window: the tweak sits on a plain wrapper
+/// node (no corner radius of its own, so no clip mask), letting the shadow
+/// bleed past the section card inside it — the window reads as floating above
+/// the dimmed page.
+#[cfg(target_os = "ios")]
+fn popup_shadow<D: Decorate + 'static>(card: D) -> impl Piece {
+    use day_uikit::UiKitExt;
+    use objc2_core_foundation::CGSize;
+    use objc2_ui_kit::UIColor;
+    card.uikit(|view, _class, _mtm| {
+        let layer = view.layer();
+        let black = unsafe { UIColor::blackColor().CGColor() };
+        layer.setShadowColor(Some(&black));
+        layer.setShadowOffset(CGSize { width: 0.0, height: 6.0 });
+        layer.setShadowRadius(14.0);
+        layer.setShadowOpacity(0.30_f32);
+    })
+}
+
+#[cfg(not(target_os = "ios"))]
+fn popup_shadow<D>(card: D) -> impl Piece
+where
+    D: Piece,
+{
+    card
+}
+
+/// The fullscreen overlay: dim (tap to close) + the window under the row.
 ///
-/// The panel is an opaque full-height slab that slides out of the RIGHT edge —
-/// the page stays visible, dimmed, in a strip to its left, instead of being
-/// covered by a centered card. Nothing inside scrolls (the strip wraps
-/// instead), so there is no gesture that could slide content and expose the
-/// dim behind the panel. The entrance's animated write is spawned from the
-/// `when` build closure below — only there is the subtree guaranteed to exist
-/// when the timer lands.
+/// The window parks right under the pressed row's bottom edge (`y`, plus a
+/// gap) at popup margins, scale-and-fading in as the dim washes behind it —
+/// a row-height floating window, not a sheet from an edge. Nothing inside
+/// scrolls (the strip wraps instead), so there is no gesture that could slide
+/// content and expose the dim. The entrance's animated write is spawned from
+/// the `when` build closure below — only there is the subtree guaranteed to
+/// exist when the timer lands.
 pub fn overlay(state: AppState) -> impl Piece {
     let pk = peek();
     when(
         move || pk.subject.get().is_some(),
         move || {
-            // The subtree just (re)built for this open — start its slide. The
+            // The subtree just (re)built for this open — start its pop. The
             // generation comes from a thread-local (see `PENDING`), not a
             // tracked read: the build must not re-run when `epoch` bumps.
             let g = PENDING.with(|c| {
@@ -305,18 +338,33 @@ pub fn overlay(state: AppState) -> impl Piece {
                 spawn_pop(g);
             }
             let w = crate::pages::diary::get_screen_width();
-            // Keep a strip of the dimmed page visible to the panel's left.
-            let panel_w = (w - 52.0).max(240.0);
+            let h = crate::pages::diary::get_screen_height();
+            // Popup margins: the window sits inset from both edges so it reads
+            // as a floating window under the row, not a full-width sheet.
+            let margin = 16.0;
+            let card_w = (w - margin * 2.0).max(240.0);
             zstack((
                 button("")
                     .action(move || peek().close())
-                    .background(move || Color::rgba(0.0, 0.0, 0.0, 0.34 * pk.shown.get()))
+                    .background(Color::rgba(0.0, 0.0, 0.0, 0.42))
                     .grow(),
-                build_card(state, pk, panel_w)
-                    // Off-screen right while hidden, flush to the edge when shown.
-                    .translation(move || panel_w * (1.0 - pk.shown.get()), 0.0),
+                popup_shadow(column((build_card(state, pk, card_w),)).width(card_w))
+                    // A small pop: scales up from 0.92 and slides down the last
+                    // few pixels into place under the row.
+                    .scale(move || 0.92 + 0.08 * pk.shown.get())
+                    .translation(
+                        move || margin,
+                        move || {
+                            // Parked just below the row; clamped so a row near
+                            // the top or bottom still leaves the window on
+                            // screen (a window-height keeps its place).
+                            let top = (pk.y.get() + 12.0).clamp(56.0, (h - 340.0).max(56.0));
+                            top - 10.0 * (1.0 - pk.shown.get())
+                        },
+                    ),
             ))
-            .align(Alignment::TopTrailing)
+            .align(Alignment::TopLeading)
+            .opacity(move || pk.shown.get())
             .grow()
         },
     )
@@ -716,26 +764,16 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
         },
     );
 
-    // The panel: an opaque slab pinned to the right edge, full height — the
-    // section inside keeps its own card material, the padding keeps the
-    // content clear of the status bar and the home indicator.
-    column((
-        section((
-            header,
-            strip,
-            summary,
-            mode_row,
-            predict_ui,
-            goal_ui,
-            verdict,
-        )),
+    // The window: one section card at the popup's width — the overlay parks
+    // it under the row and shadows it (see `popup_shadow`).
+    section((
+        header,
+        strip,
+        summary,
+        mode_row,
+        predict_ui,
+        goal_ui,
+        verdict,
     ))
-    .padding(Insets {
-        top: day::safe_area().top + 8.0,
-        leading: 14.0,
-        bottom: day::safe_area().bottom + 14.0,
-        trailing: 16.0,
-    })
-    .background(colors::CARD)
-    .frame(width, crate::pages::diary::get_screen_height())
+    .width(width)
 }

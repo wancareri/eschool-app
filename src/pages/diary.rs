@@ -841,6 +841,62 @@ fn final_mark_text(mark: Option<String>) -> String {
     }
 }
 
+/// The bottom edge of a Итоги row in window coordinates — where the peek's
+/// window top lands after the overlay adds its gap, right under the pressed row.
+/// The row's native view address is stored by `peek_row`'s uikit tweak at
+/// build and measured at press time, so any scroll offset is accounted for.
+/// The pointer cannot outlive its use: the handler and the view live and die
+/// with the same `each` subtree.
+#[cfg(target_os = "ios")]
+fn row_bottom_y(cell: &std::rc::Rc<std::cell::Cell<usize>>) -> f64 {
+    let ptr = cell.get();
+    if ptr == 0 {
+        return 140.0;
+    }
+    let view = unsafe { &*(ptr as *const objc2_ui_kit::UIView) };
+    let frame = view.convertRect_toView(view.bounds(), None);
+    frame.origin.y + frame.size.height
+}
+
+/// Tap and long-press on a Итоги row pop the peek right under THAT row:
+/// the uikit tweak tracks the row's native view, both handlers turn it into
+/// the window-space Y the peek opens at. (`.uikit` is iOS-only, hence the cfg
+/// twin below.)
+#[cfg(target_os = "ios")]
+fn peek_row<D: Decorate + 'static>(base: D, sj: String, st: AppState, offset: i32) -> AnyPiece {
+    use day_uikit::UiKitExt;
+    let cell = std::rc::Rc::new(std::cell::Cell::new(0usize));
+    let tap_cell = cell.clone();
+    let press_cell = cell.clone();
+    let sj_tap = sj.clone();
+    base.uikit(move |view, _class, _mtm| {
+        cell.set(&**view as *const objc2_ui_kit::UIView as usize);
+    })
+    .on_tap(move || {
+        let cur_q = (st.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+        crate::widgets::grade_peek::open(sj_tap.clone(), cur_q, row_bottom_y(&tap_cell));
+    })
+    .on_long_press(move |_p| {
+        let cur_q = (st.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+        crate::widgets::grade_peek::open(sj.clone(), cur_q, row_bottom_y(&press_cell));
+    })
+    .any()
+}
+
+#[cfg(not(target_os = "ios"))]
+fn peek_row<D: Decorate + 'static>(base: D, sj: String, st: AppState, offset: i32) -> AnyPiece {
+    let sj_tap = sj.clone();
+    base.on_tap(move || {
+        let cur_q = (st.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+        crate::widgets::grade_peek::open(sj_tap.clone(), cur_q, 140.0);
+    })
+    .on_long_press(move |_p| {
+        let cur_q = (st.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+        crate::widgets::grade_peek::open(sj.clone(), cur_q, 140.0);
+    })
+    .any()
+}
+
 fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
     let s_subj = state;
     let s_rows = state;
@@ -856,14 +912,12 @@ fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
             let sj3 = subj_name.clone();
             let sj4 = subj_name.clone();
             let sj5 = subj_name.clone();
-            let sj6 = subj_name.clone();
             let st1 = s_rows;
             let st2 = s_rows;
             let st3 = s_rows;
             let st4 = s_rows;
             let st5 = s_rows;
-            let st6 = s_rows;
-            column((
+            let base = column((
                 row((
                     label(subj_name).font(Font::Body).grow(),
                     // 1. Расчётный средний балл по оценкам четверти (реактивно!)
@@ -920,19 +974,12 @@ fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
                 .padding(Insets { top: 8.0, leading: PAD, bottom: 8.0, trailing: PAD }),
                 divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
             ))
-            .spacing(0.0)
-            // Tap or long-press slides the grade peek's side panel out of the
-            // right edge. The second event (a long-press release also fires
-            // the tap) is absorbed by the peek's idempotent open.
-            .on_tap(move || {
-                let cur_q = (st6.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                crate::widgets::grade_peek::open(sj6.clone(), cur_q);
-            })
-            .on_long_press(move |_p| {
-                let cur_q = (st5.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                crate::widgets::grade_peek::open(sj5.clone(), cur_q);
-            })
-            .any()
+            .spacing(0.0);
+            // Tap or long-press pops the grade peek right under this row — the
+            // row's own view gives the window-space Y. The second event (a
+            // long-press release also fires the tap) is absorbed by the peek's
+            // idempotent open.
+            peek_row(base, sj5, st5, offset)
         },
     )
 }
