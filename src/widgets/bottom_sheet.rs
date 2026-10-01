@@ -1,7 +1,8 @@
 use crate::app::{AppState, ConnStatus};
+use crate::res;
 use day::prelude::*;
 
-/// Close is just the signal flip: the cover piece runs the native slide-down
+/// Close is just the signal flip: the cover piece runs the native dismissal
 /// itself and keeps its content mounted until the backend reports it hidden.
 fn close_sheet(state: AppState) {
     state.show_network_modal.set(None);
@@ -14,7 +15,8 @@ fn close_sheet(state: AppState) {
 /// is presented OverFullScreen (patched in the wancareri/day fork: upstream's
 /// FullScreen drops the presenting view once the transition lands, which showed
 /// black behind this dim instead of the live page), so the page stays visible
-/// beneath the dim while UIKit owns the slide-up/slide-down transition.
+/// beneath the dim; the fork presents with a fade-and-slide-in and dismisses
+/// with a plain fade, so the dim never sweeps across the page like a window.
 pub fn network_error_sheet(state: AppState) -> impl Piece {
     let s_tap = state;
     let s_retry = state;
@@ -23,13 +25,40 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
     cover(
         state.show_network_modal,
         move |_| {
-            let icon_and_title = row((
-                label(move || match state.conn_status.get() {
-                    ConnStatus::Offline | ConnStatus::Error => "📡",
-                    ConnStatus::Connecting => "🔄",
-                    ConnStatus::Connected | ConnStatus::Idle => "✅",
+            // The status glyph — the same lucide vectors the island carries
+            // (wifi-off / alert-circle / check), the accent spinner while connecting.
+            // One shared 22pt slot that swaps on every status change.
+            let status_icon = when(
+                move || matches!(state.conn_status.get(), ConnStatus::Offline | ConnStatus::Error),
+                move || {
+                    if state.conn_status.get() == ConnStatus::Offline {
+                        vector(res::vectors::status_offline)
+                            .frame(22.0, 22.0)
+                            .tint(Color::hex(0x8E8E93))
+                            .any()
+                    } else {
+                        vector(res::vectors::status_error)
+                            .frame(22.0, 22.0)
+                            .tint(Color::hex(0xEF4444))
+                            .any()
+                    }
+                },
+            )
+            .otherwise(move || {
+                when(
+                    move || state.conn_status.get() == ConnStatus::Connecting,
+                    move || super::spinner::render(state, 22.0).any(),
+                )
+                .otherwise(move || {
+                    vector(res::vectors::check)
+                        .frame(22.0, 22.0)
+                        .tint(move || Color::hex(state.accent_color.get()))
+                        .any()
                 })
-                .font(Font::Title2),
+            });
+
+            let icon_and_title = row((
+                status_icon,
                 label(move || match state.conn_status.get() {
                     ConnStatus::Offline => "Нет связи с сервером",
                     ConnStatus::Error => "Ошибка сети",
@@ -40,7 +69,13 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                 .grow(),
             ))
             .spacing(10.0)
-            .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 });
+            .grow()
+            .padding(Insets {
+                top: 0.0,
+                leading: 10.0,
+                bottom: 0.0,
+                trailing: 10.0,
+            });
 
             let body = label(move || match state.conn_status.get() {
                 ConnStatus::Offline | ConnStatus::Error => {
@@ -51,7 +86,13 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
             })
             .font(Font::Subheadline)
             .secondary()
-            .padding(Insets { top: 0.0, leading: 24.0, bottom: 24.0, trailing: 24.0 });
+            .grow()
+            .padding(Insets {
+                top: 0.0,
+                leading: 10.0,
+                bottom: 14.0,
+                trailing: 10.0,
+            });
 
             zstack((
                 // The dim is the cover's own background (edge-to-edge, over the
@@ -63,15 +104,25 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                     .grow()
                     .any(),
 
-                // Bottom sheet card
-                column((
+                // Bottom sheet card: day's semantic section surface — the platform's
+                // theme-adaptive grouped-card material (secondary system grouped
+                // background on iOS), so it tracks light/dark mode with no app palette.
+                // The paddings below compose with the section's own 14pt inset to keep
+                // the original 24/16/32pt edges.
+                section((
                     // Drag handle pill at the top
                     row((
                         spacer().grow(),
                         column(()).frame(36.0, 4.0).background(Color::rgba(0.7, 0.7, 0.7, 0.6)).corner_radius(2.0),
                         spacer().grow(),
                     ))
-                    .padding(Insets { top: 10.0, leading: 0.0, bottom: 16.0, trailing: 0.0 }),
+                    .grow()
+                    .padding(Insets {
+                        top: 0.0,
+                        leading: 0.0,
+                        bottom: 6.0,
+                        trailing: 0.0,
+                    }),
 
                     icon_and_title,
                     body,
@@ -102,11 +153,14 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                     ))
                     .spacing(8.0)
                     .align(HAlign::Center)
-                    .padding(Insets { top: 0.0, leading: 24.0, bottom: 32.0, trailing: 24.0 }),
+                    .grow()
+                    .padding(Insets {
+                        top: 0.0,
+                        leading: 2.0,
+                        bottom: 18.0,
+                        trailing: 2.0,
+                    }),
                 ))
-                .align(HAlign::Center)
-                .background(Color::rgba(0.12, 0.12, 0.14, 0.98))
-                .corner_radius(20.0)
                 .any(),
             ))
             .align(Alignment::Bottom)
