@@ -1,5 +1,5 @@
-//! Итоги peek — a long-press on a subject row summons a Telegram-style preview
-//! card at the press point: the quarter's marks as a horizontal filmstrip
+//! Итоги peek — a long-press on a subject row summons a full-width preview
+//! card at a fixed spot on screen: the quarter's marks wrapped into lines
 //! (date over mark), the average at the end of the strip, and a «+» that opens
 //! the two prediction modes — a predicted mark with a live projected average,
 //! and a target-grade plan (which marks would still be needed).
@@ -22,7 +22,6 @@ const PEEK_FLOOR: f64 = 2.0;
 #[derive(Clone, Copy)]
 struct Peek {
     subject: Signal<Option<String>>,
-    point: Signal<Option<(f64, f64)>>,
     quarter: Signal<usize>,
     /// Predicted marks appended after the real ones (tap a chip to remove).
     preds: Signal<Vec<f64>>,
@@ -42,7 +41,6 @@ impl Peek {
     fn new() -> Self {
         Self {
             subject: Signal::new(None),
-            point: Signal::new(None),
             quarter: Signal::new(0),
             preds: Signal::new(Vec::new()),
             panel: Signal::new(0),
@@ -53,9 +51,8 @@ impl Peek {
         }
     }
 
-    fn open(&self, subject: String, point: (f64, f64), quarter: usize) {
+    fn open(&self, subject: String, quarter: usize) {
         self.subject.set(Some(subject));
-        self.point.set(Some(point));
         self.quarter.set(quarter);
         self.preds.set(Vec::new());
         self.panel.set(0);
@@ -97,8 +94,8 @@ fn peek() -> Peek {
 }
 
 /// Summon the peek — called from the Итоги row's `on_long_press`.
-pub fn open(subject: String, point: (f64, f64), quarter: usize) {
-    peek().open(subject, point, quarter);
+pub fn open(subject: String, quarter: usize) {
+    peek().open(subject, quarter);
 }
 
 fn subject_marks(state: AppState, subject: &str, quarter: usize) -> Vec<f64> {
@@ -199,28 +196,26 @@ fn goal_report(state: AppState, pk: Peek) -> (String, Color) {
     )
 }
 
-/// The fullscreen overlay: dim (tap to close) + the card at the press point.
+/// The fullscreen overlay: dim (tap to close) + the card.
+///
+/// The card is full-width and sits at a FIXED spot — the press point only picks
+/// the subject, so where you long-press never moves the preview. Nothing inside
+/// scrolls (the strip wraps instead), so there is no gesture that could slide
+/// content and expose the dim behind the card.
 pub fn overlay(state: AppState) -> impl Piece {
     let pk = peek();
     when(
         move || pk.subject.get().is_some(),
         move || {
             let w = crate::pages::diary::get_screen_width();
-            let h = crate::pages::diary::get_screen_height();
-            let (px, py) = pk.point.get().unwrap_or((16.0, 120.0));
-            // Near-full-width card: x pinned to the margin (the clamp keeps it
-            // on-screen if the press sat near an edge), y just below the finger
-            // unless that would run past the bottom.
-            let x = px.clamp(12.0, (w - 24.0 - 12.0).max(12.0));
-            let y = (py + 10.0).clamp(64.0, (h - 340.0).max(64.0));
             zstack((
                 button("")
                     .action(move || peek().close())
                     .background(Color::rgba(0.0, 0.0, 0.0, 0.42))
                     .grow(),
-                build_card(state, pk, w - 24.0).translation(x, y),
+                build_card(state, pk, w),
             ))
-            .align(Alignment::TopLeading)
+            .align(Alignment::Center)
             .opacity(move || pk.shown.get())
             .grow()
         },
@@ -394,9 +389,12 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
         }
     });
 
-    let strip = scroll(row((real_chips, pred_chips, avg_chip, plus_chip)).spacing(8.0))
-        .horizontal()
-        .grow();
+    // Wrapped into lines at the card's full width — every chip on screen at
+    // once, nothing to swipe: no scroll view, so no bounce that could expose
+    // the dim behind the card.
+    let strip = row((real_chips, pred_chips, avg_chip, plus_chip))
+        .spacing(8.0)
+        .fit(RowFit::Wrap { run_spacing: 8.0 });
 
     // «Сейчас X → с предиктами Y» — only once something is predicted.
     let summary = when(

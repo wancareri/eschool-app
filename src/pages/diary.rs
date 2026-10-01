@@ -919,11 +919,11 @@ fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
                 divider().padding(Insets { top: 0.0, leading: PAD, bottom: 0.0, trailing: PAD }),
             ))
             .spacing(0.0)
-            // Long-press summons the grade peek at the press point (the point
-            // is in window coordinates on UIKit — the overlay's own space).
-            .on_long_press(move |p| {
+            // Long-press summons the grade peek — full-width, fixed on screen,
+            // so only the row (subject + quarter) matters, not the press point.
+            .on_long_press(move |_p| {
                 let cur_q = (st5.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                crate::widgets::grade_peek::open(sj5.clone(), (p.x, p.y), cur_q);
+                crate::widgets::grade_peek::open(sj5.clone(), cur_q);
             })
             .any()
         },
