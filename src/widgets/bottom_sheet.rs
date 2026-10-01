@@ -17,6 +17,9 @@ fn close_sheet(state: AppState) {
 /// black behind this dim instead of the live page), so the page stays visible
 /// beneath the dim; the fork presents with a fade-and-slide-in and dismisses
 /// with a plain fade, so the dim never sweeps across the page like a window.
+///
+/// The sheet is draggable: pulling UP resists (a rubber band with ~70pt of
+/// travel), pulling DOWN follows the finger and, past the threshold, closes it.
 pub fn network_error_sheet(state: AppState) -> impl Piece {
     let s_tap = state;
     let s_retry = state;
@@ -25,6 +28,42 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
     cover(
         state.show_network_modal,
         move |_| {
+            // Sheet drag. Vertical only (horizontal travel is simply ignored).
+            // Both directions start from the finger; only the release animates.
+            let drag_y = Signal::new(0.0);
+            let s_drag = state;
+            let sheet_drag = move |d: Drag| match d.phase {
+                DragPhase::Began => drag_y.set(0.0),
+                DragPhase::Changed => {
+                    let dy = d.translation.y;
+                    let off = if dy > 0.0 {
+                        // Down: follows the finger 1:1 — this is the dismiss direction.
+                        dy
+                    } else {
+                        // Up: rubber band — asymptotes at MAX_UP instead of refusing,
+                        // so the sheet yields a little and then visibly resists.
+                        const MAX_UP: f64 = 70.0;
+                        -MAX_UP * (1.0 - 1.0 / (1.0 + (-dy) / MAX_UP))
+                    };
+                    drag_y.set(off);
+                }
+                DragPhase::Ended => {
+                    if drag_y.get() > 110.0 {
+                        // Past the threshold: close with the cover's fade dismissal.
+                        // The offset stays put through the fade; reset it once the
+                        // dismissal (0.24s) has finished so the next open starts at 0.
+                        let reset = drag_y.setter();
+                        close_sheet(s_drag);
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(320));
+                            day::reactive::on_main(move || reset.set(0.0));
+                        });
+                    } else {
+                        with_animation(AnimSpec::ease_out(240), move || drag_y.set(0.0));
+                    }
+                }
+            };
+
             // The status glyph — the same lucide vectors the island carries
             // (wifi-off / alert-circle / check), the accent spinner while connecting.
             // One shared 22pt slot that swaps on every status change.
@@ -108,7 +147,9 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                 // theme-adaptive grouped-card material (secondary system grouped
                 // background on iOS), so it tracks light/dark mode with no app palette.
                 // The paddings below compose with the section's own 14pt inset to keep
-                // the original 24/16/32pt edges.
+                // the original 24/16/32pt edges. The translation is the sheet drag —
+                // no node `.animation`, so it tracks the finger exactly; only the
+                // release snaps back (animated inside the drag handler).
                 section((
                     // Drag handle pill at the top
                     row((
@@ -161,10 +202,14 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                         trailing: 2.0,
                     }),
                 ))
+                .translation(0.0, move || drag_y.get())
                 .any(),
             ))
             .align(Alignment::Bottom)
             .grow()
+            // The recognizer sits on the whole overlay — a pull starting on the dim
+            // drags too (the dim itself doesn't move: only the card translates).
+            .on_drag(sheet_drag)
         },
     )
     .unrouted()
