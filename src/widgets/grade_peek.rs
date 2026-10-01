@@ -1,5 +1,5 @@
 //! Итоги peek — a tap or long-press on a subject row summons a full-width preview
-//! card at a fixed spot on screen with a scale-and-fade pop: the quarter's marks
+//! card under the pressed row with a scale-and-fade pop: the quarter's marks
 //! wrapped into lines (date over mark), the average at the end of the strip, and
 //! a «+» that opens the two planning modes — predicted marks tapped straight
 //! into the strip (each one highlighted among the real marks), and a target-grade
@@ -34,6 +34,9 @@ struct Peek {
     k: Signal<usize>,
     /// Pop animation: 0 while mounting, animated to 1; back to 0 on the way out.
     shown: Signal<f64>,
+    /// Window-space Y for the card's top edge — the pressed row's bottom edge
+    /// plus a gap, so the preview parks under the subject it previews.
+    y: Signal<f64>,
     /// A close is in flight — its unmount is pending; opening again cancels it.
     closing: Signal<bool>,
     /// Generation counter: every open/close bumps it, so a stale timer thread
@@ -51,41 +54,43 @@ impl Peek {
             target: Signal::new(5.0),
             k: Signal::new(5),
             shown: Signal::new(0.0),
+            y: Signal::new(140.0),
             closing: Signal::new(false),
             epoch: Signal::new(0),
         }
     }
 
-    fn open(&self, subject: String, quarter: usize) {
+    fn open(&self, subject: String, quarter: usize, y: f64) {
         // Idempotent: a long-press release also fires the row's tap, and the
         // second call must not restart the pop. Re-opening while a close is
         // still fading cancels that close and pops again instead.
         if self.subject.get().is_some() && !self.closing.get() {
             return;
         }
-        self.subject.set(Some(subject));
+        // Whether the card's subtree is already on screen — a re-open during
+        // the close fade keeps it (the `when` condition never went false), so
+        // the fresh-mount build closure won't run again and the pop has to be
+        // summoned from here.
+        let was_mounted = self.subject.get().is_some();
         self.quarter.set(quarter);
         self.preds.set(Vec::new());
         self.panel.set(0);
         self.target.set(5.0);
         self.k.set(5);
+        self.y.set(y);
+        self.shown.set(0.0);
         self.closing.set(false);
         self.epoch.set(self.epoch.get() + 1);
         let g = self.epoch.get();
-        let set = self.shown.setter();
-        // Mount at scale/opacity 0, then one animated write a tick later — the
-        // delay lets the fresh subtree build before the pop lands on it. The
-        // epoch check runs inside `on_main` on the main thread (Signals are not
-        // Send): a newer open/close invalidates this timer's `g`.
-        self.shown.set(0.0);
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(16));
-            day::reactive::on_main(move || {
-                if peek().epoch.get() == g {
-                    with_animation(AnimSpec::ease_out(220), move || set.set(1.0));
-                }
-            });
-        });
+        // Whom the overlay's build closure should pop for: a thread-local, not
+        // a Signal — reading `epoch` inside that closure reactively would make
+        // this very bump re-run the build (and, worse, spawn a pop in the
+        // middle of a close, whose epoch still matches).
+        PENDING.with(|c| c.set(g));
+        self.subject.set(Some(subject));
+        if was_mounted {
+            spawn_pop(g);
+        }
     }
 
     fn close(&self) {
@@ -115,6 +120,9 @@ impl Peek {
 
 thread_local! {
     static PEEK: std::cell::Cell<Option<Peek>> = const { std::cell::Cell::new(None) };
+    /// Which generation the overlay's build closure owes a pop to — written by
+    /// `open` (same thread as the build), consumed on the first build after it.
+    static PENDING: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 fn peek() -> Peek {
@@ -128,9 +136,28 @@ fn peek() -> Peek {
     })
 }
 
-/// Summon the peek — called from the Итоги row's tap / long-press.
-pub fn open(subject: String, quarter: usize) {
-    peek().open(subject, quarter);
+/// One entrance pop: a tick AFTER the card's subtree is built, animate `shown`
+/// to 1. Called from the overlay's build closure (fresh mount — the subtree has
+/// to exist before the animated write lands on it) or from `open` (re-open
+/// during a close fade — no rebuild happens there). The epoch check runs inside
+/// `on_main` on the main thread (Signals are not Send): a newer open/close
+/// invalidates `g` and this timer stays out of the way.
+fn spawn_pop(g: u64) {
+    let set = peek().shown.setter();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(48));
+        day::reactive::on_main(move || {
+            if peek().epoch.get() == g {
+                with_animation(AnimSpec::ease_out(240), move || set.set(1.0));
+            }
+        });
+    });
+}
+
+/// Summon the peek — called from the Итоги row's tap / long-press with the
+/// row's bottom edge in window coordinates.
+pub fn open(subject: String, quarter: usize, y: f64) {
+    peek().open(subject, quarter, y);
 }
 
 fn subject_marks(state: AppState, subject: &str, quarter: usize) -> Vec<f64> {
@@ -166,9 +193,11 @@ struct GoalReport {
     color: Color,
 }
 
-/// The verdict math: how the k remaining marks have to be graded. The answer
-/// is always a WHOLE mark — the needed per-mark average is rounded UP, because
-/// any lower rounding could land just short of the target.
+/// The verdict math: how the k remaining marks have to be graded. The school's
+/// FINAL quarter mark is the raw average rounded to a whole number by the
+/// teacher, so the plan works off the threshold `target - 0.5` — any average at
+/// or above it rounds up onto the target. What the student has to HOLD is still
+/// reported as a whole mark (rounded up, because any lower could fall short).
 fn goal_report(state: AppState, pk: Peek) -> GoalReport {
     let q = pk.quarter.get();
     let subj = pk.subject.get().unwrap_or_default();
@@ -176,6 +205,8 @@ fn goal_report(state: AppState, pk: Peek) -> GoalReport {
     let n = marks.len() as f64;
     let sum: f64 = marks.iter().sum();
     let target = pk.target.get();
+    // Rounding the final average to a whole mark: avg ≥ thr ⟺ round(avg) ≥ target.
+    let thr = target - 0.5;
     let k = pk.k.get() as f64;
 
     if marks.is_empty() {
@@ -187,29 +218,36 @@ fn goal_report(state: AppState, pk: Peek) -> GoalReport {
     }
     if k == 0.0 {
         let cur = sum / n;
-        return if cur >= target {
+        return if cur >= thr - 1e-9 {
             GoalReport {
                 big: format!("{cur:.1}"),
-                hint: format!("Оценок не осталось — цель {target:.0} держится."),
+                hint: format!(
+                    "Оценок не осталось — итог {cur:.1} округляется до {:.0}, цель {target:.0} держится.",
+                    cur.round()
+                ),
                 color: colors::SUCCESS,
             }
         } else {
             GoalReport {
                 big: format!("{cur:.1}"),
-                hint: format!("Оценок не осталось — цели {target:.0} не хватит."),
+                hint: format!(
+                    "Оценок не осталось — итог {cur:.1} округлится до {:.0}, цели {target:.0} не хватит.",
+                    cur.round()
+                ),
                 color: colors::ERROR,
             }
         };
     }
 
     // The average each of the k remaining marks has to deliver.
-    let per = (target * (n + k) - sum) / k;
+    let per = (thr * (n + k) - sum) / k;
     if per <= PEEK_FLOOR + 1e-9 {
         let with_floor = (sum + PEEK_FLOOR * k) / (n + k);
         return GoalReport {
             big: "2".into(),
             hint: format!(
-                "Достаточно любых двоек — итог при всех двойках {with_floor:.2} ≥ цели {target:.0}."
+                "Достаточно любых двоек — итог {with_floor:.2} округляется до {:.0} ≥ цели {target:.0}.",
+                with_floor.round()
             ),
             color: colors::SUCCESS,
         };
@@ -219,7 +257,8 @@ fn goal_report(state: AppState, pk: Peek) -> GoalReport {
         return GoalReport {
             big: "10+".into(),
             hint: format!(
-                "Невозможно: даже все десятки дадут {max:.2} — цели {target:.0} не хватит."
+                "Невозможно: даже все десятки дадут итог {max:.2} → {:.0} — цели {target:.0} не хватит.",
+                max.round()
             ),
             color: colors::ERROR,
         };
@@ -227,7 +266,7 @@ fn goal_report(state: AppState, pk: Peek) -> GoalReport {
 
     let need = per.ceil().clamp(PEEK_MIN, PEEK_MAX);
     let hint = format!(
-        "На каждую из {} оценок — не ниже {need} (нужно в среднем {per:.2}, округляем вверх).",
+        "На каждую из {} оценок — не ниже {need} (среднее {per:.2}; итог округляется учителем до целого).",
         k as u64
     );
     let color = if need <= 6.0 {
@@ -246,25 +285,47 @@ fn goal_report(state: AppState, pk: Peek) -> GoalReport {
 
 /// The fullscreen overlay: dim (tap to close) + the card.
 ///
-/// The card is full-width and sits at a FIXED spot — the press point only picks
-/// the subject, so where you tap never moves the preview. Nothing inside
-/// scrolls (the strip wraps instead), so there is no gesture that could slide
-/// content and expose the dim behind the card. The card pops in and out with a
-/// scale-and-fade; the dim rides the same opacity.
+/// The card is full-width and parks UNDER the pressed row — the row's bottom
+/// edge (window coordinates) comes in through `open` and is clamped to the
+/// safe area and to what fits on screen. Nothing inside scrolls (the strip
+/// wraps instead), so there is no gesture that could slide content and expose
+/// the dim behind the card. The card pops in and out with a scale-and-fade
+/// plus a short slide; the dim rides the same opacity. The entrance's animated
+/// write is spawned from the `when` build closure below — only there is the
+/// subtree guaranteed to exist when the timer lands.
 pub fn overlay(state: AppState) -> impl Piece {
     let pk = peek();
     when(
         move || pk.subject.get().is_some(),
         move || {
+            // The subtree just (re)built for this open — start its pop. The
+            // generation comes from a thread-local (see `PENDING`), not a
+            // tracked read: the build must not re-run when `epoch` bumps.
+            let g = PENDING.with(|c| {
+                let v = c.get();
+                c.set(0);
+                v
+            });
+            if g != 0 {
+                spawn_pop(g);
+            }
             let w = crate::pages::diary::get_screen_width();
             zstack((
                 button("")
                     .action(move || peek().close())
                     .background(Color::rgba(0.0, 0.0, 0.0, 0.42))
                     .grow(),
-                build_card(state, pk, w).scale(move || 0.92 + 0.08 * pk.shown.get()),
+                build_card(state, pk, w)
+                    .scale(move || 0.90 + 0.10 * pk.shown.get())
+                    .translation(0.0, move || {
+                        let h = crate::pages::diary::get_screen_height();
+                        let top = (pk.y.get() + 16.0).clamp(56.0, (h - 340.0).max(56.0));
+                        // Slide the last few points down into place while the
+                        // opacity and scale ride the same `shown`.
+                        top - 12.0 * (1.0 - pk.shown.get())
+                    }),
             ))
-            .align(Alignment::Center)
+            .align(Alignment::TopLeading)
             .opacity(move || pk.shown.get())
             .grow()
         },
@@ -308,6 +369,32 @@ fn seg_chip(state: AppState, pk: Peek, mode: u8, text: &'static str) -> AnyPiece
             }
         }
         pk.panel.set(mode);
+    })
+    .any()
+}
+
+/// One digit of the predict keypad: accent-tinted chip, tap appends that mark
+/// to the prediction strip. Built once per panel open as a direct child of the
+/// wrap row — exactly how the settings keyboard lays out its letter keys, the
+/// pattern whose taps are known to land.
+fn digit_chip(state: AppState, pk: Peek, v: u8) -> AnyPiece {
+    column((
+        label(format!("{v}"))
+            .font(Font::Headline)
+            .color(move || Color::hex(state.accent_color.get())),
+    ))
+    .padding(Insets {
+        top: 6.0,
+        leading: 9.0,
+        bottom: 6.0,
+        trailing: 9.0,
+    })
+    .corner_radius(8.0)
+    .background(move || accent_tint(state.accent_color.get(), 0.12))
+    .on_tap(move || {
+        let mut p = pk.preds.get();
+        p.push(v as f64);
+        pk.preds.set(p);
     })
     .any()
 }
@@ -541,49 +628,19 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
     );
 
     // Predict controls: tap any digit to append that predicted mark — no add
-    // button, taps stack up, every append lands highlighted in the strip.
+    // button, taps stack up, every append lands highlighted in the strip. The
+    // digits sit DIRECTLY in the wrap row (PieceVec, the settings-keyboard
+    // pattern) — no `each` anchor between the finger and the chip's tap.
     let predict_ui = when(
         move || pk.panel.get() == 1,
         move || {
-            let st_nums = state;
-            let num_each = each(
-                items(
-                    // u8 keys — `f64` has no `Hash`, the list is keyed by the mark itself.
-                    move || (1..=10u8).collect::<Vec<u8>>(),
-                    |v: &u8| *v,
-                ),
-                move |item| {
-                    let v = item.get();
-                    let st = st_nums;
-                    column((
-                        label(format!("{v}"))
-                            .font(Font::Headline)
-                            .color(move || Color::hex(st.accent_color.get())),
-                    ))
-                    .padding(Insets {
-                        top: 6.0,
-                        leading: 9.0,
-                        bottom: 6.0,
-                        trailing: 9.0,
-                    })
-                    .min_width(32.0)
-                    .align(HAlign::Center)
-                    .corner_radius(8.0)
-                    .background(move || accent_tint(st.accent_color.get(), 0.12))
-                    .on_tap(move || {
-                        let mut p = pk.preds.get();
-                        p.push(v as f64);
-                        pk.preds.set(p);
-                    })
-                    .any()
-                },
-            );
+            let chips: Vec<AnyPiece> = (1..=10u8).map(|v| digit_chip(state, pk, v)).collect();
             column((
                 label("Тапни оценку — она попадёт в ленту предиктов")
                     .font(Font::Footnote)
                     .color(colors::SECONDARY)
                     .grow(),
-                row((num_each,))
+                row(PieceVec(chips))
                     .spacing(8.0)
                     .fit(RowFit::Wrap { run_spacing: 8.0 })
                     .grow(),
