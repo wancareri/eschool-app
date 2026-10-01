@@ -53,7 +53,9 @@ fn close_sheet(state: AppState) {
 /// FullScreen drops the presenting view once the transition lands, which showed
 /// black behind this dim instead of the live page), so the page stays visible
 /// beneath the dim; the fork presents with a fade-and-slide-in and dismisses
-/// with a plain fade, so the dim never sweeps across the page like a window.
+/// with a single downward glide (the sheet travels all the way past the bottom
+/// edge while the dim fades alongside), so the dim never sweeps across the
+/// page like a window.
 ///
 /// The sheet is draggable: pulling UP resists (a rubber band with ~70pt of
 /// travel), pulling DOWN follows the finger and, past the threshold, closes it.
@@ -85,15 +87,12 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                 }
                 DragPhase::Ended => {
                     if drag_y.get() > 110.0 {
-                        // Past the threshold: close with the cover's fade dismissal.
-                        // The offset stays put through the fade; reset it once the
-                        // dismissal (0.24s) has finished so the next open starts at 0.
-                        let reset = drag_y.setter();
+                        // Past the threshold: close. The card keeps its dragged offset
+                        // while the cover slides everything down as ONE downward motion —
+                        // snapping the offset back first would jerk the card up mid-close.
+                        // The next open builds a fresh drag signal anyway, so there is
+                        // nothing to reset.
                         close_sheet(s_drag);
-                        std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_millis(320));
-                            day::reactive::on_main(move || reset.set(0.0));
-                        });
                     } else {
                         with_animation(AnimSpec::ease_out(240), move || drag_y.set(0.0));
                     }
