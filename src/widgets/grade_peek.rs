@@ -336,10 +336,10 @@ fn seg_chip(state: AppState, pk: Peek, mode: u8, text: &'static str) -> AnyPiece
         }),
     ))
     .padding(Insets {
-        top: 7.0,
-        leading: 14.0,
-        bottom: 7.0,
-        trailing: 14.0,
+        top: 5.0,
+        leading: 12.0,
+        bottom: 5.0,
+        trailing: 12.0,
     })
     .corner_radius(8.0)
     .background(move || {
@@ -366,26 +366,75 @@ fn seg_chip(state: AppState, pk: Peek, mode: u8, text: &'static str) -> AnyPiece
 /// One digit of the predict keypad: accent-tinted chip, tap appends that mark
 /// to the prediction strip. Built once per panel open as a direct child of the
 /// wrap row — exactly how the settings keyboard lays out its letter keys, the
-/// pattern whose taps are known to land.
+/// pattern whose taps are known to land. Ten predictions cap the keypad: the
+/// strip renders ten slots, and a fuller one would grow past the panel.
 fn digit_chip(state: AppState, pk: Peek, v: u8) -> AnyPiece {
     column((
         label(format!("{v}"))
-            .font(Font::Headline)
+            .font(Font::Subheadline)
             .color(move || Color::hex(state.accent_color.get())),
     ))
     .padding(Insets {
-        top: 6.0,
+        top: 5.0,
         leading: 9.0,
-        bottom: 6.0,
+        bottom: 5.0,
         trailing: 9.0,
     })
     .corner_radius(8.0)
     .background(move || accent_tint(state.accent_color.get(), 0.12))
     .on_tap(move || {
+        if pk.preds.get().len() >= 10 {
+            return;
+        }
         let mut p = pk.preds.get();
         p.push(v as f64);
         pk.preds.set(p);
     })
+    .any()
+}
+
+/// One predicted chip's slot: a stable child that shows while there are at
+/// least `idx + 1` predictions and hides past that. The label reads
+/// `preds[idx]` reactively, so removing a chip slides every later chip's
+/// value up a slot by itself — no keyed diffing between the finger and the
+/// strip (the pattern whose taps were known to land: plain children).
+fn pred_slot(state: AppState, pk: Peek, idx: usize) -> AnyPiece {
+    when(
+        move || pk.preds.get().len() > idx,
+        move || {
+            column((
+                label("пред")
+                    .font(Font::Caption2)
+                    .color(move || Color::hex(state.accent_color.get())),
+                label(move || {
+                    pk.preds
+                        .get()
+                        .get(idx)
+                        .map(|v| format!("~{}", v.round()))
+                        .unwrap_or_default()
+                })
+                .font(Font::Subheadline)
+                .color(move || Color::hex(state.accent_color.get())),
+            ))
+            .spacing(1.0)
+            .padding(Insets {
+                top: 4.0,
+                leading: 6.0,
+                bottom: 4.0,
+                trailing: 6.0,
+            })
+            .background(move || accent_tint(state.accent_color.get(), 0.16))
+            .corner_radius(8.0)
+            .on_tap(move || {
+                let mut v = pk.preds.get();
+                if idx < v.len() {
+                    v.remove(idx);
+                    pk.preds.set(v);
+                }
+            })
+            .any()
+        },
+    )
     .any()
 }
 
@@ -413,90 +462,45 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
     .spacing(8.0)
     .align(VAlign::Center);
 
-    // Real marks: one chip per lesson slot (date over the mark as spelled).
-    let real_chips = each(
-        items(
-            move || {
-                let q = pk.quarter.get();
-                let subj = pk.subject.get().unwrap_or_default();
-                state
-                    .week_cache
-                    .with(|c| crate::features::diary::extract_marks_dated(c, q, &subj))
-                    .into_iter()
-                    .enumerate()
-                    .collect::<Vec<_>>()
-            },
-            |t: &(usize, (u64, String, Vec<f64>))| t.0,
-        ),
-        move |item| {
-            let (_, (date, raw, parsed)) = item.get();
-            let pavg = parsed.iter().sum::<f64>() / parsed.len().max(1) as f64;
-            column((
-                label(utils::format_date_short(date))
-                    .font(Font::Caption2)
-                    .color(colors::SECONDARY),
-                label(raw)
-                    .font(Font::Headline)
-                    .color(utils::avg_grade_color(pavg)),
-            ))
-            .spacing(2.0)
-            .padding(Insets {
-                top: 6.0,
-                leading: 8.0,
-                bottom: 6.0,
-                trailing: 8.0,
+    // Real marks: one chip per lesson slot (date over the mark as spelled),
+    // built as plain children when the panel mounts — the panel unmounts
+    // between opens, so the list is fixed for its lifetime, and a finger has
+    // no keyed diff to miss (the settings-keyboard pattern).
+    let real_chips: Vec<AnyPiece> = {
+        let q = pk.quarter.get();
+        let subj = pk.subject.get().unwrap_or_default();
+        state
+            .week_cache
+            .with(|c| crate::features::diary::extract_marks_dated(c, q, &subj))
+            .into_iter()
+            .map(|(date, raw, parsed)| {
+                let pavg = parsed.iter().sum::<f64>() / parsed.len().max(1) as f64;
+                column((
+                    label(utils::format_date_short(date))
+                        .font(Font::Caption2)
+                        .color(colors::SECONDARY),
+                    label(raw)
+                        .font(Font::Subheadline)
+                        .color(utils::avg_grade_color(pavg)),
+                ))
+                .spacing(1.0)
+                .padding(Insets {
+                    top: 4.0,
+                    leading: 6.0,
+                    bottom: 4.0,
+                    trailing: 6.0,
+                })
+                .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
+                .corner_radius(8.0)
+                .any()
             })
-            .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
-            .corner_radius(8.0)
-            .any()
-        },
-    );
+            .collect()
+    };
 
     // Predicted chips: accent-tinted, prefixed with «~», tap removes — they sit
-    // IN the strip among the real marks, highlighted.
-    let pred_chips = each(
-        items(
-            move || {
-                pk.preds
-                    .get()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, v)| (i, *v))
-                    .collect::<Vec<_>>()
-            },
-            |t: &(usize, f64)| t.0,
-        ),
-        move |item| {
-            let (idx, val) = item.get();
-            let st = state;
-            let pk_rm = pk;
-            column((
-                label("пред")
-                    .font(Font::Caption2)
-                    .color(move || Color::hex(st.accent_color.get())),
-                label(format!("~{}", val.round()))
-                    .font(Font::Headline)
-                    .color(move || Color::hex(st.accent_color.get())),
-            ))
-            .spacing(2.0)
-            .padding(Insets {
-                top: 6.0,
-                leading: 8.0,
-                bottom: 6.0,
-                trailing: 8.0,
-            })
-            .background(move || accent_tint(st.accent_color.get(), 0.16))
-            .corner_radius(8.0)
-            .on_tap(move || {
-                let mut v = pk_rm.preds.get();
-                if idx < v.len() {
-                    v.remove(idx);
-                    pk_rm.preds.set(v);
-                }
-            })
-            .any()
-        },
-    );
+    // IN the strip among the real marks, highlighted. Ten stable slots, each
+    // alive only while its index has a prediction behind it.
+    let pred_slots: Vec<AnyPiece> = (0..10).map(|i| pred_slot(state, pk, i)).collect();
 
     // The average chip — the strip's last cell, projecting the predictions in.
     let avg_chip = column((
@@ -514,7 +518,7 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
                 format!("{:.2}", sum / n)
             }
         })
-        .font(Font::Title3)
+        .font(Font::Headline)
         .color(move || {
             if !pk.preds.get().is_empty() {
                 return Color::hex(st_avg_col.accent_color.get());
@@ -526,27 +530,27 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
         })
         .align(TextAlign::Center),
     ))
-    .spacing(2.0)
+    .spacing(1.0)
     .padding(Insets {
-        top: 6.0,
-        leading: 10.0,
-        bottom: 6.0,
-        trailing: 10.0,
+        top: 4.0,
+        leading: 8.0,
+        bottom: 4.0,
+        trailing: 8.0,
     })
     .background(Color::rgba(0.0, 0.0, 0.0, 0.13))
     .corner_radius(8.0);
 
     // «+» — opens the planning panel (predict mode first).
     let plus_chip = column((
-        label("+").font(Font::Title3),
+        label("+").font(Font::Headline),
         label("что если").font(Font::Caption2).color(colors::SECONDARY),
     ))
-    .spacing(2.0)
+    .spacing(1.0)
     .padding(Insets {
-        top: 6.0,
-        leading: 8.0,
-        bottom: 6.0,
-        trailing: 8.0,
+        top: 4.0,
+        leading: 6.0,
+        bottom: 4.0,
+        trailing: 6.0,
     })
     .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
     .corner_radius(8.0)
@@ -560,10 +564,15 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
 
     // Wrapped into lines at the card's full width — every chip on screen at
     // once, nothing to swipe: no scroll view, so no bounce that could expose
-    // the dim behind the card.
-    let strip = row((real_chips, pred_chips, avg_chip, plus_chip))
-        .spacing(8.0)
-        .fit(RowFit::Wrap { run_spacing: 8.0 });
+    // the dim behind the card. One PieceVec of plain children — real marks,
+    // prediction slots, the average, the «+» — the settings-keyboard layout.
+    let mut cells = real_chips;
+    cells.extend(pred_slots);
+    cells.push(avg_chip.any());
+    cells.push(plus_chip.any());
+    let strip = row(PieceVec(cells))
+        .spacing(6.0)
+        .fit(RowFit::Wrap { run_spacing: 6.0 });
 
     // «Сейчас X → с предиктами Y» — only once something is predicted.
     let summary = when(
@@ -602,17 +611,17 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
                         .color(colors::SECONDARY),
                 ))
                 .padding(Insets {
-                    top: 7.0,
-                    leading: 14.0,
-                    bottom: 7.0,
-                    trailing: 14.0,
+                    top: 5.0,
+                    leading: 12.0,
+                    bottom: 5.0,
+                    trailing: 12.0,
                 })
                 .corner_radius(8.0)
                 .background(Color::rgba(0.0, 0.0, 0.0, 0.06))
                 .on_tap(move || pk.panel.set(0))
                 .any(),
             ))
-            .spacing(8.0)
+            .spacing(6.0)
             .grow()
         },
     );
@@ -625,18 +634,10 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
         move || pk.panel.get() == 1,
         move || {
             let chips: Vec<AnyPiece> = (1..=10u8).map(|v| digit_chip(state, pk, v)).collect();
-            column((
-                label("Тапни оценку — она попадёт в ленту предиктов")
-                    .font(Font::Footnote)
-                    .color(colors::SECONDARY)
-                    .grow(),
-                row(PieceVec(chips))
-                    .spacing(8.0)
-                    .fit(RowFit::Wrap { run_spacing: 8.0 })
-                    .grow(),
-            ))
-            .spacing(8.0)
-            .grow()
+            row(PieceVec(chips))
+                .spacing(6.0)
+                .fit(RowFit::Wrap { run_spacing: 6.0 })
+                .grow()
         },
     );
 
@@ -700,7 +701,7 @@ fn build_card(state: AppState, pk: Peek, width: f64) -> impl Piece {
             let st_hint = state;
             column((
                 label(move || goal_report(st_big, pk).big)
-                    .font(Font::Title)
+                    .font(Font::Title2)
                     .color(move || goal_report(st_big_col, pk).color)
                     .align(TextAlign::Center)
                     .grow(),
