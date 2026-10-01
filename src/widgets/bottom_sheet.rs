@@ -52,10 +52,10 @@ fn close_sheet(state: AppState) {
 /// is presented OverFullScreen (patched in the wancareri/day fork: upstream's
 /// FullScreen drops the presenting view once the transition lands, which showed
 /// black behind this dim instead of the live page), so the page stays visible
-/// beneath the dim; the fork presents with a fade-and-slide-in and dismisses
-/// with a single downward glide (the sheet travels all the way past the bottom
-/// edge while the dim fades alongside), so the dim never sweeps across the
-/// page like a window.
+/// beneath the dim; the fork presents with the sheet sliding up under a dim that
+/// washes in on its own, and dismisses with the sheet gliding down opaque while
+/// the dim washes out in place — the darkening never travels with the card, and
+/// the card never fades mid-flight.
 ///
 /// The sheet is draggable: pulling UP resists (a rubber band with ~70pt of
 /// travel), pulling DOWN follows the finger and, past the threshold, closes it.
