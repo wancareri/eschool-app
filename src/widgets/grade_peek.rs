@@ -357,8 +357,18 @@ pub fn overlay(state: AppState) -> impl Piece {
                         move || {
                             // Parked just below the row; clamped so a row near
                             // the top or bottom still leaves the window on
-                            // screen (a window-height keeps its place).
-                            let top = (pk.y.get() + 12.0).clamp(56.0, (h - 340.0).max(56.0));
+                            // screen. The plan panel grows the window DOWNWARD
+                            // (mode row, controls, verdict, predicted chips in
+                            // the strip), so the clamp's budget grows with it —
+                            // the window lifts to make room instead of running
+                            // off the bottom edge every time a control appears.
+                            let reserve = match pk.panel.get() {
+                                1 => 170.0,
+                                2 => 250.0,
+                                _ => 0.0,
+                            };
+                            let top = (pk.y.get() + 12.0)
+                                .clamp(56.0, (h - (340.0 + reserve)).max(56.0));
                             top - 10.0 * (1.0 - pk.shown.get())
                         },
                     ),

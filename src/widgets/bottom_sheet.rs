@@ -58,7 +58,8 @@ fn close_sheet(state: AppState) {
 /// the card never fades mid-flight.
 ///
 /// The sheet is draggable: pulling UP resists (a rubber band with ~70pt of
-/// travel), pulling DOWN follows the finger and, past the threshold, closes it.
+/// travel) and always glides back down; pulling DOWN follows the finger and
+/// closes it after a nudge — a dismissal never travels upward in any phase.
 pub fn network_error_sheet(state: AppState) -> impl Piece {
     let s_tap = state;
     let s_retry = state;
@@ -71,7 +72,13 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
             // Both directions start from the finger; only the release animates.
             let drag_y = Signal::new(0.0);
             let s_drag = state;
-            let sheet_drag = move |d: Drag| match d.phase {
+            let sheet_drag = move |d: Drag| {
+                // Once the close has started the card is frozen: no event may touch it —
+                // a fresh touch's zeroing would teleport it up while the sheet glides down.
+                if s_drag.show_network_modal.get().is_none() {
+                    return;
+                }
+                match d.phase {
                 DragPhase::Began => drag_y.set(0.0),
                 DragPhase::Changed => {
                     let dy = d.translation.y;
@@ -86,16 +93,21 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                     drag_y.set(off);
                 }
                 DragPhase::Ended => {
-                    if drag_y.get() > 110.0 {
-                        // Past the threshold: close. The card keeps its dragged offset
-                        // while the cover slides everything down as ONE downward motion —
-                        // snapping the offset back first would jerk the card up mid-close.
-                        // The next open builds a fresh drag signal anyway, so there is
-                        // nothing to reset.
+                    if drag_y.get() > 10.0 {
+                        // Any downward pull past a tap-sized nudge dismisses — the card keeps
+                        // its dragged offset while the cover slides everything down as ONE
+                        // downward motion. No snap-back exists for the down direction any
+                        // more, so nothing can fly up here; the next open builds a fresh drag
+                        // signal anyway, so there is nothing to reset.
                         close_sheet(s_drag);
                     } else {
+                        // The card is at rest or above its spot: returning is downward in
+                        // every case (a rubber-band lift glides back down; a nudge under the
+                        // nudge threshold is a couple of points), so this direction can never
+                        // read as an upward jerk either.
                         with_animation(AnimSpec::ease_out(240), move || drag_y.set(0.0));
                     }
+                }
                 }
             };
 
