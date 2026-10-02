@@ -8,4 +8,5 @@ pub mod week_navigator;
 pub mod week_summary;
 pub mod bottom_sheet;
 pub mod grade_peek;
+pub mod modal;
 pub mod spinner;
