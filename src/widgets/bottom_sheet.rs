@@ -41,7 +41,8 @@ fn gap_filler(drag_y: Signal<f64>) -> AnyPiece {
 
 /// Close is just the signal flip: the cover piece runs the native dismissal
 /// itself and keeps its content mounted until the backend reports it hidden.
-fn close_sheet(state: AppState) {
+fn close_sheet(state: AppState, reason: &str) {
+    crate::shared::nslog::nslog(&format!("[cover] close_sheet: {reason}"));
     state.show_network_modal.set(None);
 }
 
@@ -99,7 +100,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                         // downward motion. No snap-back exists for the down direction any
                         // more, so nothing can fly up here; the next open builds a fresh drag
                         // signal anyway, so there is nothing to reset.
-                        close_sheet(s_drag);
+                        close_sheet(s_drag, "drag-end");
                     } else {
                         // The card is at rest or above its spot: returning is downward in
                         // every case (a rubber-band lift glides back down; a nudge under the
@@ -186,7 +187,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                 // and only catches taps outside the card. The card above it is a
                 // later zstack child, so it wins the hit-test over its own area.
                 button("")
-                    .action(move || close_sheet(s_tap))
+                    .action(move || close_sheet(s_tap, "dim-tap"))
                     .grow()
                     .any(),
 
@@ -232,7 +233,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                                 .prominent()
                                 .action(move || {
                                     let st = s_retry;
-                                    close_sheet(st);
+                                    close_sheet(st, "retry");
                                     if st.is_authenticated.get() {
                                         crate::features::diary::load_all(st);
                                     }
@@ -242,7 +243,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                         ),
 
                         button("Понятно")
-                            .action(move || close_sheet(s_ok))
+                            .action(move || close_sheet(s_ok, "ok-button"))
                             .padding(Insets { top: 4.0, leading: 16.0, bottom: 4.0, trailing: 16.0 }),
                     ))
                     .spacing(8.0)

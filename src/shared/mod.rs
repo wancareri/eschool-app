@@ -3,6 +3,7 @@ pub mod cache;
 pub mod colors;
 pub mod i18n;
 pub mod locale;
+pub mod log_bridge;
 pub mod notifications;
 pub mod nslog;
 pub mod pin;

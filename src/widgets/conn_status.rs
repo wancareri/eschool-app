@@ -273,6 +273,7 @@ pub fn render() -> impl Piece {
     // 0761b13 removed it for.
     .animation(Animation::ease_out(220))
     .on_tap(move || {
+        crate::shared::nslog::nslog("[cover] status capsule tap: open");
         state
             .show_network_modal
             .set(Some(String::from("net")));

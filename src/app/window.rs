@@ -1,10 +1,11 @@
 use day::prelude::*;
 use crate::app::AppState;
-use crate::shared::{locale, nslog};
+use crate::shared::{locale, log_bridge, nslog};
 use crate::pages;
 use crate::res;
 
 pub fn window() -> day::WindowOptions {
+    log_bridge::install();
     day::WindowOptions {
         locales: Some((res::locales::DEFAULT, res::locales::CATALOG)),
         title_fn: Some(|| res::str::app_title().format()),
@@ -15,6 +16,7 @@ pub fn window() -> day::WindowOptions {
 }
 
 pub fn root() -> impl Piece {
+    log_bridge::install();
     nslog::nslog("[init] Eschool App starting");
     let has_locale = day::prefs::get("app.locale")
         .map(|v| !v.is_empty())
