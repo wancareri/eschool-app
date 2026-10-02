@@ -267,9 +267,7 @@ fn pred_slot(state: AppState, pk: Peek, idx: usize) -> AnyPiece {
             column((
                 label("пред")
                     .font(Font::Caption2)
-                    .color(move || Color::hex(state.accent_color.get()))
-                    .align(TextAlign::Center)
-                    .grow_w(),
+                    .color(move || Color::hex(state.accent_color.get())),
                 label(move || {
                     pk.preds
                         .get()
@@ -278,12 +276,11 @@ fn pred_slot(state: AppState, pk: Peek, idx: usize) -> AnyPiece {
                         .unwrap_or_default()
                 })
                 .font(Font::Subheadline)
-                .color(move || Color::hex(state.accent_color.get()))
-                .align(TextAlign::Center)
-                .grow_w(),
+                .color(move || Color::hex(state.accent_color.get())),
             ))
             .spacing(1.0)
             .align(HAlign::Center)
+            .grow_w()
             .padding(Insets {
                 top: 4.0,
                 leading: 6.0,
@@ -346,17 +343,14 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                 column((
                     label(utils::format_date_short(date))
                         .font(Font::Caption2)
-                        .color(colors::SECONDARY)
-                        .align(TextAlign::Center)
-                        .grow_w(),
+                        .color(colors::SECONDARY),
                     label(raw)
                         .font(Font::Subheadline)
-                        .color(utils::avg_grade_color(pavg))
-                        .align(TextAlign::Center)
-                        .grow_w(),
+                        .color(utils::avg_grade_color(pavg)),
                 ))
                 .spacing(1.0)
                 .align(HAlign::Center)
+                .grow_w()
                 .padding(Insets {
                     top: 4.0,
                     leading: 6.0,
@@ -380,9 +374,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     let avg_chip = column((
         label("средний")
             .font(Font::Caption2)
-            .color(colors::SECONDARY)
-            .align(TextAlign::Center)
-            .grow_w(),
+            .color(colors::SECONDARY),
         label(move || {
             let q = pk.quarter.get();
             let subj = pk.subject.get().unwrap_or_default();
@@ -406,11 +398,11 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
             let marks = subject_marks(st_avg_col, &subj, q);
             avg_of(&marks).map(utils::avg_grade_color).unwrap_or(colors::SECONDARY)
         })
-        .align(TextAlign::Center)
-        .grow_w(),
+        .align(TextAlign::Center),
     ))
     .spacing(1.0)
     .align(HAlign::Center)
+    .grow_w()
     .padding(Insets {
         top: 4.0,
         leading: 8.0,
@@ -425,12 +417,11 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     // mark lands in the strip and moves the average), tap again closes.
     let plus_chip = column((
         label("+")
-            .font(Font::Headline)
-            .align(TextAlign::Center)
-            .grow_w(),
+            .font(Font::Headline),
     ))
     .spacing(1.0)
     .align(HAlign::Center)
+    .grow_w()
     .padding(Insets {
         top: 4.0,
         leading: 6.0,
@@ -497,10 +488,9 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                 } else {
                     colors::SECONDARY
                 }
-            })
-            .align(TextAlign::Center)
-            .grow_w(),
+            }),
     ))
+    .grow_w()
     .padding(Insets {
         top: 8.0,
         leading: 12.0,
@@ -556,10 +546,10 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                         let v = pk.target.get() - 1.0;
                         pk.target.set(v.max(PEEK_MIN));
                     }),
-                    label(move || format!("{:.0}", pk.target.get()))
-                        .font(Font::Title3)
-                        .width(44.0)
-                        .align(TextAlign::Center),
+                    column((
+                        label(move || format!("{:.0}", pk.target.get())).font(Font::Title3),
+                    ))
+                    .width(44.0),
                     button("+").action(move || {
                         let v = pk.target.get() + 1.0;
                         pk.target.set(v.min(PEEK_MAX));
@@ -576,10 +566,10 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                             pk.k.set(k - 1);
                         }
                     }),
-                    label(move || format!("{}", pk.k.get()))
-                        .font(Font::Headline)
-                        .width(32.0)
-                        .align(TextAlign::Center),
+                    column((
+                        label(move || format!("{}", pk.k.get())).font(Font::Headline),
+                    ))
+                    .width(32.0),
                     button("+").action(move || {
                         let k = pk.k.get();
                         if k < 40 {
@@ -606,14 +596,10 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
             column((
                 label(move || goal_report(st_big, pk).big)
                     .font(Font::Title2)
-                    .color(move || goal_report(st_big_col, pk).color)
-                    .align(TextAlign::Center)
-                    .grow_w(),
+                    .color(move || goal_report(st_big_col, pk).color),
                 label(move || goal_report(st_hint, pk).hint)
                     .font(Font::Footnote)
-                    .color(colors::SECONDARY)
-                    .align(TextAlign::Center)
-                    .grow_w(),
+                    .color(colors::SECONDARY),
             ))
             .spacing(4.0)
             .grow_w()

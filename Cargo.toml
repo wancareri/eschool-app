@@ -81,6 +81,12 @@ platform = "13.0"
 [build-dependencies]
 day-build = { git = "https://github.com/wancareri/day.git" }
 
+# Layout probes (tests/layout_probe.rs) boot the mock toolkit directly.
+[dev-dependencies]
+day-core = { git = "https://github.com/wancareri/day.git" }
+day-mock = { git = "https://github.com/wancareri/day.git" }
+day-spec = { git = "https://github.com/wancareri/day.git" }
+
 
 [workspace]
 members = [".", "crates/eschool-api"]
