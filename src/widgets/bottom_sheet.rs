@@ -17,7 +17,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
     let s_retry = state;
     let s_ok = state;
 
-    crate::widgets::modal::modal_window(state.show_network_modal, move |_| {
+    crate::widgets::modal::modal_window(state.show_network_modal, 0.0, move |_| {
         // The status glyph — the same lucide vectors the island carries
         // (wifi-off / alert-circle / check), the accent spinner while connecting.
         // One shared 22pt slot that swaps on every status change.

@@ -218,7 +218,11 @@ fn goal_report(state: AppState, pk: Peek) -> GoalReport {
 /// tap, the drag release and the header's ✕ all flip the same slot.
 pub fn modal(state: AppState) -> impl Piece {
     let pk = peek();
-    crate::widgets::modal::modal_window(pk.subject, move |_subj| build_card(state, pk))
+    // The window's floor: half the screen keeps the sheet visibly taller than
+    // the content alone asks for, and content that grows past the floor grows
+    // the card — the shell animates that resize, the top edge slides up.
+    let min_h = crate::pages::diary::get_screen_height() * 0.5;
+    crate::widgets::modal::modal_window(pk.subject, min_h, move |_subj| build_card(state, pk))
 }
 
 /// A mode chip for the Предикт/Цель switch: accent-tinted when its mode is

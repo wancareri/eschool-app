@@ -7,6 +7,11 @@ const MAX_UP: f64 = 70.0;
 /// the card's rounded bottom corners dissolve into filler material instead of
 /// the dim showing through.
 const FILLER_H: f64 = MAX_UP + 14.0;
+/// The card's resize animation: content that grows (a panel opens, marks
+/// appear) or shrinks re-lays the card with this ease — the window's top edge
+/// slides up instead of jumping. Attached to the card itself (§8.4 implicit
+/// animation), so it covers every content-driven size change in any caller.
+const RESIZE_MS: u32 = 240;
 
 /// Close is just the signal flip: the cover piece runs the native dismissal
 /// itself and keeps its content mounted until the backend reports it hidden.
@@ -49,6 +54,13 @@ fn gap_filler(drag_y: Signal<f64>) -> AnyPiece {
 /// grab handle, and everything the native side animates. What goes inside the
 /// card is the caller's business; this piece owns only the shell.
 ///
+/// `min_h` is the card's floor: a transparent fixed-height child under the body
+/// makes the window AT LEAST that tall — content taller than the floor grows
+/// the card past it, content under it still gets the taller sheet. The card
+/// carries an implicit `RESIZE_MS` animation, so any content-driven height
+/// change slides the window's top edge instead of jumping; the live drag opts
+/// out of it with a zero-duration ambient (ambient intent wins over implicit).
+///
 /// day never attaches a cover's view to the page it sits in — it lives in its
 /// own modal VC and its node measures 0×0 in the tree — so presenting it leaves
 /// the page's subview walk untouched: the full-bleed chain holds and the tab bar
@@ -68,6 +80,7 @@ fn gap_filler(drag_y: Signal<f64>) -> AnyPiece {
 /// else the caller closes itself through the same binding.
 pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
     open: S,
+    min_h: f64,
     content: impl Fn(&R) -> C + 'static,
 ) -> impl Piece {
     let o_dim = open.clone();
@@ -98,7 +111,11 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                         // so the sheet yields a little and then visibly resists.
                         -MAX_UP * (1.0 - 1.0 / (1.0 + (-dy) / MAX_UP))
                     };
-                    drag_y.set(off);
+                    // The card carries the implicit RESIZE animation, and ambient
+                    // intent overrides it — a zero-duration ambient keeps the live
+                    // drag on the finger (it resolves to a 10ms retarget), while the
+                    // release below still asks for its own 240ms ease explicitly.
+                    with_animation(AnimSpec::linear(0), move || drag_y.set(off));
                 }
                 DragPhase::Ended => {
                     if drag_y.get() > 10.0 {
@@ -141,8 +158,8 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 // background on iOS), so it tracks light/dark mode with no app palette.
                 // The paddings below compose with the section's own 14pt inset to keep
                 // the original 24/16/32pt edges. The translation is the sheet drag —
-                // no node `.animation`, so it tracks the finger exactly; only the
-                // release snaps back (animated inside the drag handler).
+                // the card's implicit animation would smooth it, so the live drag
+                // runs under a zero-duration ambient; only the release snaps back
                 section((
                     // Drag handle pill at the top
                     row((
@@ -158,8 +175,27 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                         trailing: 0.0,
                     }),
 
-                    content(route),
+                    // The card body: the floor is a transparent fixed-height
+                    // child, so the stack sizes to the LARGER of the two —
+                    // content past the floor grows the card, content under it
+                    // still gets the taller window. Top-aligned, so the body
+                    // sits under the handle and the slack fills the bottom.
+                    if min_h > 0.0 {
+                        zstack((
+                            column(()).height(min_h),
+                            content(route).any(),
+                        ))
+                        .align(Alignment::Top)
+                        .any()
+                    } else {
+                        content(route).any()
+                    },
                 ))
+                // The card's own §8.4 implicit animation: every content-driven
+                // size change of the card and of everything inside it eases
+                // RESIZE_MS, so the window's top edge slides up when a panel
+                // adds elements instead of jumping.
+                .animation(AnimSpec::ease_out(RESIZE_MS))
                 .translation(0.0, move || drag_y.get())
                 .any(),
             ))
