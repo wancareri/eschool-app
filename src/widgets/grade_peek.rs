@@ -243,7 +243,7 @@ fn seg_chip(state: AppState, pk: Peek, mode: u8, text: &'static str) -> AnyPiece
         bottom: 5.0,
         trailing: 12.0,
     })
-    .corner_radius(8.0)
+    .corner_radius(14.0)
     .background(move || {
         if pk.panel.get() == mode {
             accent_tint(state.accent_color.get(), 0.14)
@@ -319,6 +319,7 @@ fn pred_slot(state: AppState, pk: Peek, idx: usize) -> AnyPiece {
                 .color(move || Color::hex(state.accent_color.get())),
             ))
             .spacing(1.0)
+            .align(HAlign::Center)
             .padding(Insets {
                 top: 4.0,
                 leading: 6.0,
@@ -327,6 +328,7 @@ fn pred_slot(state: AppState, pk: Peek, idx: usize) -> AnyPiece {
             })
             .background(move || accent_tint(state.accent_color.get(), 0.16))
             .corner_radius(8.0)
+            .grow_w()
             .on_tap(move || {
                 let mut v = pk.preds.get();
                 if idx < v.len() {
@@ -349,7 +351,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     let header = row((
         label(move || pk.subject.get().unwrap_or_default())
             .font(Font::Title3)
-            .grow(),
+            .grow_w(),
         column((label("✕").font(Font::Subheadline),))
             .padding(Insets {
                 top: 6.0,
@@ -386,6 +388,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                         .color(utils::avg_grade_color(pavg)),
                 ))
                 .spacing(1.0)
+                .align(HAlign::Center)
                 .padding(Insets {
                     top: 4.0,
                     leading: 6.0,
@@ -394,6 +397,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                 })
                 .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
                 .corner_radius(8.0)
+                .grow_w()
                 .any()
             })
             .collect()
@@ -433,6 +437,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         .align(TextAlign::Center),
     ))
     .spacing(1.0)
+    .align(HAlign::Center)
     .padding(Insets {
         top: 4.0,
         leading: 8.0,
@@ -440,7 +445,8 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         trailing: 8.0,
     })
     .background(Color::rgba(0.0, 0.0, 0.0, 0.13))
-    .corner_radius(8.0);
+    .corner_radius(8.0)
+    .grow_w();
 
     // «+» — opens the planning panel (predict mode first).
     let plus_chip = column((
@@ -448,6 +454,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         label("что если").font(Font::Caption2).color(colors::SECONDARY),
     ))
     .spacing(1.0)
+    .align(HAlign::Center)
     .padding(Insets {
         top: 4.0,
         leading: 6.0,
@@ -455,7 +462,8 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         trailing: 6.0,
     })
     .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
-    .corner_radius(8.0)
+    .corner_radius(14.0)
+    .grow_w()
     .on_tap(move || {
         if pk.panel.get() == 0 {
             pk.panel.set(1);
@@ -474,7 +482,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     cells.push(plus_chip.any());
     let strip = row(PieceVec(cells))
         .spacing(6.0)
-        .fit(RowFit::Wrap { run_spacing: 6.0 });
+        .fit(RowFit::WrapColumns { run_spacing: 6.0 });
 
     // «Сейчас X → с предиктами Y» — only once something is predicted.
     let summary = when(
@@ -496,7 +504,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
             })
             .font(Font::Footnote)
             .color(move || Color::hex(st_sum.accent_color.get()))
-            .grow()
+            .grow_w()
         },
     );
 
@@ -518,13 +526,13 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                     bottom: 5.0,
                     trailing: 12.0,
                 })
-                .corner_radius(8.0)
+                .corner_radius(14.0)
                 .background(Color::rgba(0.0, 0.0, 0.0, 0.06))
                 .on_tap(move || pk.panel.set(0))
                 .any(),
             ))
             .spacing(6.0)
-            .grow()
+            .grow_w()
         },
     );
 
@@ -539,7 +547,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
             row(PieceVec(chips))
                 .spacing(6.0)
                 .fit(RowFit::Wrap { run_spacing: 6.0 })
-                .grow()
+                .grow_w()
         },
     );
 
@@ -549,7 +557,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         move || {
             column((
                 row((
-                    label("Цель по итогу:").grow(),
+                    label("Цель по итогу:").grow_w(),
                     button("−").action(move || {
                         let v = pk.target.get() - 1.0;
                         pk.target.set(v.max(PEEK_MIN));
@@ -565,9 +573,9 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                 ))
                 .spacing(8.0)
                 .align(VAlign::Center)
-                .grow(),
+                .grow_w(),
                 row((
-                    label("Оценок останется:").grow(),
+                    label("Оценок останется:").grow_w(),
                     button("−").action(move || {
                         let k = pk.k.get();
                         if k > 0 {
@@ -587,10 +595,10 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                 ))
                 .spacing(8.0)
                 .align(VAlign::Center)
-                .grow(),
+                .grow_w(),
             ))
             .spacing(10.0)
-            .grow()
+            .grow_w()
         },
     );
 
@@ -606,15 +614,15 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                     .font(Font::Title2)
                     .color(move || goal_report(st_big_col, pk).color)
                     .align(TextAlign::Center)
-                    .grow(),
+                    .grow_w(),
                 label(move || goal_report(st_hint, pk).hint)
                     .font(Font::Footnote)
                     .color(colors::SECONDARY)
                     .align(TextAlign::Center)
-                    .grow(),
+                    .grow_w(),
             ))
             .spacing(4.0)
-            .grow()
+            .grow_w()
         },
     );
 
@@ -631,5 +639,5 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         verdict,
     ))
     .spacing(10.0)
-    .grow()
+    .grow_w()
 }
