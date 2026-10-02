@@ -755,6 +755,7 @@ pub fn load_quarter(state: AppState, quarter: usize) {
                             if let Some(state) = AppState::get_main() {
                                 let mut wc = state.week_cache.get();
                                 wc.insert(w_idx, days_clone);
+                                cache::save_json("week_cache", &wc);
                                 state.week_cache.set(wc);
                             }
                         });
@@ -887,6 +888,7 @@ pub fn load_year(state: AppState) {
                                 if let Some(state) = AppState::get_main() {
                                     let mut wc = state.week_cache.get();
                                     wc.insert(w_idx, days_clone);
+                                    cache::save_json("week_cache", &wc);
                                     state.week_cache.set(wc);
                                 }
                             });
