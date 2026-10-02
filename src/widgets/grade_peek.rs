@@ -1,9 +1,9 @@
 //! Итоги sheet — a tap or long-press on a subject row opens the bottom-sheet
 //! modal (the reusable `modal_window` shell): the quarter's marks wrapped into
-//! lines (date over mark), the average at the end of the strip, and a «+» that
-//! opens the two planning modes — predicted marks tapped straight into the
-//! strip (each one highlighted among the real marks), and a target-grade plan
-//! that answers with ONE whole mark to keep reaching, rounded up.
+//! lines (date over mark), the average at the end of the strip, a «+» that
+//! opens the predict keypad (marks tapped straight into the strip, each one
+//! highlighted among the real marks), and an always-visible «Цель» bar — a
+//! target-grade plan that answers with ONE whole mark to keep reaching, rounded up.
 //!
 //! Signals live here (thread-local), not in `AppState`: the sheet is one
 //! screen concern and the row handler reaches it through [`open`]. The window
@@ -225,46 +225,6 @@ pub fn modal(state: AppState) -> impl Piece {
     crate::widgets::modal::modal_window(pk.subject, min_h, move |_subj| build_card(state, pk))
 }
 
-/// A mode chip for the Предикт/Цель switch: accent-tinted when its mode is
-/// the live one.
-fn seg_chip(state: AppState, pk: Peek, mode: u8, text: &'static str) -> AnyPiece {
-    column((
-        label(text).font(Font::Subheadline).color(move || {
-            if pk.panel.get() == mode {
-                Color::hex(state.accent_color.get())
-            } else {
-                colors::SECONDARY
-            }
-        }),
-    ))
-    .padding(Insets {
-        top: 5.0,
-        leading: 12.0,
-        bottom: 5.0,
-        trailing: 12.0,
-    })
-    .corner_radius(14.0)
-    .background(move || {
-        if pk.panel.get() == mode {
-            accent_tint(state.accent_color.get(), 0.14)
-        } else {
-            Color::rgba(0.0, 0.0, 0.0, 0.06)
-        }
-    })
-    .on_tap(move || {
-        if mode == 2 {
-            // Seed the goal from the current average, as a whole mark.
-            let q = pk.quarter.get();
-            let subj = pk.subject.get().unwrap_or_default();
-            if let Some(a) = avg_of(&subject_marks(state, &subj, q)) {
-                pk.target.set(a.round().clamp(PEEK_MIN, PEEK_MAX));
-            }
-        }
-        pk.panel.set(mode);
-    })
-    .any()
-}
-
 /// One digit of the predict keypad: accent-tinted chip, tap appends that mark
 /// to the prediction strip. Built once per panel open as a direct child of the
 /// wrap row — exactly how the settings keyboard lays out its letter keys, the
@@ -282,8 +242,8 @@ fn digit_chip(state: AppState, pk: Peek, v: u8) -> AnyPiece {
         bottom: 5.0,
         trailing: 9.0,
     })
-    .corner_radius(8.0)
     .background(move || accent_tint(state.accent_color.get(), 0.12))
+    .corner_radius(14.0)
     .on_tap(move || {
         if pk.preds.get().len() >= 10 {
             return;
@@ -307,7 +267,9 @@ fn pred_slot(state: AppState, pk: Peek, idx: usize) -> AnyPiece {
             column((
                 label("пред")
                     .font(Font::Caption2)
-                    .color(move || Color::hex(state.accent_color.get())),
+                    .color(move || Color::hex(state.accent_color.get()))
+                    .align(TextAlign::Center)
+                    .grow_w(),
                 label(move || {
                     pk.preds
                         .get()
@@ -316,7 +278,9 @@ fn pred_slot(state: AppState, pk: Peek, idx: usize) -> AnyPiece {
                         .unwrap_or_default()
                 })
                 .font(Font::Subheadline)
-                .color(move || Color::hex(state.accent_color.get())),
+                .color(move || Color::hex(state.accent_color.get()))
+                .align(TextAlign::Center)
+                .grow_w(),
             ))
             .spacing(1.0)
             .align(HAlign::Center)
@@ -382,10 +346,14 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                 column((
                     label(utils::format_date_short(date))
                         .font(Font::Caption2)
-                        .color(colors::SECONDARY),
+                        .color(colors::SECONDARY)
+                        .align(TextAlign::Center)
+                        .grow_w(),
                     label(raw)
                         .font(Font::Subheadline)
-                        .color(utils::avg_grade_color(pavg)),
+                        .color(utils::avg_grade_color(pavg))
+                        .align(TextAlign::Center)
+                        .grow_w(),
                 ))
                 .spacing(1.0)
                 .align(HAlign::Center)
@@ -410,7 +378,11 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
 
     // The average chip — the strip's last cell, projecting the predictions in.
     let avg_chip = column((
-        label("средний").font(Font::Caption2).color(colors::SECONDARY),
+        label("средний")
+            .font(Font::Caption2)
+            .color(colors::SECONDARY)
+            .align(TextAlign::Center)
+            .grow_w(),
         label(move || {
             let q = pk.quarter.get();
             let subj = pk.subject.get().unwrap_or_default();
@@ -434,7 +406,8 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
             let marks = subject_marks(st_avg_col, &subj, q);
             avg_of(&marks).map(utils::avg_grade_color).unwrap_or(colors::SECONDARY)
         })
-        .align(TextAlign::Center),
+        .align(TextAlign::Center)
+        .grow_w(),
     ))
     .spacing(1.0)
     .align(HAlign::Center)
@@ -448,10 +421,13 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     .corner_radius(8.0)
     .grow_w();
 
-    // «+» — opens the planning panel (predict mode first).
+    // «+» — the always-visible predict button: tap opens the keypad (a tapped
+    // mark lands in the strip and moves the average), tap again closes.
     let plus_chip = column((
-        label("+").font(Font::Headline),
-        label("что если").font(Font::Caption2).color(colors::SECONDARY),
+        label("+")
+            .font(Font::Headline)
+            .align(TextAlign::Center)
+            .grow_w(),
     ))
     .spacing(1.0)
     .align(HAlign::Center)
@@ -461,15 +437,17 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         bottom: 4.0,
         trailing: 6.0,
     })
-    .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
+    .background(move || {
+        if pk.panel.get() == 1 {
+            accent_tint(state.accent_color.get(), 0.14)
+        } else {
+            Color::rgba(0.0, 0.0, 0.0, 0.07)
+        }
+    })
     .corner_radius(14.0)
     .grow_w()
     .on_tap(move || {
-        if pk.panel.get() == 0 {
-            pk.panel.set(1);
-        } else {
-            pk.panel.set(0);
-        }
+        pk.panel.set(if pk.panel.get() == 1 { 0 } else { 1 });
     });
 
     // Wrapped into lines at the card's full width — every chip on screen at
@@ -508,33 +486,49 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         },
     );
 
-    // Mode switch — visible only while the panel is open.
-    let mode_row = when(
-        move || pk.panel.get() > 0,
-        move || {
-            row((
-                seg_chip(state, pk, 1, "Предикт"),
-                seg_chip(state, pk, 2, "Цель"),
-                column((
-                    label("Отмена")
-                        .font(Font::Subheadline)
-                        .color(colors::SECONDARY),
-                ))
-                .padding(Insets {
-                    top: 5.0,
-                    leading: 12.0,
-                    bottom: 5.0,
-                    trailing: 12.0,
-                })
-                .corner_radius(14.0)
-                .background(Color::rgba(0.0, 0.0, 0.0, 0.06))
-                .on_tap(move || pk.panel.set(0))
-                .any(),
-            ))
-            .spacing(6.0)
-            .grow_w()
-        },
-    );
+    // «Цель» — its own always-visible row: tap opens the goal panel (seeded
+    // from the current average), tap again closes — no «Отмена» button.
+    let goal_btn = column((
+        label("Цель")
+            .font(Font::Subheadline)
+            .color(move || {
+                if pk.panel.get() == 2 {
+                    Color::hex(state.accent_color.get())
+                } else {
+                    colors::SECONDARY
+                }
+            })
+            .align(TextAlign::Center)
+            .grow_w(),
+    ))
+    .padding(Insets {
+        top: 8.0,
+        leading: 12.0,
+        bottom: 8.0,
+        trailing: 12.0,
+    })
+    .background(move || {
+        if pk.panel.get() == 2 {
+            accent_tint(state.accent_color.get(), 0.14)
+        } else {
+            Color::rgba(0.0, 0.0, 0.0, 0.06)
+        }
+    })
+    .corner_radius(14.0)
+    .grow_w()
+    .on_tap(move || {
+        if pk.panel.get() == 2 {
+            pk.panel.set(0);
+        } else {
+            // Seed the goal from the current average, as a whole mark.
+            let q = pk.quarter.get();
+            let subj = pk.subject.get().unwrap_or_default();
+            if let Some(a) = avg_of(&subject_marks(state, &subj, q)) {
+                pk.target.set(a.round().clamp(PEEK_MIN, PEEK_MAX));
+            }
+            pk.panel.set(2);
+        }
+    });
 
     // Predict controls: tap any digit to append that predicted mark — no add
     // button, taps stack up, every append lands highlighted in the strip. The
@@ -633,7 +627,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         header,
         strip,
         summary,
-        mode_row,
+        goal_btn,
         predict_ui,
         goal_ui,
         verdict,
