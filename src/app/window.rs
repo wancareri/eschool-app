@@ -122,7 +122,7 @@ fn build_nav(primary: bool) -> impl Piece {
     // visible beneath its translucent dim.
     zstack((
         nav_body(state, primary),
-        crate::widgets::grade_peek::overlay(state),
+        crate::widgets::grade_peek::modal(state),
         crate::widgets::bottom_sheet::network_error_sheet(state),
     ))
     .grow()
