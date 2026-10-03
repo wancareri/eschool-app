@@ -215,12 +215,18 @@ fn goal_bar() -> AnyPiece {
     .any()
 }
 
-/// The «+» button, mirroring a mark chip's exact two-line structure so its cell
-/// lands at the same height as the grade cards around it.
+/// The «+» button: a chip-shaped scaffold (the same two space lines) with the
+/// glyph overlaid dead centre — equal cell height, centered glyph.
 fn plus_chip() -> AnyPiece {
     column((
-        label(" ").font(Font::Caption2).color(Color::rgba(0.5, 0.5, 0.5, 1.0)),
-        label("+").font(Font::Subheadline),
+        zstack((
+            column((
+                label(" ").font(Font::Caption2).color(Color::rgba(0.5, 0.5, 0.5, 1.0)),
+                label(" ").font(Font::Subheadline),
+            ))
+            .spacing(1.0),
+            label("+").font(Font::Subheadline),
+        )),
     ))
     .spacing(1.0)
     .align(HAlign::Center)
@@ -267,10 +273,10 @@ fn plus_chip_matches_chip_height() {
     assert_eq!(heights.len(), 1, "cell heights differ: {heights:?}");
 }
 
-/// A uniform-grid line that does not fill the window is centered in it (the
-/// day fork's FlowLayout centers short lines; plain Wrap stays leading).
+/// The strip's mark cards pack LEADING — a short line hugs the left edge, the
+/// laid-out grid stays text-like (WrapCentered is the centering arm).
 #[test]
-fn short_grid_line_is_centered() {
+fn short_grid_line_stays_leading() {
     let probe = boot(|| {
         column((
             row((
@@ -287,24 +293,128 @@ fn short_grid_line_is_centered() {
         .any()
     });
     let state = probe.state.borrow();
-    let mut cells: Vec<(f64, f64, f64)> = state // (x, width, parent width)
+    let mut cells: Vec<(f64, f64)> = state
         .widgets
         .values()
         .filter(|w| w.corner_radius > 0.0)
-        .map(|w| (w.frame.origin.x, w.frame.size.width, w.frame.size.width))
+        .map(|w| (w.frame.origin.x, w.frame.size.width))
         .collect();
     cells.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     assert_eq!(cells.len(), 3, "want three cells");
     let row_w = WINDOW_W - 28.0;
     let line_w = cells[2].0 + cells[2].1;
-    let x0 = cells[0].0;
     assert!(
-        x0 > 1.0,
-        "short line sits leading: x0={x0}, line_w={line_w}, row_w={row_w}"
+        cells[0].0 <= 1.0,
+        "short line centered: x0={}, line_w={line_w}",
+        cells[0].0
     );
-    assert!(
-        (x0 - (row_w - line_w)).abs() <= 0.6,
-        "line not centered: gap-left={x0}, gap-right={}",
-        row_w - line_w
-    );
+    assert!(line_w < row_w - 1.0, "line should not fill: {line_w}");
+}
+
+/// Every line of the digit keypad (the row «+» opens) centers in the modal width —
+/// the short last line included.
+#[test]
+fn keypad_lines_center() {
+    let probe = boot(|| {
+        let keys: Vec<AnyPiece> = (0..16).map(|_| digit_key()).collect();
+        column((
+            row(PieceVec(keys))
+                .spacing(6.0)
+                .fit(RowFit::WrapCentered { run_spacing: 6.0 })
+                .grow_w(),
+        ))
+        .padding(14.0)
+        .any()
+    });
+    let state = probe.state.borrow();
+    let mut shells: Vec<(f64, f64, f64)> = state // (y, x, width)
+        .widgets
+        .values()
+        .filter(|w| w.corner_radius > 0.0)
+        .map(|w| (w.frame.origin.y, w.frame.origin.x, w.frame.size.width))
+        .collect();
+    shells.sort_by(|a, b| {
+        a.0.partial_cmp(&b.0)
+            .unwrap()
+            .then(a.1.partial_cmp(&b.1).unwrap())
+    });
+    assert_eq!(shells.len(), 16, "want sixteen keys");
+    let mut lines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
+    for c in shells {
+        match lines.last_mut() {
+            Some(l) if (l[0].0 - c.0).abs() <= 0.6 => l.push(c),
+            _ => lines.push(vec![c]),
+        }
+    }
+    assert_eq!(lines.len(), 2, "16 keys should wrap into two lines: {lines:?}");
+    let row_w = WINDOW_W - 28.0;
+    for line in &lines {
+        let left = line[0].1;
+        let last = line.last().unwrap();
+        let right = row_w - (last.1 + last.2);
+        assert!(
+            (left - right).abs() <= 0.6,
+            "line not centered: left={left}, right={right}"
+        );
+        assert!(left > 1.0, "line packed leading: left={left}");
+    }
+}
+
+/// One keypad key — the digit chip's shape (single line, 5/9 padding, radius 14).
+fn digit_key() -> AnyPiece {
+    column((label("8").font(Font::Subheadline),))
+        .padding(Insets {
+            top: 5.0,
+            leading: 9.0,
+            bottom: 5.0,
+            trailing: 9.0,
+        })
+        .background(Color::rgba(0.0, 0.0, 0.0, 0.12))
+        .corner_radius(14.0)
+        .any()
+}
+
+/// Widget origin accumulated up the parent chain — mock frames are parent-relative.
+fn abs_origin(state: &day_mock::MockState, parent: &HashMap<u64, u64>, mut h: u64) -> (f64, f64) {
+    let (mut x, mut y) = (0.0, 0.0);
+    loop {
+        let w = state.widgets.get(&h).expect("widget");
+        x += w.frame.origin.x;
+        y += w.frame.origin.y;
+        match parent.get(&h) {
+            Some(&p) => h = p,
+            None => break,
+        }
+    }
+    (x, y)
+}
+
+/// The «+» glyph sits dead centre of its cell, both axes.
+#[test]
+fn plus_glyph_is_centered() {
+    let probe = boot(|| column((plus_chip(),)).padding(14.0).any());
+    let parent = parents(&probe);
+    let state = probe.state.borrow();
+    let glyph = *state
+        .widgets
+        .iter()
+        .find(|(_, w)| w.text == "+")
+        .expect("+ glyph present")
+        .0;
+    let mut cur = glyph;
+    let shell = loop {
+        let w = state.widgets.get(&cur).expect("widget");
+        if w.corner_radius > 0.0 {
+            break cur;
+        }
+        cur = parent[&cur];
+    };
+    let (gx, gy) = abs_origin(&state, &parent, glyph);
+    let (sx, sy) = abs_origin(&state, &parent, shell);
+    let g = state.widgets[&glyph].frame;
+    let sh = state.widgets[&shell].frame;
+    let dcx = (gx + g.size.width / 2.0) - (sx + sh.size.width / 2.0);
+    let dcy = (gy + g.size.height / 2.0) - (sy + sh.size.height / 2.0);
+    assert!(dcx.abs() <= 0.6, "glyph off-center horizontally by {dcx}");
+    assert!(dcy.abs() <= 0.6, "glyph not centered vertically by {dcy}");
 }

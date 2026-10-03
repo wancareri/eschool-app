@@ -416,13 +416,22 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     // «+» — the always-visible predict button: tap opens the keypad (a tapped
     // mark lands in the strip and moves the average), tap again closes.
     let plus_chip = column((
-        // Mirrors a mark chip's two lines (Caption2 over Subheadline) so the
-        // cell lands at exactly the same height as its neighbours.
-        label(" ")
-            .font(Font::Caption2)
-            .color(colors::SECONDARY),
-        label("+")
-            .font(Font::Subheadline),
+        // A chip-shaped scaffold — the same Caption2/Subheadline line pair, both
+        // spaces — with the glyph overlaid dead centre: the cell matches the grade
+        // cards' height and the «+» sits mid-cell (TextAlign is a no-op on UIKit,
+        // so the overlay does the centering).
+        zstack((
+            column((
+                label(" ")
+                    .font(Font::Caption2)
+                    .color(colors::SECONDARY),
+                label(" ")
+                    .font(Font::Subheadline),
+            ))
+            .spacing(1.0),
+            label("+")
+                .font(Font::Subheadline),
+        )),
     ))
     .spacing(1.0)
     .align(HAlign::Center)
@@ -535,7 +544,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
             let chips: Vec<AnyPiece> = (1..=10u8).map(|v| digit_chip(state, pk, v)).collect();
             row(PieceVec(chips))
                 .spacing(6.0)
-                .fit(RowFit::Wrap { run_spacing: 6.0 })
+                .fit(RowFit::WrapCentered { run_spacing: 6.0 })
                 .grow_w()
         },
     );
