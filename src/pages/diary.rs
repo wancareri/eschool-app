@@ -72,8 +72,8 @@ pub fn render() -> impl Piece {
                 .spacing(6.0)
                 .padding(Insets { top: 8.0, leading: PAD, bottom: 4.0, trailing: PAD }),
 
-                quarter_tabs(state),
                 sub_tabs(state, show_summary),
+                quarter_tabs(state),
 
                 when(
                     move || !show_summary.get(),

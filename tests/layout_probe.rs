@@ -214,3 +214,97 @@ fn goal_bar() -> AnyPiece {
     .grow_w()
     .any()
 }
+
+/// The «+» button, mirroring a mark chip's exact two-line structure so its cell
+/// lands at the same height as the grade cards around it.
+fn plus_chip() -> AnyPiece {
+    column((
+        label(" ").font(Font::Caption2).color(Color::rgba(0.5, 0.5, 0.5, 1.0)),
+        label("+").font(Font::Subheadline),
+    ))
+    .spacing(1.0)
+    .align(HAlign::Center)
+    .grow_w()
+    .padding(Insets {
+        top: 4.0,
+        leading: 6.0,
+        bottom: 4.0,
+        trailing: 6.0,
+    })
+    .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
+    .corner_radius(14.0)
+    .grow_w()
+    .any()
+}
+
+/// The «+» cell measures exactly as tall as the mark chips it sits among.
+#[test]
+fn plus_chip_matches_chip_height() {
+    let probe = boot(|| {
+        column((
+            row((
+                chip("12.09", "5"),
+                plus_chip(),
+                chip("13.09", "4"),
+            ))
+            .spacing(6.0)
+            .fit(RowFit::WrapColumns { run_spacing: 6.0 })
+            .grow_w(),
+        ))
+        .spacing(10.0)
+        .padding(14.0)
+        .any()
+    });
+    let state = probe.state.borrow();
+    let mut heights: Vec<f64> = state
+        .widgets
+        .values()
+        .filter(|w| w.corner_radius > 0.0)
+        .map(|w| w.frame.size.height)
+        .collect();
+    heights.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    heights.dedup_by(|a, b| (*a - *b).abs() <= 0.6);
+    assert_eq!(heights.len(), 1, "cell heights differ: {heights:?}");
+}
+
+/// A uniform-grid line that does not fill the window is centered in it (the
+/// day fork's FlowLayout centers short lines; plain Wrap stays leading).
+#[test]
+fn short_grid_line_is_centered() {
+    let probe = boot(|| {
+        column((
+            row((
+                chip("12.09", "5"),
+                chip("13.09", "4"),
+                chip("14.09", "5"),
+            ))
+            .spacing(6.0)
+            .fit(RowFit::WrapColumns { run_spacing: 6.0 })
+            .grow_w(),
+        ))
+        .spacing(10.0)
+        .padding(14.0)
+        .any()
+    });
+    let state = probe.state.borrow();
+    let mut cells: Vec<(f64, f64, f64)> = state // (x, width, parent width)
+        .widgets
+        .values()
+        .filter(|w| w.corner_radius > 0.0)
+        .map(|w| (w.frame.origin.x, w.frame.size.width, w.frame.size.width))
+        .collect();
+    cells.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    assert_eq!(cells.len(), 3, "want three cells");
+    let row_w = WINDOW_W - 28.0;
+    let line_w = cells[2].0 + cells[2].1;
+    let x0 = cells[0].0;
+    assert!(
+        x0 > 1.0,
+        "short line sits leading: x0={x0}, line_w={line_w}, row_w={row_w}"
+    );
+    assert!(
+        (x0 - (row_w - line_w)).abs() <= 0.6,
+        "line not centered: gap-left={x0}, gap-right={}",
+        row_w - line_w
+    );
+}
