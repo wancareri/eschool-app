@@ -449,7 +449,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
             Color::rgba(0.0, 0.0, 0.0, 0.07)
         }
     })
-    .corner_radius(14.0)
+    .corner_radius(8.0)
     .grow_w()
     .on_tap(move || {
         pk.panel.set(if pk.panel.get() == 1 { 0 } else { 1 });

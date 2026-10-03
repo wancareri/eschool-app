@@ -238,7 +238,7 @@ fn plus_chip() -> AnyPiece {
         trailing: 6.0,
     })
     .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
-    .corner_radius(14.0)
+    .corner_radius(8.0)
     .grow_w()
     .any()
 }
