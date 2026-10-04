@@ -17,6 +17,7 @@ const RESIZE_MS: u32 = 240;
 /// itself and keeps its content mounted until the backend reports it hidden.
 fn close_modal<R: Route, S: Binding<Option<R>>>(open: &S, reason: &str) {
     crate::shared::nslog::nslog(&format!("[cover] close_sheet: {reason}"));
+    crate::shared::haptics::tick();
     open.write(None);
 }
 

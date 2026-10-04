@@ -87,6 +87,7 @@ pub fn render() -> impl Piece {
             .spacing(0.0)
             .grow()))
             .on_refresh(move || {
+                haptics::tick();
                 let state = AppState::ambient();
                 if state.is_authenticated.get() {
                     features::diary::load_all(state);

@@ -151,6 +151,7 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
         ))
         .frame(72.0, 72.0)
         .on_tap(move || {
+            crate::shared::haptics::tick();
             let mut input = s.pin_input.get();
             if !input.is_empty() {
                 input.pop();
@@ -169,6 +170,7 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
         ))
         .frame(72.0, 72.0)
         .on_tap(move || {
+            crate::shared::haptics::tick();
             let mut input = s.pin_input.get();
             if input.len() >= PIN_LENGTH {
                 return;

@@ -254,7 +254,12 @@ fn tab_strip(
             .collect();
         zstack((row(PieceVec(letters)),))
             .width(slot_w)
-            .on_tap(move || tab.set(i))
+            .on_tap(move || {
+                if tab.get() != i {
+                    haptics::tick();
+                }
+                tab.set(i);
+            })
             .a11y(move |b| b.role(Role::Button).label(title))
             .any()
     };
@@ -535,6 +540,7 @@ fn setup_numpad(
             ))
             .frame(70.0, 44.0)
             .on_tap(move || {
+                haptics::tick();
                 let mut v = state.get();
                 if !v.is_empty() {
                     v.pop();
@@ -554,6 +560,7 @@ fn setup_numpad(
             ))
             .frame(70.0, 44.0)
             .on_tap(move || {
+                haptics::tick();
                 let mut v = state.get();
                 if v.len() >= 4 { return; }
                 v.push_str(&k);

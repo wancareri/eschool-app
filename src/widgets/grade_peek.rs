@@ -85,6 +85,7 @@ fn peek() -> Peek {
 /// sit behind the window's dim, so two opens can never race: a close always
 /// lands between them.
 pub fn open(subject: String, quarter: usize) {
+    haptics::pop();
     peek().open(subject, quarter);
 }
 
