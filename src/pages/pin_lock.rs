@@ -14,11 +14,32 @@ pub fn render(state: AppState) -> impl Piece {
                 .font(Font::LargeTitle)
                 .align(TextAlign::Center),
 
-            label("Введите PIN-код")
-                .font(Font::Subheadline)
-                .secondary()
-                .align(TextAlign::Center)
-                .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
+            when(
+                move || state.pin_error.get(),
+                move || label("Неверный PIN-код")
+                    .font(Font::Subheadline)
+                    .color(colors::ERROR)
+                    .align(TextAlign::Center)
+                    .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
+            )
+            .otherwise(move || {
+                when(
+                    move || state.pin_input.get().len() == PIN_LENGTH,
+                    move || label("Добро пожаловать!")
+                        .font(Font::Subheadline)
+                        .color(Color::hex(state.accent_color.get()))
+                        .align(TextAlign::Center)
+                        .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
+                )
+                .otherwise(|| {
+                    label("Введите PIN-код")
+                        .font(Font::Subheadline)
+                        .secondary()
+                        .align(TextAlign::Center)
+                        .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 })
+                })
+                .any()
+            }),
         ))
         .spacing(4.0)
         .align(HAlign::Center),
@@ -38,16 +59,6 @@ pub fn render(state: AppState) -> impl Piece {
             .align(VAlign::Center)
             .translation(move || shake.get(), 0.0)
         },
-
-        // Error message
-        when(
-            move || state.pin_error.get(),
-            || label("Неверный PIN-код")
-                .font(Font::Caption)
-                .color(colors::ERROR)
-                .align(TextAlign::Center)
-                .padding(Insets { top: 4.0, leading: 0.0, bottom: 4.0, trailing: 0.0 }),
-        ),
 
         // Numpad
         numpad(state),
