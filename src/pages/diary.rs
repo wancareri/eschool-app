@@ -388,6 +388,7 @@ fn summary_drag(
                 let actual_dx = drag_x.get();
                 if was_horiz && actual_dx.abs() >= SWIPE_THRESHOLD {
                     if actual_dx < 0.0 && q + 1 <= 4 {
+                        haptics::tick();
                         with_animation(AnimSpec::ease_out(220), move || {
                             drag_x.set(-w);
                         });
@@ -406,6 +407,7 @@ fn summary_drag(
                         return;
                     }
                     if actual_dx > 0.0 && q > 0 {
+                        haptics::tick();
                         with_animation(AnimSpec::ease_out(220), move || {
                             drag_x.set(w);
                         });

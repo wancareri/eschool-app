@@ -96,6 +96,35 @@ fn window_shell(primary: bool) -> impl Piece {
             },
         );
 
+        // Haptics: a tab-bar page change, an appearance flip, a language switch.
+        {
+            use crate::shared::haptics;
+            day::reactive::watch(
+                move || state.current_section.get(),
+                move |sec, old| {
+                    if old.is_some() && old != Some(&sec) {
+                        haptics::tick();
+                    }
+                },
+            );
+            day::reactive::watch(
+                move || day::dark_mode(),
+                move |&_, old| {
+                    if old.is_some() {
+                        haptics::tick();
+                    }
+                },
+            );
+            day::reactive::watch(
+                move || day::locale().get(),
+                move |tag, old| {
+                    if old.is_some() && old != Some(tag) {
+                        haptics::tick();
+                    }
+                },
+            );
+        }
+
         // Biometric lock: if token exists + biometric enabled, prompt Face ID on startup
         // Works for both pure biometric lock and PIN+biometric combo
         if !state.is_authenticated.get()
