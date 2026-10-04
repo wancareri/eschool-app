@@ -73,6 +73,7 @@ fn dot(index: usize, state: AppState) -> impl Piece {
     };
     let error = state.pin_error;
     let s_accent = state;
+    let clock = success_clock();
 
     // UIKit back-end ignores TextAlign on labels, and a glyph dot reads as text —
     // a drawn circle keeps the state colors (accent/error) under our control.
@@ -97,6 +98,7 @@ fn dot(index: usize, state: AppState) -> impl Piece {
             .frame(16.0, 16.0)
             .any()
     })
+    .scale(move || success_scale(index, clock.get()))
 }
 
 thread_local! {
@@ -104,6 +106,10 @@ thread_local! {
     static SHAKE: Signal<f64> = Signal::new(0.0);
     /// Bumped on every shake so a stale frame chain stops itself.
     static SHAKE_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    /// Milliseconds since the success pulse started (< 0 = idle).
+    static SUCCESS_CLOCK: Signal<f64> = Signal::new(-1.0);
+    /// Bumped on every pulse so a stale frame chain stops itself.
+    static SUCCESS_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 }
 
 fn shake_signal() -> Signal<f64> {
@@ -116,7 +122,7 @@ fn shake_signal() -> Signal<f64> {
 /// the curve is computed here and the offset is set directly, no tween.
 const SHAKE_MS: u32 = 450;
 const SHAKE_FRAME_MS: u32 = 16;
-const SHAKE_AMPLITUDE: f64 = 5.0;
+const SHAKE_AMPLITUDE: f64 = 3.0;
 const SHAKE_PERIOD_MS: f64 = 80.0;
 
 fn run_shake() {
@@ -144,6 +150,51 @@ fn schedule_shake_frame(generation: u32, started: std::time::Instant) {
 
 fn shake_total_ms() -> u32 {
     SHAKE_MS + 80
+}
+
+// ── Success pulse ─────────────────────────────────────────────────────
+
+const SUC_START_MS: f64 = 60.0;
+const SUC_STAGGER_MS: f64 = 70.0;
+const SUC_DOT_MS: f64 = 480.0;
+const SUC_TOTAL_MS: f64 = SUC_START_MS + 3.0 * SUC_STAGGER_MS + SUC_DOT_MS;
+const SUC_BUMP: f64 = 0.35;
+
+fn success_clock() -> Signal<f64> {
+    SUCCESS_CLOCK.with(|s| *s)
+}
+
+/// One dot's scale during the success ripple: a sine bump of `SUC_BUMP`,
+/// staggered left-to-right — up at once, settling before the unlock beat.
+fn success_scale(index: usize, t: f64) -> f64 {
+    if t < 0.0 {
+        return 1.0;
+    }
+    let start = SUC_START_MS + index as f64 * SUC_STAGGER_MS;
+    let p = (t - start) / SUC_DOT_MS;
+    if !(0.0..1.0).contains(&p) {
+        return 1.0;
+    }
+    1.0 + SUC_BUMP * (std::f64::consts::PI * p).sin()
+}
+
+fn run_success_pulse() {
+    let generation = SUCCESS_GEN.with(|g| g.fetch_add(1, std::sync::atomic::Ordering::SeqCst)) + 1;
+    success_clock().set(0.0);
+    schedule_success_frame(generation, std::time::Instant::now());
+}
+
+fn schedule_success_frame(generation: u32, started: std::time::Instant) {
+    day::reactive::on_main_delayed(16, move || {
+        if SUCCESS_GEN.with(|g| g.load(std::sync::atomic::Ordering::SeqCst)) != generation {
+            return;
+        }
+        let t = started.elapsed().as_millis() as f64;
+        success_clock().set(t);
+        if t < SUC_TOTAL_MS {
+            schedule_success_frame(generation, started);
+        }
+    });
 }
 
 fn numpad(state: AppState) -> impl Piece {
@@ -227,7 +278,8 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                 if pin::verify(&input) {
                     nslog::nslog("[PIN] Correct, unlocking");
                     crate::shared::haptics::pop();
-                    // All four dots sit filled (accent) for a beat, then unlock.
+                    run_success_pulse();
+                    // The dots ripple, then all sit filled (accent) for a beat, then unlock.
                     let unlock = s.pin_lock_active.setter();
                     let auth = s.is_authenticated.setter();
                     let clear = s.pin_input.setter();

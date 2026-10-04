@@ -30,11 +30,35 @@ pub fn get_screen_width() -> f64 {
             let screen = UIScreen::mainScreen(mtm);
             let bounds = screen.bounds();
             if bounds.size.width > 50.0 {
-                return bounds.size.width as f64;
+                // day lays its root inside the window's safe area (day-uikit's
+                // content_frame: screen minus insets), so the page width must be
+                // the same number — portrait has no side insets, but in landscape
+                // the notch takes ~59pt a side, and a full-screen-width page
+                // overflows the layout and sits off-centre after a rotation.
+                let width = bounds.size.width as f64 - window_side_insets(mtm);
+                if width > 50.0 {
+                    return width;
+                }
             }
         }
     }
     390.0
+}
+
+/// Leading + trailing safe-area insets of the key window — exactly what
+/// day-uikit's `content_frame` subtracts from the screen for the day root.
+#[cfg(target_os = "ios")]
+#[allow(deprecated)] // keyWindow — single-scene app; day's window is the key one
+fn window_side_insets(mtm: objc2::MainThreadMarker) -> f64 {
+    use objc2_ui_kit::UIApplication;
+    let app = UIApplication::sharedApplication(mtm);
+    match app.keyWindow() {
+        Some(window) => {
+            let insets = window.safeAreaInsets();
+            (insets.left + insets.right) as f64
+        }
+        None => 0.0,
+    }
 }
 
 #[allow(deprecated)] // same UIScreen::mainScreen pattern as get_screen_width above
