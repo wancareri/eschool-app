@@ -254,12 +254,7 @@ fn tab_strip(
             .collect();
         zstack((row(PieceVec(letters)),))
             .width(slot_w)
-            .on_tap(move || {
-                if tab.get() != i {
-                    haptics::tick();
-                }
-                tab.set(i);
-            })
+            .on_tap(move || tab.set(i))
             .a11y(move |b| b.role(Role::Button).label(title))
             .any()
     };

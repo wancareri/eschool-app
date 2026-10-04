@@ -96,6 +96,32 @@ fn window_shell(primary: bool) -> impl Piece {
             },
         );
 
+        // Haptics: a settings page change (strip tap OR pager swipe — the strip
+        // tick alone missed swipes).
+        day::reactive::watch(
+            move || state.settings_tab.get(),
+            move |&t, old| {
+                if old.is_some() && old != Some(&t) {
+                    crate::shared::haptics::tick();
+                }
+            },
+        );
+
+        // Face ID when the lock drops (auto-lock): cold start prompts in the
+        // block below; the PIN screen itself no longer carries a button.
+        day::reactive::watch(
+            move || state.pin_lock_active.get(),
+            move |&locked, old| {
+                if locked
+                    && old == Some(&false)
+                    && crate::shared::biometric::is_available()
+                    && crate::shared::biometric::is_enabled()
+                {
+                    crate::shared::biometric::authenticate_async(state);
+                }
+            },
+        );
+
         // Haptics: a tab-bar page change, an appearance flip, a language switch.
         {
             use crate::shared::haptics;

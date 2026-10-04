@@ -55,9 +55,8 @@ pub fn load_all(state: AppState) {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
-        if let Some((idx, w)) = cached_weeks.iter().enumerate()
-            .find(|(_, w)| w.start_ts <= now_ms && w.end_ts >= now_ms)
-        {
+        if let Some(idx) = find_current_week(&cached_weeks, now_ms) {
+            let w = &cached_weeks[idx];
             set_current_week_index.set(idx as i32);
             set_current_week.set(w.summary.clone());
             set_current_quarter.set(quarter_for_index(idx));
@@ -222,13 +221,14 @@ pub fn load_all(state: AppState) {
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or(0);
-                let cur = weeks.iter().enumerate()
-                    .find(|(_, w)| w.start_ts <= now_ms && w.end_ts >= now_ms);
+                let cur = find_current_week(&weeks, now_ms);
+                nslog::nslog(&format!("[Diary] current week idx={cur:?}"));
 
                 set_all_weeks.set(weeks.clone());
                 cache::save_json("all_weeks", &weeks);
 
-                if let Some((idx, week)) = cur {
+                if let Some(idx) = cur {
+                    let week = &weeks[idx];
                     let week_summary = week.summary.clone();
                     set_current_week_index.set(idx as i32);
                     set_current_week.set(week_summary);
@@ -966,4 +966,76 @@ pub fn quarter_week_indices(quarter: usize) -> std::ops::Range<usize> {
 /// Determine which quarter a week index belongs to.
 pub fn quarter_for_index(idx: usize) -> usize {
     if idx < 9 { 0 } else if idx < 18 { 1 } else if idx < 27 { 2 } else { 3 }
+}
+
+/// School API timestamps may arrive as seconds or milliseconds — everything
+/// compares in ms, so anything below ~2001-09 in magnitude is seconds.
+fn normalize_ts(ts: u64) -> u64 {
+    if ts < 1_000_000_000_000 { ts * 1000 } else { ts }
+}
+
+/// The week the app opens on: the one containing `now_ms`; when none does
+/// (a gap between school years, a stale cache), the most recent week that has
+/// already started — never a silent fall back to week 0.
+pub fn find_current_week(weeks: &[WeekActivity], now_ms: u64) -> Option<usize> {
+    weeks
+        .iter()
+        .position(|w| {
+            let start = normalize_ts(w.start_ts);
+            let end = normalize_ts(w.end_ts);
+            start <= now_ms && now_ms <= end
+        })
+        .or_else(|| {
+            weeks
+                .iter()
+                .enumerate()
+                .filter(|(_, w)| normalize_ts(w.start_ts) <= now_ms)
+                .map(|(i, _)| i)
+                .last()
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn week(start_ts: u64, end_ts: u64) -> WeekActivity {
+        WeekActivity {
+            uuid: String::new(),
+            summary: String::new(),
+            time_activity_id: String::new(),
+            start_ts,
+            end_ts,
+        }
+    }
+
+    #[test]
+    fn seconds_and_milliseconds_both_match() {
+        let now = 1_790_000_000_000u64;
+        let in_secs = vec![week((now - 1_000) / 1_000, (now + 1_000) / 1_000)];
+        assert_eq!(find_current_week(&in_secs, now), Some(0));
+        let in_millis = vec![week(now - 1_000_000, now + 1_000_000)];
+        assert_eq!(find_current_week(&in_millis, now), Some(0));
+    }
+
+    #[test]
+    fn falls_back_to_latest_started_week_in_a_gap() {
+        let now = 1_790_000_000_000u64;
+        let day = 86_400_000u64;
+        let weeks = vec![
+            week(now - 20 * day, now - 14 * day),
+            week(now - 13 * day, now - 7 * day),
+            week(now + day, now + 2 * day),
+        ];
+        assert_eq!(find_current_week(&weeks, now), Some(1));
+    }
+
+    #[test]
+    fn future_only_list_and_empty_list() {
+        let now = 1_790_000_000_000u64;
+        let day = 86_400_000u64;
+        let future = vec![week(now + day, now + 2 * day)];
+        assert_eq!(find_current_week(&future, now), None);
+        assert_eq!(find_current_week(&[], now), None);
+    }
 }

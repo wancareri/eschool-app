@@ -1,5 +1,5 @@
 use crate::app::AppState;
-use crate::shared::{biometric, colors, nslog, pin};
+use crate::shared::{colors, nslog, pin};
 use crate::res;
 use day::prelude::*;
 
@@ -23,9 +23,10 @@ pub fn render(state: AppState) -> impl Piece {
         .spacing(4.0)
         .align(HAlign::Center),
 
-        // PIN dots
+        // PIN dots — the row rides the wrong-code shake
         {
             let s = state;
+            let shake = shake_signal();
             row((
                 dot(0, s),
                 dot(1, s),
@@ -35,6 +36,7 @@ pub fn render(state: AppState) -> impl Piece {
             .spacing(24.0)
             .padding(Insets { top: 28.0, leading: 0.0, bottom: 12.0, trailing: 0.0 })
             .align(VAlign::Center)
+            .translation(move || shake.get(), 0.0)
         },
 
         // Error message
@@ -49,21 +51,6 @@ pub fn render(state: AppState) -> impl Piece {
 
         // Numpad
         numpad(state),
-
-        // Face ID button
-        when(
-            move || biometric::is_available() && biometric::is_enabled(),
-            move || {
-                button("Face ID / Touch ID")
-                    .action(move || {
-                        state.pin_error.set(false);
-                        state.pin_input.set(String::new());
-                        crate::shared::biometric::authenticate_async(state);
-                    })
-                    .id("pin-biometric-btn")
-                    .padding(Insets { top: 24.0, leading: 0.0, bottom: 0.0, trailing: 0.0 })
-            },
-        ),
 
         spacer().grow(),
     ))
@@ -104,7 +91,41 @@ fn dot(index: usize, state: AppState) -> impl Piece {
                 .any()
         },
     )
-    .otherwise(move || circle().stroke(colors::SECONDARY, 1.5).frame(16.0, 16.0).any())
+    .otherwise(move || {
+        circle()
+            .stroke(move || Color::hex(s_accent.accent_color.get()), 1.5)
+            .frame(16.0, 16.0)
+            .any()
+    })
+}
+
+thread_local! {
+    /// The dots row's horizontal offset during a wrong-code shake.
+    static SHAKE: Signal<f64> = Signal::new(0.0);
+}
+
+fn shake_signal() -> Signal<f64> {
+    SHAKE.with(|s| *s)
+}
+
+/// Wrong-code shake, iOS-style: keyframes [-20, +20, -20, +20, -10, +10, -5,
+/// +5, 0] over ~0.5s (the classic passcode bounce), stepped by chained main
+/// timers — day's AnimSpec tweens one target per step, no keyframe list.
+fn run_shake() {
+    const STEPS: [f64; 9] = [-20.0, 20.0, -20.0, 20.0, -10.0, 10.0, -5.0, 5.0, 0.0];
+    const STEP_MS: u32 = 55;
+    let mut at = 0u32;
+    for &x in &STEPS {
+        at += STEP_MS;
+        let set = shake_signal().setter();
+        day::reactive::on_main_delayed(at, move || {
+            with_animation(AnimSpec::ease_out(STEP_MS), move || set.set(x));
+        });
+    }
+}
+
+fn shake_total_ms() -> u32 {
+    9 * 55 + 80
 }
 
 fn numpad(state: AppState) -> impl Piece {
@@ -153,6 +174,11 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
         .on_tap(move || {
             crate::shared::haptics::tick();
             let mut input = s.pin_input.get();
+            // Four digits always means a hold in flight (success beat or shake) —
+            // the dots stay frozen until the timer lands.
+            if input.len() >= PIN_LENGTH {
+                return;
+            }
             if !input.is_empty() {
                 input.pop();
                 s.pin_input.set(input);
@@ -182,15 +208,27 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
             if input.len() == PIN_LENGTH {
                 if pin::verify(&input) {
                     nslog::nslog("[PIN] Correct, unlocking");
-                    s.pin_lock_active.set(false);
-                    s.is_authenticated.set(true);
-                    s.pin_input.set(String::new());
+                    crate::shared::haptics::pop();
+                    // All four dots sit filled (accent) for a beat, then unlock.
+                    let unlock = s.pin_lock_active.setter();
+                    let auth = s.is_authenticated.setter();
+                    let clear = s.pin_input.setter();
+                    day::reactive::on_main_delayed(1000, move || {
+                        unlock.set(false);
+                        auth.set(true);
+                        clear.set(String::new());
+                    });
                 } else {
                     nslog::nslog("[PIN] Wrong");
+                    // Dots fill red (pin_error colors the whole row) and shake;
+                    // the delayed reset clears input and error together.
                     s.pin_error.set(true);
+                    run_shake();
                     let clear = s.pin_input.setter();
-                    day::reactive::on_main(move || {
+                    let err = s.pin_error.setter();
+                    day::reactive::on_main_delayed(shake_total_ms(), move || {
                         clear.set(String::new());
+                        err.set(false);
                     });
                 }
             }
