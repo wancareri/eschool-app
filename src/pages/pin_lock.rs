@@ -102,30 +102,48 @@ fn dot(index: usize, state: AppState) -> impl Piece {
 thread_local! {
     /// The dots row's horizontal offset during a wrong-code shake.
     static SHAKE: Signal<f64> = Signal::new(0.0);
+    /// Bumped on every shake so a stale frame chain stops itself.
+    static SHAKE_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 }
 
 fn shake_signal() -> Signal<f64> {
     SHAKE.with(|s| *s)
 }
 
-/// Wrong-code shake, iOS-style: keyframes [-20, +20, -20, +20, -10, +10, -5,
-/// +5, 0] over ~0.5s (the classic passcode bounce), stepped by chained main
-/// timers — day's AnimSpec tweens one target per step, no keyframe list.
+/// Wrong-code shake: a damped sine sampled every frame — continuous motion
+/// (the old keyframe steps read as two or three discrete jerks) with a small
+/// iOS-passcode amplitude. day's AnimSpec only tweens one target per call, so
+/// the curve is computed here and the offset is set directly, no tween.
+const SHAKE_MS: u32 = 450;
+const SHAKE_FRAME_MS: u32 = 16;
+const SHAKE_AMPLITUDE: f64 = 9.0;
+const SHAKE_PERIOD_MS: f64 = 80.0;
+
 fn run_shake() {
-    const STEPS: [f64; 9] = [-20.0, 20.0, -20.0, 20.0, -10.0, 10.0, -5.0, 5.0, 0.0];
-    const STEP_MS: u32 = 55;
-    let mut at = 0u32;
-    for &x in &STEPS {
-        at += STEP_MS;
-        let set = shake_signal().setter();
-        day::reactive::on_main_delayed(at, move || {
-            with_animation(AnimSpec::ease_out(STEP_MS), move || set.set(x));
-        });
-    }
+    let generation = SHAKE_GEN.with(|g| g.fetch_add(1, std::sync::atomic::Ordering::SeqCst)) + 1;
+    shake_signal().set(0.0);
+    schedule_shake_frame(generation, std::time::Instant::now());
+}
+
+fn schedule_shake_frame(generation: u32, started: std::time::Instant) {
+    day::reactive::on_main_delayed(SHAKE_FRAME_MS, move || {
+        if SHAKE_GEN.with(|g| g.load(std::sync::atomic::Ordering::SeqCst)) != generation {
+            return; // a newer shake took over
+        }
+        let elapsed = started.elapsed().as_millis() as u32;
+        if elapsed >= SHAKE_MS {
+            shake_signal().set(0.0);
+            return;
+        }
+        let decay = 1.0 - elapsed as f64 / SHAKE_MS as f64;
+        let phase = elapsed as f64 / SHAKE_PERIOD_MS * std::f64::consts::TAU;
+        shake_signal().set(SHAKE_AMPLITUDE * decay * phase.sin());
+        schedule_shake_frame(generation, started);
+    });
 }
 
 fn shake_total_ms() -> u32 {
-    9 * 55 + 80
+    SHAKE_MS + 80
 }
 
 fn numpad(state: AppState) -> impl Piece {
