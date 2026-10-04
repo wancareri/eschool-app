@@ -1,7 +1,7 @@
 use crate::app::AppState;
 use crate::features;
 use eschool_api::entities::*;
-use crate::shared::{colors, utils};
+use crate::shared::{colors, haptics, utils};
 use crate::widgets;
 use crate::res;
 use day::prelude::*;
@@ -139,7 +139,10 @@ fn quarter_btn(state: AppState, lbl: &'static str, q: usize) -> impl Piece {
         let cur = s1.current_quarter.get();
         if cur == q && !s1.marks_loading.get() { format!("[{}]", l) } else { l.clone() }
     })
-    .action(move || select_quarter(s2, q))
+    .action(move || {
+        haptics::tick();
+        select_quarter(s2, q);
+    })
     .id(format!("q-{lbl}"))
 }
 
@@ -150,7 +153,10 @@ fn year_btn(state: AppState) -> impl Piece {
         let cur = s1.current_quarter.get();
         if cur == 4 && !s1.marks_loading.get() { String::from("[Год]") } else { String::from("Год") }
     })
-    .action(move || select_quarter(s2, 4))
+    .action(move || {
+        haptics::tick();
+        select_quarter(s2, 4);
+    })
     .id("q-year")
 }
 
@@ -164,6 +170,9 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
         })
         
         .action(move || {
+            if show_summary.get() {
+                haptics::tick();
+            }
             show_summary.set(false);
             let q = s1.current_quarter.get();
             let idx = s2.current_week_index.get() as usize;
@@ -183,6 +192,9 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
         })
         
         .action(move || {
+            if !show_summary.get() {
+                haptics::tick();
+            }
             show_summary.set(true);
             let q = s3.current_quarter.get();
             select_quarter(s3, q);
@@ -229,6 +241,7 @@ fn start_week_swipe(
         return;
     }
     SWIPE_PENDING.store(new_idx, Ordering::Relaxed);
+    haptics::bump();
     let my_gen = SWIPE_GEN.fetch_add(1, Ordering::Relaxed) + 1;
     features::diary::prefetch_week(state, new_idx);
     let w = page_width.get();

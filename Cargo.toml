@@ -63,6 +63,7 @@ objc2-ui-kit = { version = "0.3", features = [
     "UINavigationController", "UIKitCore", "block2",
     "UIColor", "UINavigationBar", "UITabBar", "UISwitch", "UIButton", "UIBarButtonItem",
     "UIVisualEffectView", "UIBlurEffect", "UIVisualEffect",
+    "UIFeedbackGenerator", "UIImpactFeedbackGenerator", "UISelectionFeedbackGenerator",
 ] }
 objc2-user-notifications = { version = "0.3", features = [
     "UNUserNotificationCenter", "UNNotificationSettings", "UNNotificationRequest",

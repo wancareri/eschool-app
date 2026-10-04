@@ -11,7 +11,7 @@
 //! inside the card.
 
 use crate::app::AppState;
-use crate::shared::{colors, utils};
+use crate::shared::{colors, haptics, utils};
 use day::prelude::*;
 
 /// Bounds for pickable/target marks. The school reports on the ten-point scale
@@ -452,6 +452,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     .corner_radius(8.0)
     .grow_w()
     .on_tap(move || {
+        haptics::pop();
         pk.panel.set(if pk.panel.get() == 1 { 0 } else { 1 });
     });
 

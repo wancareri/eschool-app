@@ -1,6 +1,7 @@
 pub mod biometric;
 pub mod cache;
 pub mod colors;
+pub mod haptics;
 pub mod i18n;
 pub mod locale;
 pub mod log_bridge;

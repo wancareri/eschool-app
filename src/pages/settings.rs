@@ -2,7 +2,7 @@ use crate::app::AppState;
 use crate::features;
 use crate::widgets;
 use crate::res;
-use crate::shared::{biometric, colors, nslog, pin};
+use crate::shared::{biometric, colors, haptics, nslog, pin};
 use day::prelude::*;
 use day_piece_texteditor::text_editor;
 
@@ -290,6 +290,7 @@ fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piec
         .any(),
         1 => column((
             appearance_section(state),
+            haptics_section(state),
             system_settings(),
         ))
         .spacing(0.0)
@@ -360,6 +361,38 @@ fn accent_apply(state: AppState, hex: u32) {
 fn accent_commit(state: AppState, hex: u32) {
     day::prefs::set("app.accent_color", &hex.to_string());
     accent_apply(state, hex);
+    haptics::tick();
+}
+
+/// The tactile layer's master switch — default ON, persisted as `app.haptics`.
+fn haptics_section(_state: AppState) -> impl Piece {
+    let haptics_on = Signal::new(haptics::is_enabled());
+    day::reactive::watch(
+        move || haptics_on.get(),
+        move |val, old| {
+            if old.is_some() {
+                haptics::set_enabled(*val);
+            }
+        },
+    );
+
+    form((
+        section(
+            (
+                row((
+                    label("Вибрация при действиях")
+                        .font(Font::Body)
+                        .grow(),
+                    toggle(haptics_on),
+                ))
+                .spacing(8.0),
+                label("Тактильный отклик при перелистывании недель и смене разделов")
+                    .font(Font::Caption)
+                    .secondary(),
+            )
+        ).title("Ощущения"),
+    ))
+    .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
 fn system_settings() -> impl Piece {
