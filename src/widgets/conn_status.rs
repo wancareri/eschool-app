@@ -36,6 +36,29 @@ fn schedule_collapse(state: AppState) {
     });
 }
 
+/// The sticky top-left capsule as a page sibling: tagged `ANNOTATION_TAG` so
+/// ios-uikit's bleed walk skips it — the page keeps its single-scroll chain and
+/// full-bleed frame under the bars while this stays pinned outside the scroll.
+pub fn page_overlay() -> impl Piece {
+    let piece = render().padding(Insets {
+        top: 16.0,
+        leading: 16.0,
+        bottom: 0.0,
+        trailing: 0.0,
+    });
+    #[cfg(target_os = "ios")]
+    {
+        use day_uikit::UiKitExt;
+        piece.uikit(|view, _class, _mtm| {
+            view.setTag(day_uikit::ANNOTATION_TAG);
+        })
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        piece
+    }
+}
+
 #[cfg(target_os = "ios")]
 fn apply_glass_blur(piece: impl Decorate) -> impl Piece {
     use day_uikit::UiKitExt;

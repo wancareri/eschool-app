@@ -21,7 +21,8 @@ pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let refreshing = Signal::new(false);
 
-    pull_to_refresh(refreshing, scroll(column((
+    zstack((
+        pull_to_refresh(refreshing, scroll(column((
                     column((
                         label(move || res::str::schedule_title().format())
                             .font(Font::LargeTitle)
@@ -58,12 +59,7 @@ pub fn render() -> impl Piece {
                     ),
                 ))
                 .spacing(0.0)
-                .grow()
-                .overlay_aligned(
-                    Alignment::TopLeading,
-                    widgets::conn_status::render()
-                        .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
-                )))
+                .grow()))
                 .on_refresh(move || {
                     let state = AppState::ambient();
                     let done = refreshing.setter();
@@ -72,7 +68,12 @@ pub fn render() -> impl Piece {
                     }
                     done.set(false);
                 })
-                .grow()
+                .grow(),
+
+        widgets::conn_status::page_overlay(),
+    ))
+    .align(Alignment::TopLeading)
+    .grow()
 }
 
 fn schedule_content(state: AppState) -> impl Piece {

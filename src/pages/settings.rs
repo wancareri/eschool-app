@@ -107,7 +107,7 @@ pub fn render() -> impl Piece {
         // inner `on_scroll` takes its flag by move — a Signal would be Copy.
         let rd = restore_done.clone();
         zstack((
-        column((
+        scroll(column((
         column((
             label(move || res::str::settings_title().format())
                 .font(Font::LargeTitle).align(TextAlign::Center),
@@ -122,10 +122,10 @@ pub fn render() -> impl Piece {
         // snap with its velocity throw), every page keeps its own vertical
         // scroll, and scroll events keep settings_tab in step with the strip.
         scroll(row((
-            scroll(tab_body(state, 0, pin_enabled)).width(pager_w),
-            scroll(tab_body(state, 1, pin_enabled)).width(pager_w),
-            scroll(tab_body(state, 2, pin_enabled)).width(pager_w),
-            scroll(tab_body(state, 3, pin_enabled)).width(pager_w),
+            tab_body(state, 0, pin_enabled).width(pager_w),
+            tab_body(state, 1, pin_enabled).width(pager_w),
+            tab_body(state, 2, pin_enabled).width(pager_w),
+            tab_body(state, 3, pin_enabled).width(pager_w),
         )))
         .horizontal()
         .paging(true)
@@ -166,12 +166,11 @@ pub fn render() -> impl Piece {
         })
         .width(pager_w)
         .grow()
-    ))
+    )))
     .grow(),
 
     // Sticky status indicator in top-left corner
-    widgets::conn_status::render()
-        .padding(Insets { top: 16.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
+    widgets::conn_status::page_overlay(),
     ))
     .align(Alignment::TopLeading)
     .grow()
