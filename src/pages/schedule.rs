@@ -81,7 +81,7 @@ fn schedule_content(state: AppState) -> impl Piece {
     column((
         when(
             move || !state.timetable_days.get().is_empty(),
-            move || day_pager(state),
+            move || crate::pages::diary::rebuild_on_class_change(move || day_pager(state)),
         ),
         when(
             move || state.timetable_days.get().is_empty(),

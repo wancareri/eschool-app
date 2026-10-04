@@ -116,7 +116,7 @@ fn shake_signal() -> Signal<f64> {
 /// the curve is computed here and the offset is set directly, no tween.
 const SHAKE_MS: u32 = 450;
 const SHAKE_FRAME_MS: u32 = 16;
-const SHAKE_AMPLITUDE: f64 = 9.0;
+const SHAKE_AMPLITUDE: f64 = 5.0;
 const SHAKE_PERIOD_MS: f64 = 80.0;
 
 fn run_shake() {

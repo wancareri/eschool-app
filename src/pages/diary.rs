@@ -54,13 +54,28 @@ pub fn get_screen_height() -> f64 {
     844.0
 }
 
+/// Rebuild `build` whenever the window crosses a size-class breakpoint
+/// (rotation on iOS: portrait width < 600pt, landscape ≥ 600pt).
+///
+/// The pagers pin the screen width they capture at build time, and day's piece
+/// builds are one-shot — a plain build-time `size_class()` read is not tracked.
+/// A keyed `each` whose key IS the class is the structural rebuild: its source
+/// reads the class inside the reaction (docs/size-classes.md), and a changed
+/// key remounts the one row, re-capturing the width.
+pub fn rebuild_on_class_change<P: Piece + 'static>(build: impl Fn() -> P + 'static) -> impl Piece {
+    each(
+        items(
+            move || vec![size_class().map(|c| (c.width as u8, c.height as u8))],
+            |key| *key,
+        ),
+        move |_| build(),
+    )
+}
+
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let show_summary = Signal::new(false);
     let refreshing = Signal::new(false);
-    let initial_w = get_screen_width();
-    let page_width = Signal::new(initial_w);
-    let drag_x = Signal::new(0.0);
 
     zstack((
         pull_to_refresh(refreshing, scroll(column((
@@ -77,11 +92,11 @@ pub fn render() -> impl Piece {
 
                 when(
                     move || !show_summary.get(),
-                    move || week_view(state, page_width, drag_x),
+                    move || rebuild_on_class_change(move || week_view(state)),
                 ),
                 when(
                     move || show_summary.get(),
-                    move || summary_view(state, page_width, drag_x),
+                    move || rebuild_on_class_change(move || summary_view(state)),
                 ),
             ))
             .spacing(0.0)
@@ -436,7 +451,11 @@ fn summary_drag(
     }
 }
 
-fn week_view(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>) -> impl Piece {
+fn week_view(state: AppState) -> impl Piece {
+    // Pager state lives inside the view so a size-class rebuild re-captures the
+    // screen width — the captured one is the previous orientation's after a rotation.
+    let page_width = Signal::new(get_screen_width());
+    let drag_x = Signal::new(0.0);
     let s_prev = state;
     let s_cur = state;
     let s_next = state;
@@ -632,7 +651,9 @@ fn day_card_with(
 
 
 
-fn summary_view(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>) -> impl Piece {
+fn summary_view(state: AppState) -> impl Piece {
+    let page_width = Signal::new(get_screen_width());
+    let drag_x = Signal::new(0.0);
     let s_prev = state;
     let s_cur = state;
     let s_next = state;
