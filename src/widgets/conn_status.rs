@@ -40,23 +40,24 @@ fn schedule_collapse(state: AppState) {
 /// ios-uikit's bleed walk skips it — the page keeps its single-scroll chain and
 /// full-bleed frame under the bars while this stays pinned outside the scroll.
 pub fn page_overlay() -> impl Piece {
-    let piece = render().padding(Insets {
-        top: 16.0,
-        leading: 16.0,
-        bottom: 0.0,
-        trailing: 0.0,
-    });
+    let piece = render();
     #[cfg(target_os = "ios")]
-    {
+    let piece = {
         use day_uikit::UiKitExt;
         piece.uikit(|view, _class, _mtm| {
             view.setTag(day_uikit::ANNOTATION_TAG);
         })
-    }
+    };
     #[cfg(not(target_os = "ios"))]
-    {
+    let piece = {
         piece
-    }
+    };
+    piece.padding(Insets {
+        top: 16.0,
+        leading: 16.0,
+        bottom: 0.0,
+        trailing: 0.0,
+    })
 }
 
 #[cfg(target_os = "ios")]
