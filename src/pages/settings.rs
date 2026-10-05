@@ -166,7 +166,8 @@ pub fn render() -> impl Piece {
         })
         .width(pager_w)
         .grow()
-    )))
+    ))
+    .grow())
     .grow(),
 
     // Sticky status indicator in top-left corner
