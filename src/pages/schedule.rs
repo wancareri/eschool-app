@@ -369,35 +369,39 @@ fn day_lesson_rows(state: AppState, dow: u32) -> Vec<LessonRow> {
 }
 
 fn lesson_table_row(state: AppState, slot: ItemSlot<LessonRow, String>) -> impl Piece {
-    row((
-        column((
+    column((
+        row((
             label(move || slot.with(|r| r.num.to_string()))
-                .font(Font::Footnote)
+                .font(Font::Subheadline)
                 .weight(FontWeight::Semibold)
                 .color(move || Color::hex(state.accent_color.get()))
                 .align(TextAlign::Center)
-                .frame(26.0, 16.0),
+                .frame(24.0, 24.0),
             label(move || slot.with(|r| r.time.clone()))
-                .font(Font::Caption2)
+                .font(Font::Footnote)
                 .secondary()
-                .align(TextAlign::Center),
+                .align(TextAlign::Center)
+                .width(42.0),
+            label(move || slot.with(|r| r.subject.clone()))
+                .font(Font::Body)
+                .grow(),
         ))
-        .spacing(3.0)
-        .align(HAlign::Center),
-        label(move || slot.with(|r| r.subject.clone()))
-            .font(Font::Body)
-            .grow(),
+        .spacing(12.0)
+        .align(VAlign::Center)
+        .padding(Insets { top: 14.0, leading: PAD, bottom: 14.0, trailing: PAD }),
+        
+        // Native-like thin separator line
+        spacer()
+            .frame(0.0, 0.5)
+            .background(move || {
+                if day::dark_mode() {
+                    Color::rgba(1.0, 1.0, 1.0, 0.1)
+                } else {
+                    Color::rgba(0.0, 0.0, 0.0, 0.1)
+                }
+            })
+            .padding(Insets { top: 0.0, leading: PAD + 36.0, bottom: 0.0, trailing: 0.0 })
+            .grow_w()
     ))
-    .spacing(12.0)
-    .align(VAlign::Center)
-    .padding(Insets { top: 10.0, leading: 12.0, bottom: 10.0, trailing: 12.0 })
-    .background(move || {
-        if day::dark_mode() {
-            Color::rgba(0.16, 0.16, 0.18, 1.0)
-        } else {
-            Color::rgba(0.95, 0.95, 0.97, 1.0)
-        }
-    })
-    .corner_radius(10.0)
-    .padding(Insets { top: 4.0, leading: PAD, bottom: 4.0, trailing: PAD })
+    .spacing(0.0)
 }

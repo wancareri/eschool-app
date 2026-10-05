@@ -245,77 +245,62 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
     if key_str.is_empty() {
         spacer().frame(72.0, 72.0).any()
     } else if key_str == "⌫" {
-        zstack((
-            label("⌫")
-                .font(Font::LargeTitle)
-                .secondary(),
-        ))
-        .frame(72.0, 72.0)
-        .on_tap(move || {
-            crate::shared::haptics::tick();
-            let mut input = s.pin_input.get();
-            // Four digits always means a hold in flight (success beat or shake) —
-            // the dots stay frozen until the timer lands.
-            if input.len() >= PIN_LENGTH {
-                return;
-            }
-            if !input.is_empty() {
-                input.pop();
-                s.pin_input.set(input);
-                s.pin_error.set(false);
-            }
-        })
-        .a11y(|b| b.role(Role::Button))
-        .id("pin-backspace")
-        .any()
-    } else {
-        zstack((
-            label(key_clone2.clone())
-                .font(Font::LargeTitle)
-                .color(move || Color::hex(state.accent_color.get())),
-        ))
-        .frame(72.0, 72.0)
-        .on_tap(move || {
-            crate::shared::haptics::tick();
-            let mut input = s.pin_input.get();
-            if input.len() >= PIN_LENGTH {
-                return;
-            }
-            input.push_str(&key_clone);
-            s.pin_input.set(input.clone());
-            s.pin_error.set(false);
-
-            if input.len() == PIN_LENGTH {
-                if pin::verify(&input) {
-                    nslog::nslog("[PIN] Correct, unlocking");
-                    crate::shared::haptics::pop();
-                    run_success_pulse();
-                    // The dots ripple, then all sit filled (accent) for a beat, then unlock.
-                    let unlock = s.pin_lock_active.setter();
-                    let auth = s.is_authenticated.setter();
-                    let clear = s.pin_input.setter();
-                    day::reactive::on_main_delayed(1000, move || {
-                        unlock.set(false);
-                        auth.set(true);
-                        clear.set(String::new());
-                    });
-                } else {
-                    nslog::nslog("[PIN] Wrong");
-                    // Dots fill red (pin_error colors the whole row) and shake;
-                    // the delayed reset clears input and error together.
-                    s.pin_error.set(true);
-                    run_shake();
-                    let clear = s.pin_input.setter();
-                    let err = s.pin_error.setter();
-                    day::reactive::on_main_delayed(shake_total_ms(), move || {
-                        clear.set(String::new());
-                        err.set(false);
-                    });
+        button("⌫")
+            .action(move || {
+                crate::shared::haptics::tick();
+                let mut input = s.pin_input.get();
+                if input.len() >= PIN_LENGTH {
+                    return;
                 }
-            }
-        })
-        .a11y(|b| b.role(Role::Button))
-        .id(format!("pin-key-{key_clone2}"))
-        .any()
+                if !input.is_empty() {
+                    input.pop();
+                    s.pin_input.set(input);
+                    s.pin_error.set(false);
+                }
+            })
+            .id("pin-backspace")
+            .frame(72.0, 72.0)
+            .any()
+    } else {
+        button(move || key_clone2.clone())
+            .action(move || {
+                crate::shared::haptics::tick();
+                let mut input = s.pin_input.get();
+                if input.len() >= PIN_LENGTH {
+                    return;
+                }
+                input.push_str(&key_clone);
+                s.pin_input.set(input.clone());
+                s.pin_error.set(false);
+
+                if input.len() == PIN_LENGTH {
+                    if pin::verify(&input) {
+                        nslog::nslog("[PIN] Correct, unlocking");
+                        crate::shared::haptics::pop();
+                        run_success_pulse();
+                        let unlock = s.pin_lock_active.setter();
+                        let auth = s.is_authenticated.setter();
+                        let clear = s.pin_input.setter();
+                        day::reactive::on_main_delayed(1000, move || {
+                            unlock.set(false);
+                            auth.set(true);
+                            clear.set(String::new());
+                        });
+                    } else {
+                        nslog::nslog("[PIN] Wrong");
+                        s.pin_error.set(true);
+                        run_shake();
+                        let clear = s.pin_input.setter();
+                        let err = s.pin_error.setter();
+                        day::reactive::on_main_delayed(shake_total_ms(), move || {
+                            clear.set(String::new());
+                            err.set(false);
+                        });
+                    }
+                }
+            })
+            .id(format!("pin-key-{}", key_str))
+            .frame(72.0, 72.0)
+            .any()
     }
 }
