@@ -40,7 +40,7 @@ where
                 let lessons = get_lessons();
                 lessons.iter()
                     .flat_map(|d| &d.slots)
-                    .filter(|s| s.lesson_mark.is_some())
+                    .filter(|s| s.lesson_mark.is_some() && !is_absence(s))
                     .count()
                     .to_string()
             }),
