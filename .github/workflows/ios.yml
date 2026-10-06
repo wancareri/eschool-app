@@ -1,63 +1,66 @@
-name: iOS Build
+name: Build iOS IPA
 
 on:
   push:
-    branches: [master]
+    branches: [ main ]
   pull_request:
-    branches: [master]
-  workflow_dispatch:
+    branches: [ main ]
 
 jobs:
-  build:
-    runs-on: macos-15
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        variant: [dev, release]
+  build-ios:
+    runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      # Checkout repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: 'latest'
-
+      # Install Rust toolchain
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rs/toolchain@v1
         with:
-          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+          toolchain: stable
+          target: aarch64-apple-ios
+          override: true
+          profile: minimal
 
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ matrix.variant }}
-
-      - name: Install day-cli
-        run: cargo install day-cli --git https://github.com/wancareri/day.git
-
-      - name: Check environment
-        run: day doctor
-
-      - name: Set dev bundle ID
-        if: matrix.variant == 'dev'
+      # Install required cargo tools (cargo-lipo, cargo-bundle)
+      - name: Install cargo-lipo and cargo-bundle
         run: |
-          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = by.eschool.app/PRODUCT_BUNDLE_IDENTIFIER = by.eschool.app.dev/' platform/ios/DayApp.xcconfig
-          sed -i '' 's/PRODUCT_NAME = EschoolApp/PRODUCT_NAME = EschoolApp-Dev/' platform/ios/DayApp.xcconfig
+          rustup component add rust-src
+          cargo install cargo-lipo --locked
+          cargo install cargo-bundle --locked
 
-      - name: Stage resources (vectors)
-        run: day build -p ios-uikit --profile release
+      # Build the release binary for iOS
+      - name: Build iOS release
+        run: cargo lipo --release --target aarch64-apple-ios
 
-      - name: Pack IPA
-        run: day pack -p ios-uikit --profile release --no-sign --verbose
+      # Bundle the app into an .ipa
+      - name: Bundle iOS app
+        run: |
+          cargo bundle --release --target aarch64-apple-ios
 
-      - name: Upload IPA
+      # Archive the generated .ipa artifact
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ios-ipa-${{ matrix.variant }}
-          path: build/day/dist/*.ipa
-          retention-days: 7
+          name: eschool-app-ipa
+          path: target/aarch64-apple-ios/release/bundle/ios/*.ipa
+
+      # (Optional) Sign the IPA – requires provisioning profile and signing cert in secrets
+      # - name: Sign IPA
+      #   env:
+      #     CERTIFICATE: ${{ secrets.IOS_SIGNING_CERTIFICATE }}
+      #     PROVISION_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+      #   run: |
+      #     # Decode and install the certificate
+      #     echo "$CERTIFICATE" | base64 --decode > ios_cert.p12
+      #     security create-keychain -p "temp" ios.keychain
+      #     security import ios_cert.p12 -k ios.keychain -P "${{ secrets.IOS_CERT_PASSWORD }}" -T /usr/bin/codesign
+      #     security list-keychains -s ios.keychain
+      #     security default-keychain -s ios.keychain
+      #     security unlock-keychain -p "temp" ios.keychain
+      #     # Install provisioning profile
+      #     mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+      #     echo "$PROVISION_PROFILE" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/app.mobileprovision
+      #     # Re‑sign the IPA (replace placeholder path with actual IPA)
+      #     find . -name "*.app" -exec codesign --force --sign "Apple Development: Your Name (TEAMID)" --entitlements "${{ github.workspace }}/Entitlements.plist" {} \;
