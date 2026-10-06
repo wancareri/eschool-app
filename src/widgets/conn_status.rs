@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::app::{AppState, ConnStatus};
 use crate::res;
 use day::prelude::*;
+use crate::app::blur::apply_glass_blur;
 
 static COLLAPSE_GEN: AtomicU64 = AtomicU64::new(0);
 
@@ -60,48 +61,7 @@ pub fn page_overlay() -> impl Piece {
     })
 }
 
-#[cfg(target_os = "ios")]
-fn apply_glass_blur(piece: impl Decorate) -> impl Piece {
-    use day_uikit::UiKitExt;
-    use objc2::MainThreadOnly;
-    use objc2::rc::Retained;
-    use objc2_quartz_core::CALayer;
-    use objc2_ui_kit::{UIBlurEffect, UIBlurEffectStyle, UIVisualEffectView, UIViewAutoresizing};
 
-    piece.uikit(|view, _class, mtm| {
-        let tag: objc2::ffi::NSInteger = 9991;
-        if view.viewWithTag(tag).is_some() {
-            return;
-        }
-
-        let blur = UIBlurEffect::effectWithStyle(
-            UIBlurEffectStyle::SystemUltraThinMaterial,
-            mtm,
-        );
-        let effect_view = UIVisualEffectView::initWithEffect(
-            UIVisualEffectView::alloc(mtm),
-            Some(&blur),
-        );
-        effect_view.setTag(tag);
-        effect_view.setFrame(view.bounds());
-        effect_view.setAutoresizingMask(UIViewAutoresizing(
-            UIViewAutoresizing::FlexibleWidth.0 | UIViewAutoresizing::FlexibleHeight.0,
-        ));
-        effect_view.setUserInteractionEnabled(false);
-
-        let view_layer: Retained<CALayer> = view.layer();
-        view_layer.setCornerRadius(12.5);
-        view_layer.setMasksToBounds(true);
-
-        view.insertSubview_atIndex(&effect_view, 0);
-        view.setClipsToBounds(true);
-    })
-}
-
-#[cfg(not(target_os = "ios"))]
-fn apply_glass_blur(piece: impl Decorate) -> impl Piece {
-    piece
-}
 
 fn accent_dark_bg(hex: u32, alpha: f64) -> Color {
     let r = (((hex >> 16) & 0xFF) as f64 / 255.0) * 0.70;
@@ -289,7 +249,7 @@ pub fn render() -> impl Piece {
     })
     // Half of the 25 pt box: CALayer does not clamp a larger radius, and 14 on
     // 25 overshoots into a self-intersecting lens (the "eye").
-        .blur(20.0)
+        .map_inner(|p| apply_glass_blur(p))
         .corner_radius(12.5)
     // Node-scoped fallback so the capsule's RESIZE animates even when the collapse's
     // with_animation ambient doesn't reach the turn-end layout (the snap-to-circle).

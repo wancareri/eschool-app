@@ -1,7 +1,8 @@
 use day::prelude::*;
 use crate::app::AppState;
-use crate::shared::{locale, log_bridge, nslog};
+use crate::shared::{log_bridge, nslog, locale};
 use crate::pages;
+use crate::app::blur::apply_glass_blur;
 use crate::res;
 
 pub fn window() -> day::WindowOptions {
@@ -205,8 +206,7 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
 
     let sel = nav(section)
         .style(day::prelude::NavStyle::Tabs)
-        .background(Color::clear())
-        .blur(16.0)
+        .background(Color::rgba(0.0, 0.0, 0.0, 0.0))
         .title(move || {
             if state.loading.get() {
                 format!("{}  ⏳", res::str::app_title().format())
@@ -238,10 +238,5 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
             res::vectors::tab_settings,
             pages::settings::render,
         );
-
-    if primary {
-        sel.id("nav").any()
-    } else {
-        sel.id("nav").local().any()
-    }
+    sel.map_inner(|p| apply_glass_blur(p)).id("nav").any()
 }
