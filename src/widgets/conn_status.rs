@@ -289,7 +289,8 @@ pub fn render() -> impl Piece {
     })
     // Half of the 25 pt box: CALayer does not clamp a larger radius, and 14 on
     // 25 overshoots into a self-intersecting lens (the "eye").
-    .corner_radius(12.5)
+        .blur(12.0)
+        .corner_radius(12.5)
     // Node-scoped fallback so the capsule's RESIZE animates even when the collapse's
     // with_animation ambient doesn't reach the turn-end layout (the snap-to-circle).
     // Mounts stay instant: day places a never-placed node without animation (day
