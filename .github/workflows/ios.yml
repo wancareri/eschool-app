@@ -23,16 +23,12 @@ jobs:
           override: true
           profile: minimal
 
-      # Install required cargo tools (cargo-lipo, cargo-bundle)
-      - name: Install cargo-lipo and cargo-bundle
+      # Install required cargo tools
+      - name: Install cargo-bundle
         run: |
           rustup component add rust-src
-          cargo install cargo-lipo --locked
           cargo install cargo-bundle --locked
 
-      # Build the release binary for iOS
-      - name: Build iOS release
-        run: cargo lipo --release --targets aarch64-apple-ios
 
       # Bundle the app into an .ipa
       - name: Bundle iOS app
