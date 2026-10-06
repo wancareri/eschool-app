@@ -10,11 +10,9 @@ jobs:
   build-ios:
     runs-on: macos-latest
     steps:
-      # Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Install Rust toolchain
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -23,40 +21,29 @@ jobs:
           override: true
           profile: minimal
 
-      # Install required cargo tools
-      - name: Install cargo-bundle
+      - name: Install day-cli
+        run: cargo install day-cli
+
+      - name: Build and Archive iOS App
         run: |
-          rustup component add rust-src
-          cargo install cargo-bundle --locked
+          xcodebuild archive \
+            -project platform/ios/DayApp.xcodeproj \
+            -scheme DayApp \
+            -configuration Release \
+            -archivePath archive/DayApp.xcarchive \
+            -destination "generic/platform=iOS" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
 
-
-      # Bundle the app into an .ipa
-      - name: Bundle iOS app
+      - name: Create IPA
         run: |
-          cargo bundle --release --target aarch64-apple-ios
+          mkdir -p Payload
+          cp -r archive/DayApp.xcarchive/Products/Applications/*.app Payload/
+          zip -qr eschool-app.ipa Payload
 
-      # Archive the generated .ipa artifact
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: eschool-app-ipa
-          path: target/aarch64-apple-ios/release/bundle/ios/*.ipa
-
-      # (Optional) Sign the IPA – requires provisioning profile and signing cert in secrets
-      # - name: Sign IPA
-      #   env:
-      #     CERTIFICATE: ${{ secrets.IOS_SIGNING_CERTIFICATE }}
-      #     PROVISION_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
-      #   run: |
-      #     # Decode and install the certificate
-      #     echo "$CERTIFICATE" | base64 --decode > ios_cert.p12
-      #     security create-keychain -p "temp" ios.keychain
-      #     security import ios_cert.p12 -k ios.keychain -P "${{ secrets.IOS_CERT_PASSWORD }}" -T /usr/bin/codesign
-      #     security list-keychains -s ios.keychain
-      #     security default-keychain -s ios.keychain
-      #     security unlock-keychain -p "temp" ios.keychain
-      #     # Install provisioning profile
-      #     mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-      #     echo "$PROVISION_PROFILE" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/app.mobileprovision
-      #     # Re‑sign the IPA (replace placeholder path with actual IPA)
-      #     find . -name "*.app" -exec codesign --force --sign "Apple Development: Your Name (TEAMID)" --entitlements "${{ github.workspace }}/Entitlements.plist" {} \;
+          path: eschool-app.ipa

@@ -23,7 +23,7 @@ mock = ["day/mock"]
 [lib]
 # A constant lib name: staged artifacts and the `dayapp::` import never move on a package rename.
 name = "dayapp"
-crate-type = ["rlib"]
+crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 eschool-api = { path = "crates/eschool-api" }
