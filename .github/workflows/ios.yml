@@ -32,7 +32,7 @@ jobs:
 
       # Build the release binary for iOS
       - name: Build iOS release
-        run: cargo lipo --release --target aarch64-apple-ios
+        run: cargo lipo --release --targets aarch64-apple-ios
 
       # Bundle the app into an .ipa
       - name: Bundle iOS app
