@@ -206,7 +206,7 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
     let sel = nav(section)
         .style(day::prelude::NavStyle::Tabs)
         .background(Color::clear())
-        .blur(20.0)
+        .blur(16.0)
         .title(move || {
             if state.loading.get() {
                 format!("{}  ⏳", res::str::app_title().format())
