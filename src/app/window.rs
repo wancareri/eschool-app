@@ -238,5 +238,5 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
             res::vectors::tab_settings,
             pages::settings::render,
         );
-    sel.map_inner(|p| apply_glass_blur(p)).id("nav").any()
+    sel.id("nav").any()
 }
