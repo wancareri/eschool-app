@@ -18,6 +18,7 @@ const RESIZE_MS: u32 = 240;
 fn close_modal<R: Route, S: Binding<Option<R>>>(open: &S, reason: &str) {
     crate::shared::nslog::nslog(&format!("[cover] close_sheet: {reason}"));
     crate::shared::keyboard::dismiss();
+    crate::shared::keyboard::set_keyboard_height(0.0);
     crate::shared::haptics::tick();
     open.write(None);
 }

@@ -1,10 +1,19 @@
-use crate::app::AppState;
 use day::prelude::*;
 
+thread_local! {
+    static KEYBOARD_SIGNAL: std::cell::Cell<Option<Signal<f64>>> = const { std::cell::Cell::new(None) };
+}
+
 pub fn keyboard_height_signal() -> Signal<f64> {
-    AppState::get_main()
-        .map(|s| s.keyboard_height)
-        .unwrap_or_else(|| Signal::new(0.0))
+    KEYBOARD_SIGNAL.with(|c| {
+        if let Some(s) = c.get() {
+            s
+        } else {
+            let s = Signal::new(0.0);
+            c.set(Some(s));
+            s
+        }
+    })
 }
 
 pub fn get_keyboard_height() -> f64 {
@@ -12,11 +21,10 @@ pub fn get_keyboard_height() -> f64 {
 }
 
 pub fn set_keyboard_height(h: f64) {
-    if let Some(state) = AppState::get_main() {
-        if (state.keyboard_height.get() - h).abs() > 0.5 {
-            crate::shared::nslog::nslog(&format!("[Keyboard] Height changed to: {h:.1}"));
-            state.keyboard_height.set(h);
-        }
+    let sig = keyboard_height_signal();
+    if (sig.get() - h).abs() > 0.5 {
+        crate::shared::nslog::nslog(&format!("[Keyboard] Height updated to: {h:.1}"));
+        sig.set(h);
     }
 }
 
@@ -46,107 +54,70 @@ pub fn init() {
 
 #[cfg(target_os = "ios")]
 mod ios {
-    use objc2::rc::Retained;
-    use objc2::runtime::NSObjectProtocol;
-    use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly};
-    use objc2_foundation::{NSNotification, NSNotificationCenter, NSObject};
-    use objc2_ui_kit::{
-        UIApplication, UIKeyboardFrameEndUserInfoKey, UIKeyboardWillChangeFrameNotification,
-        UIKeyboardWillHideNotification, NSValueUIGeometryExtensions,
-    };
+    use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
+    use objc2_foundation::NSNotification;
+    use objc2_ui_kit::{NSValueUIGeometryExtensions, UIKeyboardFrameEndUserInfoKey};
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    static OBSERVER_INSTALLED: AtomicBool = AtomicBool::new(false);
+    static INSTALLED: AtomicBool = AtomicBool::new(false);
 
-    define_class!(
-        #[unsafe(super(NSObject))]
-        #[thread_kind = MainThreadOnly]
-        #[name = "EschoolKeyboardObserver"]
-        #[ivars = ()]
-        pub struct EschoolKeyboardObserver;
-
-        unsafe impl NSObjectProtocol for EschoolKeyboardObserver {}
-
-        impl EschoolKeyboardObserver {
-            #[unsafe(method(keyboardFrameChanged:))]
-            fn keyboard_frame_changed(&self, notification: &NSNotification) {
-                let Some(info) = notification.userInfo() else {
-                    return;
-                };
-                let Some(val) = info
-                    .objectForKey(unsafe { UIKeyboardFrameEndUserInfoKey })
-                    .and_then(|o| o.downcast::<objc2_foundation::NSValue>().ok())
-                else {
-                    return;
-                };
-                let kb = unsafe { val.CGRectValue() };
-                let screen_h = crate::pages::diary::get_screen_height();
-                let visible_h = if kb.origin.y < screen_h {
-                    (screen_h - kb.origin.y).max(0.0)
-                } else {
-                    0.0
-                };
-                super::set_keyboard_height(visible_h);
-            }
-
-            #[unsafe(method(keyboardWillHide:))]
-            fn keyboard_will_hide(&self, _notification: &NSNotification) {
-                super::set_keyboard_height(0.0);
-            }
+    unsafe extern "C-unwind" fn swizzled_keyboard_will_change(
+        _this: *mut AnyObject,
+        _cmd: Sel,
+        notification: *mut NSNotification,
+    ) {
+        if notification.is_null() {
+            return;
         }
-    );
-
-    impl EschoolKeyboardObserver {
-        fn new(mtm: MainThreadMarker) -> Retained<Self> {
-            let this = Self::alloc(mtm).set_ivars(());
-            unsafe { msg_send![super(this), init] }
-        }
+        let notif: &NSNotification = unsafe { &*notification };
+        let Some(info) = notif.userInfo() else {
+            return;
+        };
+        let Some(val) = info
+            .objectForKey(unsafe { UIKeyboardFrameEndUserInfoKey })
+            .and_then(|o| o.downcast::<objc2_foundation::NSValue>().ok())
+        else {
+            return;
+        };
+        let kb = unsafe { val.CGRectValue() };
+        let screen_h = crate::pages::diary::get_screen_height();
+        let visible_h = if kb.origin.y < screen_h {
+            (screen_h - kb.origin.y).max(0.0)
+        } else {
+            0.0
+        };
+        super::set_keyboard_height(visible_h);
     }
 
     pub fn install() {
-        if OBSERVER_INSTALLED.swap(true, Ordering::SeqCst) {
+        if INSTALLED.swap(true, Ordering::SeqCst) {
             return;
         }
-        if let Some(mtm) = MainThreadMarker::new() {
-            let app = UIApplication::sharedApplication(mtm);
-            unsafe {
-                let center = NSNotificationCenter::defaultCenter();
 
-                // 1. Unregister Day's AppDelegate from UIKeyboardWillChangeFrameNotification.
-                // In Day (day-uikit), AppDelegate::keyboard_will_change shrinks the root_view,
-                // which causes the UITabBar (bottom navigation bar) to move up above the keyboard.
-                // By unregistering it, the root window remains full screen and the bottom bar
-                // stays pinned to the bottom of the screen instead of jumping up.
-                if let Some(delegate) = app.delegate() {
-                    let delegate_obj: &objc2::runtime::AnyObject = delegate.as_ref();
-                    center.removeObserver_name_object(
-                        delegate_obj,
-                        Some(UIKeyboardWillChangeFrameNotification),
-                        None,
-                    );
-                    crate::shared::nslog::nslog("[Keyboard] Unregistered Day AppDelegate keyboard observer");
+        // Swizzle DayAppDelegate's keyboardWillChange: method.
+        // In day-uikit, DayAppDelegate::keyboard_will_change shrinks root_view.frame
+        // to clamp to the keyboard top, which forces the UITabBarController's tab bar
+        // to float up above the keyboard.
+        // By replacing the method with our own handler:
+        // 1. Day's original root_view shrinking is bypassed completely — the tab bar
+        //    stays at the bottom of the screen and NEVER jumps up.
+        // 2. Our handler gets the keyboard end frame directly from UIKit and updates
+        //    our reactive `keyboard_height` signal, allowing modal bottom sheets
+        //    to smoothly shift up and remain fully visible above the keyboard.
+        let cls = AnyClass::get(c"DayAppDelegate");
+        if let Some(cls) = cls {
+            let sel = objc2::sel!(keyboardWillChange:);
+            if let Some(method) = cls.instance_method(sel) {
+                let imp: Imp = unsafe { std::mem::transmute(swizzled_keyboard_will_change as *const ()) };
+                unsafe {
+                    method.set_implementation(imp);
                 }
-
-                // 2. Register our custom observer to dynamically track the keyboard height
-                // for modal bottom sheets.
-                let observer = EschoolKeyboardObserver::new(mtm);
-                center.addObserver_selector_name_object(
-                    &observer,
-                    sel!(keyboardFrameChanged:),
-                    Some(UIKeyboardWillChangeFrameNotification),
-                    None,
-                );
-                center.addObserver_selector_name_object(
-                    &observer,
-                    sel!(keyboardWillHide:),
-                    Some(UIKeyboardWillHideNotification),
-                    None,
-                );
-
-                // Keep observer alive permanently
-                let _ = Box::leak(Box::new(observer));
-                crate::shared::nslog::nslog("[Keyboard] Custom keyboard observer installed");
+                crate::shared::nslog::nslog("[Keyboard] Successfully swizzled DayAppDelegate keyboardWillChange:");
+            } else {
+                crate::shared::nslog::nslog("[Keyboard] WARNING: keyboardWillChange: method not found on DayAppDelegate");
             }
+        } else {
+            crate::shared::nslog::nslog("[Keyboard] WARNING: DayAppDelegate class not found");
         }
     }
 }

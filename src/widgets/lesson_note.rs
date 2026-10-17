@@ -61,11 +61,13 @@ pub fn delete_note(state: AppState, key: &str) {
 }
 
 pub fn open_note(state: AppState, target: LessonNoteTarget) {
+    crate::shared::keyboard::init();
     state.active_note.set(Some(target));
 }
 
 pub fn close_note(state: AppState) {
     crate::shared::keyboard::dismiss();
+    crate::shared::keyboard::set_keyboard_height(0.0);
     state.active_note.set(None);
 }
 
