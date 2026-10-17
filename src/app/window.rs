@@ -2,7 +2,6 @@ use day::prelude::*;
 use crate::app::AppState;
 use crate::shared::{log_bridge, nslog, locale};
 use crate::pages;
-use crate::app::blur::apply_glass_blur;
 use crate::res;
 
 pub fn window() -> day::WindowOptions {
@@ -29,6 +28,8 @@ pub fn root() -> impl Piece {
     }
     day_piece_settings::apply_startup("app.theme", "app.locale");
     crate::shared::colors::init_accent();
+    #[cfg(target_os = "ios")]
+    crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
     day::register_preferences(pages::settings::settings_body);
     day::register_new_window(|| window_shell(false));
 
@@ -199,7 +200,7 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
     .grow()
 }
 
-fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
+fn render_nav_content(state: AppState, _primary: bool) -> impl Piece {
     let section = state.current_section;
     #[cfg(target_os = "ios")]
     crate::shared::colors::apply_ios_tint(state.accent_color.get());

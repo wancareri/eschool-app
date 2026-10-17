@@ -32,14 +32,44 @@ pub fn apply_ios_tint(hex: u32) {
             b as objc2_core_foundation::CGFloat,
             1.0 as objc2_core_foundation::CGFloat,
         );
-        // UINavigationBar.appearance().tintColor — nav bar buttons
-        let nav_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
-            objc2::msg_send![objc2::class!(UINavigationBar), appearance];
-        let _: () = objc2::msg_send![&*nav_appearance, setTintColor: &*color];
-        // UITabBar.appearance().tintColor — tab bar icons
+        let clear = objc2_ui_kit::UIColor::clearColor();
+        let blur_class = objc2::class!(UIBlurEffect);
+        let blur: objc2::rc::Retained<objc2::runtime::AnyObject> =
+            objc2::msg_send![blur_class, effectWithStyle: 6isize]; // SystemUltraThinMaterial
+
+        // UITabBarAppearance — liquid glass with transparent ground (no solid color underneath)
+        let tab_appearance_class = objc2::class!(UITabBarAppearance);
+        let tab_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
+            objc2::msg_send![tab_appearance_class, new];
+        let _: () = objc2::msg_send![&*tab_app, configureWithDefaultBackground];
+        let _: () = objc2::msg_send![&*tab_app, setBackgroundEffect: Some(&*blur)];
+        let _: () = objc2::msg_send![&*tab_app, setBackgroundColor: &*clear];
+        let _: () = objc2::msg_send![&*tab_app, setShadowColor: &*clear];
+
+        // UITabBar.appearance()
         let tab_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UITabBar), appearance];
         let _: () = objc2::msg_send![&*tab_appearance, setTintColor: &*color];
+        let _: () = objc2::msg_send![&*tab_appearance, setStandardAppearance: &*tab_app];
+        let _: () = objc2::msg_send![&*tab_appearance, setScrollEdgeAppearance: &*tab_app];
+
+        // UINavigationBarAppearance — liquid glass with transparent ground
+        let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
+        let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
+            objc2::msg_send![nav_appearance_class, new];
+        let _: () = objc2::msg_send![&*nav_app, configureWithDefaultBackground];
+        let _: () = objc2::msg_send![&*nav_app, setBackgroundEffect: Some(&*blur)];
+        let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*clear];
+        let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
+
+        // UINavigationBar.appearance()
+        let nav_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
+            objc2::msg_send![objc2::class!(UINavigationBar), appearance];
+        let _: () = objc2::msg_send![&*nav_appearance, setTintColor: &*color];
+        let _: () = objc2::msg_send![&*nav_appearance, setStandardAppearance: &*nav_app];
+        let _: () = objc2::msg_send![&*nav_appearance, setScrollEdgeAppearance: &*nav_app];
+        let _: () = objc2::msg_send![&*nav_appearance, setCompactAppearance: &*nav_app];
+
         // UISwitch.appearance().onTintColor — switch accent color
         let switch_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UISwitch), appearance];
@@ -49,7 +79,7 @@ pub fn apply_ios_tint(hex: u32) {
             objc2::msg_send![objc2::class!(UIBarButtonItem), appearance];
         let _: () = objc2::msg_send![&*bar_btn_appearance, setTintColor: &*color];
 
-        // Apply tintColor to all active windows so existing views update immediately!
+        // Apply tintColor and transparent bar styling to all active windows
         let app: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UIApplication), sharedApplication];
         let windows: Option<objc2::rc::Retained<objc2_foundation::NSArray<objc2::runtime::AnyObject>>> =
@@ -57,10 +87,6 @@ pub fn apply_ios_tint(hex: u32) {
         if let Some(win_arr) = windows {
             for win in win_arr.iter() {
                 let _: () = objc2::msg_send![&*win, setTintColor: &*color];
-                // UIAppearance only stamps views created AFTER the proxy call: the live
-                // tab bar / nav bar / switches keep the accent they were born with, and a
-                // stamped non-nil tintColor stops window inheritance too. Retint the
-                // native classes the proxies above manage by walking the hierarchy.
                 if let Some(view) = win.downcast_ref::<objc2_ui_kit::UIView>() {
                     retint_existing(view, &color);
                 }
@@ -69,17 +95,66 @@ pub fn apply_ios_tint(hex: u32) {
     }
 }
 
-/// Recursively retint live UIKit classes that UIAppearance cannot reach retroactively.
+/// Recursively retint live UIKit classes and enforce liquid glass transparency.
 #[cfg(target_os = "ios")]
 unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIColor) {
+    let clear = objc2_ui_kit::UIColor::clearColor();
     let obj: &objc2::runtime::AnyObject = view.as_ref();
+
     if let Some(bar) = obj.downcast_ref::<objc2_ui_kit::UITabBar>() {
-        unsafe { bar.setTintColor(Some(color)) };
+        unsafe {
+            bar.setTintColor(Some(color));
+            bar.setTranslucent(true);
+            bar.setBackgroundColor(Some(&clear));
+
+            let tab_appearance_class = objc2::class!(UITabBarAppearance);
+            let tab_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
+                objc2::msg_send![tab_appearance_class, new];
+            let blur_class = objc2::class!(UIBlurEffect);
+            let blur: objc2::rc::Retained<objc2::runtime::AnyObject> =
+                objc2::msg_send![blur_class, effectWithStyle: 6isize];
+            let _: () = objc2::msg_send![&*tab_app, configureWithDefaultBackground];
+            let _: () = objc2::msg_send![&*tab_app, setBackgroundEffect: Some(&*blur)];
+            let _: () = objc2::msg_send![&*tab_app, setBackgroundColor: &*clear];
+            let _: () = objc2::msg_send![&*tab_app, setShadowColor: &*clear];
+
+            let _: () = objc2::msg_send![bar, setStandardAppearance: &*tab_app];
+            let _: () = objc2::msg_send![bar, setScrollEdgeAppearance: &*tab_app];
+        };
     } else if let Some(bar) = obj.downcast_ref::<objc2_ui_kit::UINavigationBar>() {
-        unsafe { bar.setTintColor(Some(color)) };
+        unsafe {
+            bar.setTintColor(Some(color));
+            bar.setTranslucent(true);
+            bar.setBackgroundColor(Some(&clear));
+
+            let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
+            let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
+                objc2::msg_send![nav_appearance_class, new];
+            let blur_class = objc2::class!(UIBlurEffect);
+            let blur: objc2::rc::Retained<objc2::runtime::AnyObject> =
+                objc2::msg_send![blur_class, effectWithStyle: 6isize];
+            let _: () = objc2::msg_send![&*nav_app, configureWithDefaultBackground];
+            let _: () = objc2::msg_send![&*nav_app, setBackgroundEffect: Some(&*blur)];
+            let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*clear];
+            let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
+
+            let _: () = objc2::msg_send![bar, setStandardAppearance: &*nav_app];
+            let _: () = objc2::msg_send![bar, setScrollEdgeAppearance: &*nav_app];
+            let _: () = objc2::msg_send![bar, setCompactAppearance: &*nav_app];
+        };
     } else if let Some(sw) = obj.downcast_ref::<objc2_ui_kit::UISwitch>() {
         sw.setOnTintColor(Some(color));
     }
+
+    // Clear background for DayNavPageView so the area beneath the tab bar
+    // and status bar isn't a solid opaque rectangle.
+    let class_name = view.class().name().to_str().unwrap_or("");
+    if class_name == "DayNavPageView" {
+        unsafe {
+            view.setBackgroundColor(Some(&clear));
+        }
+    }
+
     for sub in view.subviews().iter() {
         unsafe { retint_existing(&sub, color) };
     }

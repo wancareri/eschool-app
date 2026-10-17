@@ -2,48 +2,46 @@ name: Build iOS IPA
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   build-ios:
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
         with:
-          toolchain: stable
-          target: aarch64-apple-ios
-          override: true
-          profile: minimal
+          xcode-version: 'latest'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-ios-${{ hashFiles('Cargo.lock') }}
 
       - name: Install day-cli
         run: cargo install day-cli
 
-      - name: Build and Archive iOS App
-        run: |
-          xcodebuild archive \
-            -project platform/ios/DayApp.xcodeproj \
-            -scheme DayApp \
-            -configuration Release \
-            -archivePath archive/DayApp.xcarchive \
-            -destination "generic/platform=iOS" \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: Create IPA
-        run: |
-          mkdir -p Payload
-          cp -r archive/DayApp.xcarchive/Products/Applications/*.app Payload/
-          zip -qr eschool-app.ipa Payload
+      - name: Build and Pack iOS App
+        run: day pack -p ios-uikit --profile release --no-sign --verbose
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: eschool-app-ipa
-          path: eschool-app.ipa
+          name: ios-ipa
+          path: build/day/dist/*.ipa
+          retention-days: 7
