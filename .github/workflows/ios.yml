@@ -22,19 +22,23 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+          targets: aarch64-apple-ios
 
-      - name: Cache cargo
+      - name: Cache day-cli binary
         uses: actions/cache@v4
+        id: cache-day
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ runner.os }}-ios-${{ hashFiles('Cargo.lock') }}
+          path: ~/.cargo/bin/day
+          key: ${{ runner.os }}-day-cli-0.1
 
       - name: Install day-cli
+        if: steps.cache-day.outputs.cache-hit != 'true'
         run: cargo install day-cli
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          targets: aarch64-apple-ios
 
       - name: Build and Pack iOS App
         run: day pack -p ios-uikit --profile release --no-sign --verbose
