@@ -721,21 +721,36 @@ fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
             label(move || {
                 let q = (s.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
                 if q == 4 {
-                    let mut sum = 0.0;
-                    let mut count = 0;
-                    for q_idx in 0..4 {
-                        let m = get_quarter_marks_map(s, q_idx);
-                        for vals in m.values() {
-                            for &v in vals {
-                                sum += v;
-                                count += 1;
+                    let mut year_sum = 0.0;
+                    let mut year_count = 0;
+                    s.final_marks.with(|fm| {
+                        for periods in fm.values() {
+                            if let Some(m) = periods.get("YEAR").and_then(|v| v.parse::<f64>().ok()) {
+                                year_sum += m;
+                                year_count += 1;
                             }
                         }
-                    }
-                    if count > 0 {
-                        format!("Средний балл за год: {:.2}", sum / count as f64)
+                    });
+                    if year_count > 0 {
+                        format!("Средний балл за год: {:.2}", year_sum / year_count as f64)
                     } else {
-                        "Средний балл за год: —".to_string()
+                        let mut q_sum = 0.0;
+                        let mut q_count = 0;
+                        s.final_marks.with(|fm| {
+                            for periods in fm.values() {
+                                for q_idx in 0..4 {
+                                    if let Some(m) = periods.get(quarter_period(q_idx)).and_then(|v| v.parse::<f64>().ok()) {
+                                        q_sum += m;
+                                        q_count += 1;
+                                    }
+                                }
+                            }
+                        });
+                        if q_count > 0 {
+                            format!("Средний балл за год: {:.2}", q_sum / q_count as f64)
+                        } else {
+                            "Средний балл за год: —".to_string()
+                        }
                     }
                 } else {
                     let marks = get_quarter_marks_map(s, q);
@@ -1075,20 +1090,10 @@ fn calc_year_avg(state: AppState, subject: &str) -> Option<f64> {
             q_marks.push(m);
         }
     }
-    if !q_marks.is_empty() {
-        return Some(q_marks.iter().sum::<f64>() / q_marks.len() as f64);
-    }
-    let mut all_marks: Vec<f64> = Vec::new();
-    for q in 0..4 {
-        let marks = get_quarter_marks_map(state, q);
-        if let Some(vals) = marks.get(subject) {
-            all_marks.extend_from_slice(vals);
-        }
-    }
-    if all_marks.is_empty() {
+    if q_marks.is_empty() {
         None
     } else {
-        Some(all_marks.iter().sum::<f64>() / all_marks.len() as f64)
+        Some(q_marks.iter().sum::<f64>() / q_marks.len() as f64)
     }
 }
 
