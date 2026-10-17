@@ -106,6 +106,7 @@ pub fn render() -> impl Piece {
         // Per-build clone: the outer closure is Fn (it may rebuild), while the
         // inner `on_scroll` takes its flag by move — a Signal would be Copy.
         let rd = restore_done.clone();
+        let is_dragging_pill = Signal::new(false);
         zstack((
         scroll(column((
         column((
@@ -116,7 +117,15 @@ pub fn render() -> impl Piece {
         .spacing(6.0)
         .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
 
-        tab_strip(state, current_tab, strip_pos),
+        tab_strip(
+            state,
+            current_tab,
+            strip_pos,
+            is_dragging_pill,
+            initial_target,
+            tap_target,
+            last_scroll_idx,
+        ),
 
         // Four-page native pager: UIKit owns the finger physics (paging
         // snap with its velocity throw), every page keeps its own vertical
@@ -132,7 +141,9 @@ pub fn render() -> impl Piece {
         .scroll_target(tap_target)
         .scroll_jump(initial_target)
         .on_scroll(move |p| {
-            strip_pos.set((p.x / pager_w).clamp(0.0, 3.0));
+            if !is_dragging_pill.get() {
+                strip_pos.set((p.x / pager_w).clamp(0.0, 3.0));
+            }
             let idx = ((p.x / pager_w).round() as usize).min(3);
             let settled = (p.x - idx as f64 * pager_w).abs() < 0.5;
             if let Some((want, tries)) = restore.get() {
@@ -155,6 +166,9 @@ pub fn render() -> impl Piece {
                         rd.store(true, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
+                return;
+            }
+            if is_dragging_pill.get() {
                 return;
             }
             last_scroll_idx.set(Some(idx));
@@ -181,16 +195,102 @@ pub fn render() -> impl Piece {
 /// Sliding tab strip: the pill tracks the pager offset on every scroll event,
 /// so it moves exactly as far as the finger — a native UISegmentedControl can
 /// only hop between segments. Labels flip over as the pill passes their slot,
-/// and a tap commits the tab; the pill then rides the pager's own animation in
-/// on the didScroll events it produces.
+/// and a tap commits the tab; dragging the pill moves the underlying pages directly
+/// with rubber banding and haptic feedback on segment boundaries.
 fn tab_strip(
     state: AppState,
     current_tab: Signal<usize>,
     strip_pos: Signal<f64>,
+    is_dragging_pill: Signal<bool>,
+    jump_target: Signal<Option<ScrollTarget>>,
+    tap_target: Signal<Option<ScrollTarget>>,
+    last_scroll_idx: Signal<Option<usize>>,
 ) -> impl Piece {
     let pager_w = crate::pages::diary::get_screen_width();
     let track_w = pager_w - 40.0;
     let slot_w = track_w / 4.0;
+
+    let drag_start_slot = Signal::new(0.0);
+    let prev_dx = Signal::new(0.0);
+    let last_step = Signal::new(0.0);
+    let last_haptic_slot = Signal::new(current_tab.get());
+
+    let strip_drag = move |d: Drag| {
+        match d.phase {
+            DragPhase::Began => {
+                is_dragging_pill.set(true);
+                drag_start_slot.set(strip_pos.get());
+                prev_dx.set(0.0);
+                last_step.set(0.0);
+                last_haptic_slot.set((strip_pos.get().round() as usize).clamp(0, 3));
+            }
+            DragPhase::Changed => {
+                let dx = d.translation.x;
+                let step = dx - prev_dx.get();
+                prev_dx.set(dx);
+                last_step.set(step);
+
+                let delta_slots = dx / slot_w;
+                let raw_slot = drag_start_slot.get() + delta_slots;
+
+                // Rubber band beyond edge tabs [0.0, 3.0]
+                let slot = if raw_slot < 0.0 {
+                    let over = -raw_slot;
+                    -0.25 * (1.0 - 1.0 / (1.0 + over * 2.0))
+                } else if raw_slot > 3.0 {
+                    let over = raw_slot - 3.0;
+                    3.0 + 0.25 * (1.0 - 1.0 / (1.0 + over * 2.0))
+                } else {
+                    raw_slot
+                };
+
+                strip_pos.set(slot);
+
+                // Subtle haptic tick when crossing tab slots
+                let nearest = (slot.round() as usize).clamp(0, 3);
+                if nearest != last_haptic_slot.get() {
+                    last_haptic_slot.set(nearest);
+                    crate::shared::haptics::tick();
+                }
+
+                // Drive the page scroll viewport behind the pill
+                let clamped_slot = slot.clamp(0.0, 3.0);
+                jump_target.set(Some(ScrollTarget::Offset(Point::new(
+                    clamped_slot * pager_w,
+                    0.0,
+                ))));
+            }
+            DragPhase::Ended => {
+                is_dragging_pill.set(false);
+
+                let cur = strip_pos.get();
+                let step = last_step.get();
+
+                // Fling velocity assist: if released during a fast swipe, bias by ±0.35 slot
+                let bias = if step > 2.0 {
+                    0.35
+                } else if step < -2.0 {
+                    -0.35
+                } else {
+                    0.0
+                };
+
+                let target_tab = ((cur + bias).round() as usize).clamp(0, 3);
+
+                if target_tab != current_tab.get() {
+                    current_tab.set(target_tab);
+                    crate::shared::haptics::tick();
+                }
+                last_scroll_idx.set(Some(target_tab));
+
+                // Smoothly snap page and pill to the target tab
+                tap_target.set(Some(ScrollTarget::Offset(Point::new(
+                    pager_w * target_tab as f64,
+                    0.0,
+                ))));
+            }
+        }
+    };
 
     let track = capsule()
         .fill(move || {
@@ -210,7 +310,7 @@ fn tab_strip(
         .fill(move || Color::hex(state.accent_color.get()))
         .frame(slot_w - 2.0, 28.0)
         .translation(
-            move || slot_w * (strip_pos.get().clamp(0.0, 3.0) - 1.5),
+            move || slot_w * (strip_pos.get().clamp(-0.4, 3.4) - 1.5),
             0.0,
         );
 
@@ -270,6 +370,7 @@ fn tab_strip(
         .frame(track_w, 32.0),
     ))
     .frame(track_w, 32.0)
+    .on_drag(strip_drag)
     .padding(Insets {
         top: 8.0,
         leading: 20.0,
