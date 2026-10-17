@@ -53,7 +53,7 @@ keyring = { version = "3", features = ["apple-native"] }
 day-uikit = { git = "https://github.com/wancareri/day.git" }
 block2 = "0.6"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSDictionary", "NSUserDefaults", "NSError"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSDictionary", "NSUserDefaults", "NSError", "NSNotification"] }
 objc2-core-foundation = { version = "0.3", features = ["CFCGTypes"] }
 objc2-core-graphics = { version = "0.3", features = [] }
 objc2-quartz-core = { version = "0.3", features = ["CALayer"] }
@@ -64,6 +64,7 @@ objc2-ui-kit = { version = "0.3", features = [
     "UIColor", "UINavigationBar", "UITabBar", "UISwitch", "UIButton", "UIBarButtonItem",
     "UIVisualEffectView", "UIBlurEffect", "UIVisualEffect",
     "UIFeedbackGenerator", "UIImpactFeedbackGenerator", "UISelectionFeedbackGenerator",
+    "UIGeometry",
 ] }
 objc2-user-notifications = { version = "0.3", features = [
     "UNUserNotificationCenter", "UNNotificationSettings", "UNNotificationRequest",

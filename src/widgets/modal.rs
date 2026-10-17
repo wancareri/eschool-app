@@ -17,6 +17,7 @@ const RESIZE_MS: u32 = 240;
 /// itself and keeps its content mounted until the backend reports it hidden.
 fn close_modal<R: Route, S: Binding<Option<R>>>(open: &S, reason: &str) {
     crate::shared::nslog::nslog(&format!("[cover] close_sheet: {reason}"));
+    crate::shared::keyboard::dismiss();
     crate::shared::haptics::tick();
     open.write(None);
 }
@@ -27,7 +28,7 @@ fn close_modal<R: Route, S: Binding<Option<R>>>(open: &S, reason: &str) {
 /// distance — at rest it hides behind the card, while lifted it fills the gap
 /// line-to-line. Interaction off, so a tap in the gap falls through to the dim.
 #[cfg(target_os = "ios")]
-fn gap_filler(drag_y: Signal<f64>) -> AnyPiece {
+fn gap_filler(drag_y: Signal<f64>, kb_h: Signal<f64>) -> AnyPiece {
     use day_uikit::UiKitExt;
     use objc2_ui_kit::UIColor;
     column(())
@@ -38,15 +39,15 @@ fn gap_filler(drag_y: Signal<f64>) -> AnyPiece {
             view.setUserInteractionEnabled(false);
         })
         .frame(crate::pages::diary::get_screen_width(), FILLER_H)
-        .translation(0.0, move || MAX_UP + drag_y.get())
+        .translation(0.0, move || MAX_UP + drag_y.get() - kb_h.get())
         .any()
 }
 
 #[cfg(not(target_os = "ios"))]
-fn gap_filler(drag_y: Signal<f64>) -> AnyPiece {
+fn gap_filler(drag_y: Signal<f64>, kb_h: Signal<f64>) -> AnyPiece {
     column(())
         .frame(crate::pages::diary::get_screen_width(), FILLER_H)
-        .translation(0.0, move || MAX_UP + drag_y.get())
+        .translation(0.0, move || MAX_UP + drag_y.get() - kb_h.get())
         .any()
 }
 
@@ -137,6 +138,7 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 }
             };
 
+            let kb_h = crate::shared::keyboard::keyboard_height_signal();
             let o_tap = o_dim.clone();
             zstack((
                 // The dim is the cover's own background (edge-to-edge, over the
@@ -152,7 +154,7 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 // bottom edge — this parks the same card material one MAX_UP
                 // below and slides it up by exactly the lift distance, so the
                 // hole always shows the sheet, never the dim.
-                gap_filler(drag_y),
+                gap_filler(drag_y, kb_h),
 
                 // Bottom sheet card: day's semantic section surface — the platform's
                 // theme-adaptive grouped-card material (secondary system grouped
@@ -197,7 +199,7 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 // RESIZE_MS, so the window's top edge slides up when a panel
                 // adds elements instead of jumping.
                 .animation(AnimSpec::ease_out(RESIZE_MS))
-                .translation(0.0, move || drag_y.get())
+                .translation(0.0, move || drag_y.get() - kb_h.get())
                 .any(),
             ))
             .align(Alignment::Bottom)

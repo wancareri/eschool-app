@@ -150,9 +150,7 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
     // and status bar isn't a solid opaque rectangle.
     let class_name = view.class().name().to_str().unwrap_or("");
     if class_name == "DayNavPageView" {
-        unsafe {
-            view.setBackgroundColor(Some(&clear));
-        }
+        view.setBackgroundColor(Some(&clear));
     }
 
     for sub in view.subviews().iter() {

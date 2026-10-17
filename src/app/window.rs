@@ -30,6 +30,7 @@ pub fn root() -> impl Piece {
     crate::shared::colors::init_accent();
     #[cfg(target_os = "ios")]
     crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
+    crate::shared::keyboard::init();
     day::register_preferences(pages::settings::settings_body);
     day::register_new_window(|| window_shell(false));
 

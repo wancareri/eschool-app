@@ -65,11 +65,12 @@ pub fn open_note(state: AppState, target: LessonNoteTarget) {
 }
 
 pub fn close_note(state: AppState) {
+    crate::shared::keyboard::dismiss();
     state.active_note.set(None);
 }
 
 pub fn modal(state: AppState) -> impl Piece {
-    let min_h = crate::pages::diary::get_screen_height() * 0.45;
+    let min_h = (crate::pages::diary::get_screen_height() * 0.40).min(320.0);
     crate::widgets::modal::modal_window(state.active_note, min_h, move |target| {
         build_card(state, target.clone())
     })

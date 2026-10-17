@@ -107,6 +107,9 @@ pub struct AppState {
     // ── lesson notes ───────────────────────────────────────────────────────
     pub lesson_notes: Signal<std::collections::HashMap<String, String>>,
     pub active_note: Signal<Option<crate::widgets::lesson_note::LessonNoteTarget>>,
+
+    // ── keyboard ───────────────────────────────────────────────────────────
+    pub keyboard_height: Signal<f64>,
 }
 
 impl Ambient for AppState {
@@ -175,6 +178,7 @@ impl Ambient for AppState {
             log_version: Signal::new(0u64),
             lesson_notes: Signal::new(crate::widgets::lesson_note::load_notes_map()),
             active_note: Signal::new(None),
+            keyboard_height: Signal::new(0.0),
         };
 
         state.register_main();
