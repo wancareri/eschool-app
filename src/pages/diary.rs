@@ -853,6 +853,13 @@ fn get_all_subject_names(state: AppState) -> Vec<String> {
             names.push(name.clone());
         }
     }
+    state.final_marks.with(|fm| {
+        for name in fm.keys() {
+            if !name.is_empty() && !names.contains(name) {
+                names.push(name.clone());
+            }
+        }
+    });
     names.sort();
     names.dedup();
     names
@@ -1047,29 +1054,11 @@ fn year_q_cell(state: AppState, subject: String, q: usize) -> impl Piece {
     let sj2 = subject;
     zstack((
         label(move || {
-            let marks = get_quarter_marks_map(s1, q);
-            if let Some(v) = marks.get(&*sj1) {
-                if !v.is_empty() {
-                    return format!("{:.0}", (v.iter().sum::<f64>() / v.len() as f64).round());
-                }
-            }
-            let yqd = s1.year_quarter_data.get();
-            if let Some((_, m)) = yqd.get(q) {
-                if let Some(v) = m.get(&*sj1) {
-                    if !v.is_empty() {
-                        return format!("{:.0}", (v.iter().sum::<f64>() / v.len() as f64).round());
-                    }
-                }
-            }
-            "—".into()
+            final_mark_text(final_mark(s1, &sj1, quarter_period(q)))
         })
         .font(Font::Subheadline)
         .color(move || {
-            let marks = get_quarter_marks_map(s2, q);
-            let avg = marks.get(&*sj2).and_then(|v| {
-                if v.is_empty() { None } else { Some(v.iter().sum::<f64>() / v.len() as f64) }
-            });
-            match avg {
+            match final_mark(s2, &sj2, quarter_period(q)).and_then(|v| v.parse::<f64>().ok()) {
                 Some(v) => utils::avg_grade_color(v),
                 None => colors::SECONDARY,
             }
@@ -1080,6 +1069,15 @@ fn year_q_cell(state: AppState, subject: String, q: usize) -> impl Piece {
 }
 
 fn calc_year_avg(state: AppState, subject: &str) -> Option<f64> {
+    let mut q_marks: Vec<f64> = Vec::new();
+    for q in 0..4 {
+        if let Some(m) = final_mark(state, subject, quarter_period(q)).and_then(|v| v.parse::<f64>().ok()) {
+            q_marks.push(m);
+        }
+    }
+    if !q_marks.is_empty() {
+        return Some(q_marks.iter().sum::<f64>() / q_marks.len() as f64);
+    }
     let mut all_marks: Vec<f64> = Vec::new();
     for q in 0..4 {
         let marks = get_quarter_marks_map(state, q);
