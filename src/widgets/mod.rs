@@ -10,3 +10,4 @@ pub mod bottom_sheet;
 pub mod grade_peek;
 pub mod modal;
 pub mod spinner;
+pub mod lesson_note;

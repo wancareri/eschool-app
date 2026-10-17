@@ -103,6 +103,10 @@ pub struct AppState {
     /// Label copy of the status: swapped only while the text is invisible, so
     /// the wording never changes mid-fade.
     pub island_label: Signal<ConnStatus>,
+
+    // ── lesson notes ───────────────────────────────────────────────────────
+    pub lesson_notes: Signal<std::collections::HashMap<String, String>>,
+    pub active_note: Signal<Option<crate::widgets::lesson_note::LessonNoteTarget>>,
 }
 
 impl Ambient for AppState {
@@ -169,6 +173,8 @@ impl Ambient for AppState {
             island_state: Signal::new(ConnStatus::Idle),
             island_label: Signal::new(ConnStatus::Idle),
             log_version: Signal::new(0u64),
+            lesson_notes: Signal::new(crate::widgets::lesson_note::load_notes_map()),
+            active_note: Signal::new(None),
         };
 
         state.register_main();

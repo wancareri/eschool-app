@@ -180,6 +180,7 @@ fn build_nav(primary: bool) -> impl Piece {
     zstack((
         nav_body(state, primary),
         crate::widgets::grade_peek::modal(state),
+        crate::widgets::lesson_note::modal(state),
         crate::widgets::bottom_sheet::network_error_sheet(state),
     ))
     .grow()
