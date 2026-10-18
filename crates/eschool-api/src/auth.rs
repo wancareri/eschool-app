@@ -43,12 +43,12 @@ impl Auth {
         let resp1 = client
             .get(format!("{}/{}", blocking::BASE_URL, endpoints::LOGIN_STUDENT.trim_start_matches('/')))
             .send()
-            .map_err(|e| format!("Step 1: {e}"))?;
+            .map_err(|e| format_reqwest_error("Шаг 1 (старт авторизации)", &e))?;
         let oauth_login_url = resp1
             .headers()
             .get("location")
             .and_then(|v| v.to_str().ok())
-            .ok_or("Step 1: no Location header")?
+            .ok_or("Шаг 1: сервер не вернул редирект (Location)")?
             .to_string();
 
         // Step 2: GET OAuth login page → extract CSRF + ReturnUrl
@@ -60,12 +60,12 @@ impl Auth {
         let resp2 = client
             .get(&login_page_url)
             .send()
-            .map_err(|e| format!("Step 2: {e}"))?;
-        let login_html = resp2.text().map_err(|e| format!("Step 2 text: {e}"))?;
+            .map_err(|e| format_reqwest_error("Шаг 2 (страница входа OAuth)", &e))?;
+        let login_html = resp2.text().map_err(|e| format!("Шаг 2 (чтение HTML): {e}"))?;
 
-        let csrf = extract_csrf(&login_html).ok_or_else(|| "CSRF not found".to_string())?;
+        let csrf = extract_csrf(&login_html).ok_or_else(|| "CSRF токен не найден на странице входа".to_string())?;
         let return_url =
-            extract_return_url(&login_html).ok_or_else(|| "ReturnUrl not found".to_string())?;
+            extract_return_url(&login_html).ok_or_else(|| "ReturnUrl не найден".to_string())?;
 
         // Step 3: POST credentials → 302 to callback
         let oauth_origin = extract_origin(&login_page_url);
@@ -83,7 +83,7 @@ impl Auth {
             .header("Content-Type", "application/x-www-form-urlencoded")
             .form(&params)
             .send()
-            .map_err(|e| format!("Step 3: {e}"))?;
+            .map_err(|e| format_reqwest_error("Шаг 3 (отправка логина и пароля)", &e))?;
 
         let callback_raw = match resp3.headers().get("location").and_then(|v| v.to_str().ok()) {
             Some(loc) => loc.to_string(),
@@ -107,7 +107,7 @@ impl Auth {
             .get(&resp4_url)
             .header("Referer", format!("{}/", oauth_origin))
             .send()
-            .map_err(|e| format!("Step 4: {e}"))?;
+            .map_err(|e| format_reqwest_error("Шаг 4 (OAuth callback)", &e))?;
 
         let diary_callback_raw =
             match resp4.headers().get("location").and_then(|v| v.to_str().ok()) {
@@ -115,7 +115,7 @@ impl Auth {
                 None => {
                     let body = resp4.text().unwrap_or_default();
                     return Err(format!(
-                        "Step 4: no Location. Body: {}",
+                        "Шаг 4: сервер не вернул Location. Ответ: {}",
                         &body[..body.len().min(300)]
                     ));
                 }
@@ -131,7 +131,7 @@ impl Auth {
         let resp5 = client
             .get(&resp5_url)
             .send()
-            .map_err(|e| format!("Step 5: {e}"))?;
+            .map_err(|e| format_reqwest_error("Шаг 5 (Diary callback)", &e))?;
 
         let preauth_redirect_raw =
             match resp5.headers().get("location").and_then(|v| v.to_str().ok()) {
@@ -139,30 +139,30 @@ impl Auth {
                 None => {
                     let body = resp5.text().unwrap_or_default();
                     return Err(format!(
-                        "Step 5: no Location. Body: {}",
+                        "Шаг 5: сервер не вернул Location. Ответ: {}",
                         &body[..body.len().min(300)]
                     ));
                 }
             };
         let preauth_redirect = decode_entities(&preauth_redirect_raw);
         let uuid = extract_uuid(&preauth_redirect)
-            .ok_or_else(|| "UUID not found in preauth redirect".to_string())?;
+            .ok_or_else(|| "Шаг 5: UUID не найден в ответе preauthorized".to_string())?;
 
         // Step 6: GET data_for_login/{UUID}
         let data_url = format!("{}/{}", blocking::BASE_URL, endpoints::data_for_login(&uuid).trim_start_matches('/'));
         let resp6 = client
             .get(&data_url)
             .send()
-            .map_err(|e| format!("Step 6: {e}"))?;
+            .map_err(|e| format_reqwest_error("Шаг 6 (получение данных профиля)", &e))?;
         let login_data: serde_json::Value = resp6
             .json()
-            .map_err(|e| format!("Step 6 parse: {e}"))?;
+            .map_err(|e| format!("Шаг 6 (парсинг JSON профиля): {e}"))?;
 
         let profile_id = login_data["profile_id"]
             .as_str()
             .map(|s| s.to_string())
             .or_else(|| login_data["profile_id"].as_i64().map(|n| n.to_string()))
-            .ok_or("Step 6: no profile_id")?;
+            .ok_or("Шаг 6: не найден profile_id в ответе школы")?;
         let school_id = login_data["schools"]
             .as_array()
             .and_then(|s| s.first())
@@ -172,7 +172,7 @@ impl Auth {
                     .map(|s| s.to_string())
                     .or_else(|| id.as_i64().map(|n| n.to_string()))
             })
-            .ok_or("Step 6: no school_id")?;
+            .ok_or("Шаг 6: не найден school_id в ответе школы")?;
         let kind = login_data["kinds"]
             .as_array()
             .and_then(|k| k.first())
@@ -194,11 +194,11 @@ impl Auth {
                 token_encoded
             ))
             .send()
-            .map_err(|e| format!("Step 7: {e}"))?;
+            .map_err(|e| format_reqwest_error("Шаг 7 (финальный вход и получение токена)", &e))?;
 
         let auth_data: AuthResponse = resp7
             .json()
-            .map_err(|e| format!("Step 7 parse: {e}"))?;
+            .map_err(|e| format!("Шаг 7 (парсинг токенов): {e}"))?;
 
         Ok(Token {
             access_token: auth_data.auth_token,
@@ -268,6 +268,24 @@ pub fn relogin(
 
     // Fallback: full 7-step OAuth login
     Auth::new().login_blocking(username, password)
+}
+
+fn format_reqwest_error(step: &str, e: &reqwest::Error) -> String {
+    let mut parts = Vec::new();
+    if e.is_timeout() {
+        parts.push("Превышено время ожидания ответа (таймаут)".to_string());
+    } else if e.is_connect() {
+        parts.push("Не удалось подключиться к серверу".to_string());
+    }
+    let mut curr: Option<&(dyn std::error::Error + 'static)> = Some(e);
+    while let Some(err) = curr {
+        let s = err.to_string();
+        if !parts.contains(&s) {
+            parts.push(s);
+        }
+        curr = err.source();
+    }
+    format!("{step}: {}", parts.join(" — "))
 }
 
 // ── HTML parsing helpers ───────────────────────────────────────────────

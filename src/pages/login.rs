@@ -159,14 +159,43 @@ fn auth_form(state: AppState) -> impl Piece {
                     let local_err = error_local.get();
                     let state_err = state.error_msg.get();
                     let msg = if !local_err.is_empty() { local_err } else { state_err };
-                    label(msg)
-                        .font(Font::Callout)
-                        .color(colors::ERROR)
-                        .align(TextAlign::Center)
-                        .padding(Insets { top: 8.0, leading: 14.0, bottom: 8.0, trailing: 14.0 })
+                    let is_network = msg.contains("error sending request")
+                        || msg.contains("Не удалось подключиться")
+                        || msg.contains("таймаут")
+                        || msg.contains("dns error");
+
+                    if is_network {
+                        column((
+                            label("Не удалось подключиться к серверу")
+                                .font(Font::Headline)
+                                .color(colors::ERROR)
+                                .align(TextAlign::Center),
+                            label("Проверьте интернет или отключите VPN/прокси")
+                                .font(Font::Subheadline)
+                                .secondary()
+                                .align(TextAlign::Center),
+                            label(msg)
+                                .font(Font::Caption2)
+                                .color(colors::ERROR.with_alpha(0.7))
+                                .align(TextAlign::Center),
+                        ))
+                        .spacing(4.0)
+                        .padding(Insets { top: 10.0, leading: 14.0, bottom: 10.0, trailing: 14.0 })
                         .background(colors::ERROR.with_alpha(0.12))
                         .corner_radius(12.0)
                         .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
+                        .any()
+                    } else {
+                        label(msg)
+                            .font(Font::Callout)
+                            .color(colors::ERROR)
+                            .align(TextAlign::Center)
+                            .padding(Insets { top: 8.0, leading: 14.0, bottom: 8.0, trailing: 14.0 })
+                            .background(colors::ERROR.with_alpha(0.12))
+                            .corner_radius(12.0)
+                            .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
+                            .any()
+                    }
                 },
             ),
 
