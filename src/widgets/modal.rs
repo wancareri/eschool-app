@@ -148,7 +148,6 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                             close_modal(&o_tap, "dim-tap");
                         }
                     })
-                    .background(Color::rgba(0.0, 0.0, 0.0, 0.50))
                     .grow()
                     .any(),
 

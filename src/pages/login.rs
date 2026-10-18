@@ -93,10 +93,12 @@ fn auth_form(state: AppState) -> impl Piece {
     let remember = Signal::new(true);
     let error_local = Signal::new(String::new());
     let logging_in = Signal::new(false);
+    let kb_h = crate::shared::keyboard::keyboard_height_signal();
 
-    scroll(
-        column((
-            spacer().height(36.0),
+    column((
+        scroll(
+            column((
+                spacer().height(36.0),
 
             // Telegram-style greeting badge
             circle()
@@ -267,63 +269,64 @@ fn auth_form(state: AppState) -> impl Piece {
                 ))
             }),
 
-            spacer().grow(),
-
-            // Liquid glass prominent action button at the bottom
-            capsule()
-                .fill(move || Color::hex(state.accent_color.get()))
-                .frame(0.0, 50.0)
-                .grow_w()
-                .overlay(
-                    label(move || {
-                        if state.loading.get() || logging_in.get() {
-                            "Вход в систему…"
-                        } else if step.get() == 0 {
-                            "Продолжить"
-                        } else {
-                            "Войти"
-                        }
-                    })
-                    .font(Font::Headline)
-                    .bold()
-                    .color(Color::WHITE)
-                    .align(TextAlign::Center),
-                )
-                .on_tap(move || {
-                    if state.loading.get() { return; }
-                    let u = username.get_untracked();
-                    let p = password.get_untracked();
-                    let r = remember.get_untracked();
-
-                    if step.get() == 0 {
-                        if u.trim().is_empty() {
-                            error_local.set("Введите имя пользователя".into());
-                        } else {
-                            error_local.set(String::new());
-                            crate::shared::haptics::tick();
-                            with_animation(AnimSpec::ease_out(250), move || step.set(1));
-                        }
-                    } else {
-                        if p.is_empty() {
-                            error_local.set("Введите пароль".into());
-                            return;
-                        }
-                        error_local.set(String::new());
-                        logging_in.set(true);
-                        crate::shared::haptics::pop();
-                        features::auth::login(state, &u, &p, r);
-                    }
-                })
-                .id("login-btn")
-                .padding(Insets { top: 8.0, leading: 20.0, bottom: 28.0, trailing: 20.0 }),
-
-            spacer().height(16.0),
+            spacer().height(24.0),
         ))
         .align(HAlign::Center)
-        .grow()
-    )
-    .on_tap(move || {
-        crate::shared::keyboard::dismiss();
-    })
+        )
+        .on_tap(move || {
+            crate::shared::keyboard::dismiss();
+        })
+        .grow(),
+
+        // Liquid glass prominent action button at the bottom, lifts with keyboard
+        capsule()
+            .fill(move || Color::hex(state.accent_color.get()))
+            .frame(0.0, 50.0)
+            .grow_w()
+            .overlay(
+                label(move || {
+                    if state.loading.get() || logging_in.get() {
+                        "Вход в систему…"
+                    } else if step.get() == 0 {
+                        "Продолжить"
+                    } else {
+                        "Войти"
+                    }
+                })
+                .font(Font::Headline)
+                .bold()
+                .color(Color::WHITE)
+                .align(TextAlign::Center),
+            )
+            .on_tap(move || {
+                if state.loading.get() { return; }
+                let u = username.get_untracked();
+                let p = password.get_untracked();
+                let r = remember.get_untracked();
+
+                if step.get() == 0 {
+                    if u.trim().is_empty() {
+                        error_local.set("Введите имя пользователя".into());
+                    } else {
+                        error_local.set(String::new());
+                        crate::shared::haptics::tick();
+                        with_animation(AnimSpec::ease_out(250), move || step.set(1));
+                    }
+                } else {
+                    if p.is_empty() {
+                        error_local.set("Введите пароль".into());
+                        return;
+                    }
+                    error_local.set(String::new());
+                    logging_in.set(true);
+                    crate::shared::haptics::pop();
+                    features::auth::login(state, &u, &p, r);
+                }
+            })
+            .id("login-btn")
+            .padding(Insets { top: 8.0, leading: 20.0, bottom: 28.0, trailing: 20.0 })
+            .translation(0.0, move || -kb_h.get())
+            .animation(AnimSpec::ease_out(250)),
+    ))
     .grow()
 }

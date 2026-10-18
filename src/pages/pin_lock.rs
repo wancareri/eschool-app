@@ -11,7 +11,7 @@ pub fn render(state: AppState) -> impl Piece {
 
 pub fn render_unlock(state: AppState) -> impl Piece {
     column((
-        spacer().height(24.0),
+        spacer().height(8.0),
 
         column((
             label(move || res::str::app_title().format())
@@ -93,7 +93,7 @@ pub fn render_setup(state: AppState) -> impl Piece {
     let error_msg = Signal::new(String::new());
 
     column((
-        spacer().height(24.0),
+        spacer().height(8.0),
 
         column((
             label("Установка PIN-кода")
@@ -348,21 +348,14 @@ fn numpad_row(state: AppState, keys: &[&str]) -> impl Piece {
 fn numpad_key(state: AppState, key: &str) -> impl Piece {
     let key_str = key.to_string();
     let key_clone = key_str.clone();
+    let key_clone2 = key_str.clone();
     let s = state;
 
     if key_str.is_empty() {
-        spacer().frame(74.0, 74.0).any()
+        spacer().frame(72.0, 72.0).any()
     } else if key_str == "⌫" {
-        circle()
-            .fill(Color::rgba(0.0, 0.0, 0.0, 0.0))
-            .frame(74.0, 74.0)
-            .overlay(
-                label("⌫")
-                    .font(Font::System(24.0))
-                    .bold()
-                    .align(TextAlign::Center),
-            )
-            .on_tap(move || {
+        button("⌫")
+            .action(move || {
                 crate::shared::haptics::tick();
                 let mut input = s.pin_input.get();
                 if input.len() >= PIN_LENGTH {
@@ -375,24 +368,11 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                 }
             })
             .id("pin-backspace")
+            .frame(72.0, 72.0)
             .any()
     } else {
-        circle()
-            .fill(move || {
-                if day::dark_mode() {
-                    Color::rgba(1.0, 1.0, 1.0, 0.12)
-                } else {
-                    Color::rgba(0.0, 0.0, 0.0, 0.06)
-                }
-            })
-            .frame(74.0, 74.0)
-            .overlay(
-                label(key_clone.clone())
-                    .font(Font::System(34.0))
-                    .bold()
-                    .align(TextAlign::Center),
-            )
-            .on_tap(move || {
+        button(move || key_clone2.clone())
+            .action(move || {
                 crate::shared::haptics::tick();
                 let mut input = s.pin_input.get();
                 if input.len() >= PIN_LENGTH {
@@ -429,6 +409,7 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                 }
             })
             .id(format!("pin-key-{}", key_str))
+            .frame(72.0, 72.0)
             .any()
     }
 }
@@ -477,20 +458,13 @@ fn setup_numpad_key(
 ) -> impl Piece {
     let key_str = key.to_string();
     let key_clone = key_str.clone();
+    let key_clone2 = key_str.clone();
 
     if key_str.is_empty() {
-        spacer().frame(74.0, 74.0).any()
+        spacer().frame(72.0, 72.0).any()
     } else if key_str == "⌫" {
-        circle()
-            .fill(Color::rgba(0.0, 0.0, 0.0, 0.0))
-            .frame(74.0, 74.0)
-            .overlay(
-                label("⌫")
-                    .font(Font::System(24.0))
-                    .bold()
-                    .align(TextAlign::Center),
-            )
-            .on_tap(move || {
+        button("⌫")
+            .action(move || {
                 crate::shared::haptics::tick();
                 let mut v = input.get();
                 if !v.is_empty() {
@@ -500,24 +474,11 @@ fn setup_numpad_key(
                 }
             })
             .id("pin-setup-backspace")
+            .frame(72.0, 72.0)
             .any()
     } else {
-        circle()
-            .fill(move || {
-                if day::dark_mode() {
-                    Color::rgba(1.0, 1.0, 1.0, 0.12)
-                } else {
-                    Color::rgba(0.0, 0.0, 0.0, 0.06)
-                }
-            })
-            .frame(74.0, 74.0)
-            .overlay(
-                label(key_clone.clone())
-                    .font(Font::System(34.0))
-                    .bold()
-                    .align(TextAlign::Center),
-            )
-            .on_tap(move || {
+        button(move || key_clone2.clone())
+            .action(move || {
                 crate::shared::haptics::tick();
                 let mut v = input.get();
                 if v.len() >= PIN_LENGTH {
