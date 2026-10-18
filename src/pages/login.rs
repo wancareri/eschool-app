@@ -92,7 +92,6 @@ fn auth_form(state: AppState) -> impl Piece {
     let password = Signal::new(String::new());
     let remember = Signal::new(true);
     let error_local = Signal::new(String::new());
-    let logging_in = Signal::new(false);
     let kb_h = crate::shared::keyboard::keyboard_height_signal();
 
     column((
@@ -188,6 +187,7 @@ fn auth_form(state: AppState) -> impl Piece {
                                         error_local.set("Введите имя пользователя".into());
                                     } else {
                                         error_local.set(String::new());
+                                        state.error_msg.set(String::new());
                                         crate::shared::haptics::tick();
                                         with_animation(AnimSpec::ease_out(250), move || step.set(1));
                                     }
@@ -238,7 +238,7 @@ fn auth_form(state: AppState) -> impl Piece {
                                     return;
                                 }
                                 error_local.set(String::new());
-                                logging_in.set(true);
+                                state.error_msg.set(String::new());
                                 crate::shared::haptics::pop();
                                 features::auth::login(state, &u, &p, r);
                             }),
@@ -285,7 +285,7 @@ fn auth_form(state: AppState) -> impl Piece {
             .grow_w()
             .overlay(
                 label(move || {
-                    if state.loading.get() || logging_in.get() {
+                    if state.loading.get() {
                         "Вход в систему…"
                     } else if step.get() == 0 {
                         "Продолжить"
@@ -309,6 +309,7 @@ fn auth_form(state: AppState) -> impl Piece {
                         error_local.set("Введите имя пользователя".into());
                     } else {
                         error_local.set(String::new());
+                        state.error_msg.set(String::new());
                         crate::shared::haptics::tick();
                         with_animation(AnimSpec::ease_out(250), move || step.set(1));
                     }
@@ -318,7 +319,7 @@ fn auth_form(state: AppState) -> impl Piece {
                         return;
                     }
                     error_local.set(String::new());
-                    logging_in.set(true);
+                    state.error_msg.set(String::new());
                     crate::shared::haptics::pop();
                     features::auth::login(state, &u, &p, r);
                 }

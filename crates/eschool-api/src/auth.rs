@@ -15,7 +15,9 @@ pub struct Token {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct AuthResponse {
+    #[serde(alias = "access_token")]
     pub auth_token: String,
+    #[serde(default)]
     pub refresh_token: String,
 }
 
@@ -87,10 +89,10 @@ impl Auth {
             Some(loc) => loc.to_string(),
             None => {
                 let body = resp3.text().unwrap_or_default();
-                return Err(format!(
-                    "Step 3: no Location. Body: {}",
-                    &body[..body.len().min(300)]
-                ));
+                if let Some(err) = extract_login_error(&body) {
+                    return Err(err);
+                }
+                return Err("Неверное имя пользователя или пароль".to_string());
             }
         };
         let callback_url = decode_entities(&callback_raw);
@@ -158,12 +160,18 @@ impl Auth {
 
         let profile_id = login_data["profile_id"]
             .as_str()
+            .map(|s| s.to_string())
+            .or_else(|| login_data["profile_id"].as_i64().map(|n| n.to_string()))
             .ok_or("Step 6: no profile_id")?;
         let school_id = login_data["schools"]
             .as_array()
             .and_then(|s| s.first())
             .and_then(|s| s.get("id"))
-            .and_then(|id| id.as_str())
+            .and_then(|id| {
+                id.as_str()
+                    .map(|s| s.to_string())
+                    .or_else(|| id.as_i64().map(|n| n.to_string()))
+            })
             .ok_or("Step 6: no school_id")?;
         let kind = login_data["kinds"]
             .as_array()
@@ -177,12 +185,13 @@ impl Auth {
         let token_payload = format!("{}:{}:{}", profile_id, school_id, kind);
         let token_b64 =
             base64::engine::general_purpose::STANDARD.encode(token_payload.as_bytes());
+        let token_encoded = urlencoding::encode(&token_b64);
         let resp7 = client
             .get(format!(
                 "{}/{}?token={}",
                 blocking::BASE_URL,
                 endpoints::AUTH_LOGIN.trim_start_matches('/'),
-                token_b64
+                token_encoded
             ))
             .send()
             .map_err(|e| format!("Step 7: {e}"))?;
@@ -295,4 +304,71 @@ fn decode_entities(s: &str) -> String {
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
+}
+
+fn decode_html_entities(s: &str) -> String {
+    let mut out = decode_entities(s);
+    if let Ok(hex_re) = regex::Regex::new(r"&#x([0-9a-fA-F]+);") {
+        out = hex_re
+            .replace_all(&out, |caps: &regex::Captures| {
+                if let Ok(code) = u32::from_str_radix(&caps[1], 16) {
+                    if let Some(ch) = char::from_u32(code) {
+                        return ch.to_string();
+                    }
+                }
+                caps[0].to_string()
+            })
+            .to_string();
+    }
+    if let Ok(dec_re) = regex::Regex::new(r"&#([0-9]+);") {
+        out = dec_re
+            .replace_all(&out, |caps: &regex::Captures| {
+                if let Ok(code) = caps[1].parse::<u32>() {
+                    if let Some(ch) = char::from_u32(code) {
+                        return ch.to_string();
+                    }
+                }
+                caps[0].to_string()
+            })
+            .to_string();
+    }
+    out
+}
+
+fn extract_login_error(html: &str) -> Option<String> {
+    let re = regex::Regex::new(
+        r#"(?s)<div[^>]*class="[^"]*(?:validation-summary-errors|alert-danger)[^"]*"[^>]*>.*?<li>([^<]+)</li>"#,
+    ).ok()?;
+    let caps = re.captures(html)?;
+    let raw = caps.get(1)?.as_str().trim();
+    let decoded = decode_html_entities(raw);
+    if !decoded.is_empty() {
+        Some(decoded)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_html_entities() {
+        let input = "&#x41D;&#x435;&#x432;&#x435;&#x440;&#x43D;&#x43E;&#x435; &amp; test";
+        assert_eq!(decode_html_entities(input), "Неверное & test");
+    }
+
+    #[test]
+    fn test_extract_login_error() {
+        let html = r#"
+            <div class="alert alert-danger">
+            <div class="danger validation-summary-errors" data-valmsg-summary="true"><ul><li>&#x41D;&#x435;&#x432;&#x435;&#x440;&#x43D;&#x43E;&#x435; &#x438;&#x43C;&#x44F; &#x43F;&#x43E;&#x43B;&#x44C;&#x437;&#x43E;&#x432;&#x430;&#x442;&#x435;&#x43B;&#x44F; &#x438;&#x43B;&#x438; &#x43F;&#x430;&#x440;&#x43E;&#x43B;&#x44C;</li>
+            </ul></div></div>
+        "#;
+        assert_eq!(
+            extract_login_error(html),
+            Some("Неверное имя пользователя или пароль".into())
+        );
+    }
 }
