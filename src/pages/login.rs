@@ -7,17 +7,16 @@ use day::prelude::*;
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
 
-    column((
+    zstack((
         when(
             move || state.is_authenticated.get(),
-            move || profile_view(state),
+            move || profile_view(state).animation(AnimSpec::ease_out(350)).any(),
         ),
         when(
             move || !state.is_authenticated.get(),
-            move || auth_form(state),
+            move || auth_form(state).animation(AnimSpec::ease_out(350)).any(),
         ),
     ))
-    .spacing(0.0)
     .grow()
 }
 
@@ -88,171 +87,243 @@ fn profile_view(state: AppState) -> impl Piece {
 }
 
 fn auth_form(state: AppState) -> impl Piece {
+    let step = Signal::new(0u8); // 0 = username, 1 = password
     let username = Signal::new(String::new());
     let password = Signal::new(String::new());
-    let remember = Signal::new(true); // Default to true like Telegram
+    let remember = Signal::new(true);
     let error_local = Signal::new(String::new());
     let logging_in = Signal::new(false);
 
-    scroll(column((
-        spacer().height(24.0),
-
-        // Telegram-style circular app icon
-        circle()
-            .fill(move || Color::hex(state.accent_color.get()).with_alpha(0.15))
-            .frame(80.0, 80.0)
-            .overlay(
-                label("🎓")
-                    .font(Font::System(38.0))
-                    .align(TextAlign::Center),
-            ),
-
-        spacer().height(16.0),
-
-        // Title and welcome subtitle
-        label("Электронный дневник")
-            .font(Font::Title)
-            .bold()
-            .align(TextAlign::Center),
-
-        label("Войдите с помощью школьного логина для доступа к расписанию и оценкам")
-            .font(Font::Subheadline)
-            .secondary()
-            .align(TextAlign::Center)
-            .padding(Insets { top: 6.0, leading: 32.0, bottom: 24.0, trailing: 32.0 }),
-
-        // Input card (Telegram-style grouped fields)
+    scroll(
         column((
-            // Username row
-            row((
-                label("👤")
-                    .font(Font::Callout)
-                    .frame(24.0, 24.0),
-                text_field(username)
-                    .placeholder("Имя пользователя или логин")
-                    .id("username-field")
-                    .grow(),
-            ))
-            .spacing(12.0)
-            .align(VAlign::Center)
-            .padding(Insets { top: 12.0, leading: 14.0, bottom: 12.0, trailing: 14.0 }),
+            spacer().height(36.0),
 
-            // Divider between fields
-            spacer()
-                .frame(0.0, 0.5)
-                .background(move || {
-                    if day::dark_mode() {
-                        Color::rgba(1.0, 1.0, 1.0, 0.08)
-                    } else {
-                        Color::rgba(0.0, 0.0, 0.0, 0.08)
-                    }
-                })
-                .padding(Insets { top: 0.0, leading: 48.0, bottom: 0.0, trailing: 0.0 })
-                .grow_w(),
+            // Telegram-style greeting badge
+            circle()
+                .fill(move || Color::hex(state.accent_color.get()).with_alpha(0.14))
+                .frame(76.0, 76.0)
+                .overlay(
+                    label("👋")
+                        .font(Font::System(38.0))
+                        .align(TextAlign::Center),
+                ),
 
-            // Password row
-            row((
-                label("🔒")
-                    .font(Font::Callout)
-                    .frame(24.0, 24.0),
-                text_field(password)
-                    .placeholder("Пароль")
-                    .secure()
-                    .id("password-field")
-                    .grow(),
-            ))
-            .spacing(12.0)
-            .align(VAlign::Center)
-            .padding(Insets { top: 12.0, leading: 14.0, bottom: 12.0, trailing: 14.0 }),
-        ))
-        .background(move || {
-            if day::dark_mode() {
-                Color::rgba(1.0, 1.0, 1.0, 0.06)
-            } else {
-                Color::rgba(0.0, 0.0, 0.0, 0.04)
-            }
-        })
-        .corner_radius(16.0)
-        .padding(Insets { top: 2.0, leading: 0.0, bottom: 2.0, trailing: 0.0 })
-        .padding(Insets { top: 0.0, leading: 20.0, bottom: 14.0, trailing: 20.0 }),
+            spacer().height(16.0),
 
-        // Remember me toggle row
-        row((
-            label("Сохранить вход на этом устройстве")
-                .font(Font::Subheadline)
-                .grow(),
-            toggle(remember),
-        ))
-        .align(VAlign::Center)
-        .padding(Insets { top: 0.0, leading: 24.0, bottom: 18.0, trailing: 24.0 }),
+            // Greeting header — adapts between Step 0 and Step 1
+            when(
+                move || step.get() == 0,
+                || column((
+                    label("Вход в аккаунт")
+                        .font(Font::Title)
+                        .bold()
+                        .align(TextAlign::Center),
+                    label("Введите логин или email вашей школы для доступа к дневнику")
+                        .font(Font::Subheadline)
+                        .secondary()
+                        .align(TextAlign::Center)
+                        .padding(Insets { top: 6.0, leading: 32.0, bottom: 20.0, trailing: 32.0 }),
+                )),
+            )
+            .otherwise(move || {
+                let u = username.get();
+                column((
+                    label("Введите пароль")
+                        .font(Font::Title)
+                        .bold()
+                        .align(TextAlign::Center),
+                    label(move || {
+                        if u.trim().is_empty() {
+                            "Введите пароль для входа".into()
+                        } else {
+                            format!("Аккаунт: {}", u.trim())
+                        }
+                    })
+                    .font(Font::Subheadline)
+                    .color(move || Color::hex(state.accent_color.get()))
+                    .align(TextAlign::Center)
+                    .padding(Insets { top: 6.0, leading: 32.0, bottom: 20.0, trailing: 32.0 }),
+                ))
+            }),
 
-        // Error message card
-        when(
-            move || {
-                let local_err = error_local.get();
-                let state_err = state.error_msg.get();
-                let is_loading = state.loading.get();
-                (!local_err.is_empty() || !state_err.is_empty()) && !is_loading
-            },
-            move || {
-                let local_err = error_local.get();
-                let state_err = state.error_msg.get();
-                let msg = if !local_err.is_empty() { local_err } else { state_err };
-                row((
-                    label("⚠️").font(Font::Callout),
+            // Error message card
+            when(
+                move || {
+                    let local_err = error_local.get();
+                    let state_err = state.error_msg.get();
+                    let is_loading = state.loading.get();
+                    (!local_err.is_empty() || !state_err.is_empty()) && !is_loading
+                },
+                move || {
+                    let local_err = error_local.get();
+                    let state_err = state.error_msg.get();
+                    let msg = if !local_err.is_empty() { local_err } else { state_err };
                     label(msg)
                         .font(Font::Callout)
                         .color(colors::ERROR)
-                        .grow(),
+                        .align(TextAlign::Center)
+                        .padding(Insets { top: 8.0, leading: 14.0, bottom: 8.0, trailing: 14.0 })
+                        .background(colors::ERROR.with_alpha(0.12))
+                        .corner_radius(12.0)
+                        .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
+                },
+            ),
+
+            // Step 0: Username entry card
+            when(
+                move || step.get() == 0,
+                move || {
+                    column((
+                        column((
+                            label("ЛОГИН ИЛИ EMAIL")
+                                .font(Font::Caption2)
+                                .bold()
+                                .secondary(),
+                            text_field(username)
+                                .on_submit(move || {
+                                    let u = username.get_untracked();
+                                    if u.trim().is_empty() {
+                                        error_local.set("Введите имя пользователя".into());
+                                    } else {
+                                        error_local.set(String::new());
+                                        crate::shared::haptics::tick();
+                                        with_animation(AnimSpec::ease_out(250), move || step.set(1));
+                                    }
+                                }),
+                        ))
+                        .spacing(6.0)
+                        .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
+                        .background(move || {
+                            if day::dark_mode() {
+                                Color::rgba(1.0, 1.0, 1.0, 0.07)
+                            } else {
+                                Color::rgba(0.0, 0.0, 0.0, 0.04)
+                            }
+                        })
+                        .corner_radius(16.0)
+                        .padding(Insets { top: 0.0, leading: 20.0, bottom: 16.0, trailing: 20.0 }),
+
+                        // Remember session toggle
+                        row((
+                            label("Сохранить сессию на устройстве")
+                                .font(Font::Subheadline)
+                                .grow(),
+                            toggle(remember),
+                        ))
+                        .align(VAlign::Center)
+                        .padding(Insets { top: 0.0, leading: 24.0, bottom: 20.0, trailing: 24.0 }),
+                    ))
+                },
+            )
+            // Step 1: Password entry card
+            .otherwise(move || {
+                column((
+                    column((
+                        label("ПАРОЛЬ")
+                            .font(Font::Caption2)
+                            .bold()
+                            .secondary(),
+                        text_field(password)
+                            .secure()
+                            .id("password-field")
+                            .on_submit(move || {
+                                if state.loading.get() { return; }
+                                let u = username.get_untracked();
+                                let p = password.get_untracked();
+                                let r = remember.get_untracked();
+                                if p.is_empty() {
+                                    error_local.set("Введите пароль".into());
+                                    return;
+                                }
+                                error_local.set(String::new());
+                                logging_in.set(true);
+                                crate::shared::haptics::pop();
+                                features::auth::login(state, &u, &p, r);
+                            }),
+                    ))
+                    .spacing(6.0)
+                    .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
+                    .background(move || {
+                        if day::dark_mode() {
+                            Color::rgba(1.0, 1.0, 1.0, 0.07)
+                        } else {
+                            Color::rgba(0.0, 0.0, 0.0, 0.04)
+                        }
+                    })
+                    .corner_radius(16.0)
+                    .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
+
+                    // Back button to change login
+                    row((
+                        button("← Изменить логин")
+                            .action(move || {
+                                crate::shared::haptics::tick();
+                                error_local.set(String::new());
+                                with_animation(AnimSpec::ease_out(250), move || step.set(0));
+                            }),
+                        spacer().grow(),
+                    ))
+                    .padding(Insets { top: 0.0, leading: 24.0, bottom: 20.0, trailing: 24.0 }),
                 ))
-                .spacing(8.0)
-                .align(VAlign::Center)
-                .padding(Insets { top: 10.0, leading: 14.0, bottom: 10.0, trailing: 14.0 })
-                .background(colors::ERROR.with_alpha(0.12))
-                .corner_radius(12.0)
-                .padding(Insets { top: 0.0, leading: 20.0, bottom: 16.0, trailing: 20.0 })
-            },
-        ),
+            }),
 
-        // Loading message
-        when(
-            move || state.loading.get(),
-            || label("Выполняется вход…")
-                .font(Font::Subheadline)
-                .secondary()
-                .align(TextAlign::Center)
-                .padding(Insets { top: 0.0, leading: 20.0, bottom: 14.0, trailing: 20.0 }),
-        ),
+            spacer().grow(),
 
-        // Primary Action Button (Telegram-style prominent rounded button)
-        button(move || {
-            if logging_in.get() || state.loading.get() { "Вход…" } else { "Войти" }
-        })
-        .prominent()
-        .action(move || {
-            if state.loading.get() { return; }
-            let u = username.get_untracked();
-            let p = password.get_untracked();
-            let r = remember.get_untracked();
-            if u.trim().is_empty() {
-                error_local.set("Введите имя пользователя".into());
-                return;
-            }
-            if p.is_empty() {
-                error_local.set("Введите пароль".into());
-                return;
-            }
-            error_local.set(String::new());
-            logging_in.set(true);
-            features::auth::login(state, &u, &p, r);
-        })
-        .id("login-btn")
+            // Liquid glass prominent action button at the bottom
+            capsule()
+                .fill(move || Color::hex(state.accent_color.get()))
+                .frame(0.0, 50.0)
+                .grow_w()
+                .overlay(
+                    label(move || {
+                        if state.loading.get() || logging_in.get() {
+                            "Вход в систему…"
+                        } else if step.get() == 0 {
+                            "Продолжить"
+                        } else {
+                            "Войти"
+                        }
+                    })
+                    .font(Font::Headline)
+                    .bold()
+                    .color(Color::WHITE)
+                    .align(TextAlign::Center),
+                )
+                .on_tap(move || {
+                    if state.loading.get() { return; }
+                    let u = username.get_untracked();
+                    let p = password.get_untracked();
+                    let r = remember.get_untracked();
+
+                    if step.get() == 0 {
+                        if u.trim().is_empty() {
+                            error_local.set("Введите имя пользователя".into());
+                        } else {
+                            error_local.set(String::new());
+                            crate::shared::haptics::tick();
+                            with_animation(AnimSpec::ease_out(250), move || step.set(1));
+                        }
+                    } else {
+                        if p.is_empty() {
+                            error_local.set("Введите пароль".into());
+                            return;
+                        }
+                        error_local.set(String::new());
+                        logging_in.set(true);
+                        crate::shared::haptics::pop();
+                        features::auth::login(state, &u, &p, r);
+                    }
+                })
+                .id("login-btn")
+                .padding(Insets { top: 8.0, leading: 20.0, bottom: 28.0, trailing: 20.0 }),
+
+            spacer().height(16.0),
+        ))
+        .align(HAlign::Center)
         .grow()
-        .padding(Insets { top: 0.0, leading: 20.0, bottom: 24.0, trailing: 20.0 }),
-
-        spacer().height(20.0),
-    ))
-    .align(HAlign::Center)
-    .grow())
+    )
+    .on_tap(move || {
+        crate::shared::keyboard::dismiss();
+    })
     .grow()
 }

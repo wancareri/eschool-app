@@ -11,11 +11,12 @@ pub fn render(state: AppState) -> impl Piece {
 
 pub fn render_unlock(state: AppState) -> impl Piece {
     column((
-        spacer().grow(),
+        spacer().height(24.0),
 
         column((
             label(move || res::str::app_title().format())
                 .font(Font::LargeTitle)
+                .bold()
                 .align(TextAlign::Center),
 
             when(
@@ -63,7 +64,7 @@ pub fn render_unlock(state: AppState) -> impl Piece {
                 dot(3, s),
             ))
             .spacing(24.0)
-            .padding(Insets { top: 28.0, leading: 0.0, bottom: 12.0, trailing: 0.0 })
+            .padding(Insets { top: 20.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
             .align(VAlign::Center)
             .translation(move || shake.get(), 0.0)
         },
@@ -76,7 +77,7 @@ pub fn render_unlock(state: AppState) -> impl Piece {
     .spacing(8.0)
     .align(HAlign::Center)
     .padding(Insets {
-        top: 24.0,
+        top: 16.0,
         leading: 24.0,
         bottom: 24.0,
         trailing: 24.0,
@@ -92,7 +93,7 @@ pub fn render_setup(state: AppState) -> impl Piece {
     let error_msg = Signal::new(String::new());
 
     column((
-        spacer().grow(),
+        spacer().height(24.0),
 
         column((
             label("Установка PIN-кода")
@@ -139,7 +140,7 @@ pub fn render_setup(state: AppState) -> impl Piece {
                 setup_dot(3, state, inp, err),
             ))
             .spacing(24.0)
-            .padding(Insets { top: 28.0, leading: 0.0, bottom: 12.0, trailing: 0.0 })
+            .padding(Insets { top: 20.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
             .align(VAlign::Center)
             .translation(move || shake.get(), 0.0)
         },
@@ -154,14 +155,14 @@ pub fn render_setup(state: AppState) -> impl Piece {
                 state.pin_setup_active.set(false);
             })
             .id("pin-setup-cancel")
-            .padding(Insets { top: 16.0, leading: 24.0, bottom: 0.0, trailing: 24.0 }),
+            .padding(Insets { top: 12.0, leading: 24.0, bottom: 0.0, trailing: 24.0 }),
 
         spacer().grow(),
     ))
     .spacing(8.0)
     .align(HAlign::Center)
     .padding(Insets {
-        top: 24.0,
+        top: 16.0,
         leading: 24.0,
         bottom: 24.0,
         trailing: 24.0,
@@ -347,14 +348,21 @@ fn numpad_row(state: AppState, keys: &[&str]) -> impl Piece {
 fn numpad_key(state: AppState, key: &str) -> impl Piece {
     let key_str = key.to_string();
     let key_clone = key_str.clone();
-    let key_clone2 = key_str.clone();
     let s = state;
 
     if key_str.is_empty() {
-        spacer().frame(72.0, 72.0).any()
+        spacer().frame(74.0, 74.0).any()
     } else if key_str == "⌫" {
-        button("⌫")
-            .action(move || {
+        circle()
+            .fill(Color::rgba(0.0, 0.0, 0.0, 0.0))
+            .frame(74.0, 74.0)
+            .overlay(
+                label("⌫")
+                    .font(Font::System(24.0))
+                    .bold()
+                    .align(TextAlign::Center),
+            )
+            .on_tap(move || {
                 crate::shared::haptics::tick();
                 let mut input = s.pin_input.get();
                 if input.len() >= PIN_LENGTH {
@@ -367,11 +375,24 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                 }
             })
             .id("pin-backspace")
-            .frame(72.0, 72.0)
             .any()
     } else {
-        button(move || key_clone2.clone())
-            .action(move || {
+        circle()
+            .fill(move || {
+                if day::dark_mode() {
+                    Color::rgba(1.0, 1.0, 1.0, 0.12)
+                } else {
+                    Color::rgba(0.0, 0.0, 0.0, 0.06)
+                }
+            })
+            .frame(74.0, 74.0)
+            .overlay(
+                label(key_clone.clone())
+                    .font(Font::System(34.0))
+                    .bold()
+                    .align(TextAlign::Center),
+            )
+            .on_tap(move || {
                 crate::shared::haptics::tick();
                 let mut input = s.pin_input.get();
                 if input.len() >= PIN_LENGTH {
@@ -408,7 +429,6 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                 }
             })
             .id(format!("pin-key-{}", key_str))
-            .frame(72.0, 72.0)
             .any()
     }
 }
@@ -457,13 +477,20 @@ fn setup_numpad_key(
 ) -> impl Piece {
     let key_str = key.to_string();
     let key_clone = key_str.clone();
-    let key_clone2 = key_str.clone();
 
     if key_str.is_empty() {
-        spacer().frame(72.0, 72.0).any()
+        spacer().frame(74.0, 74.0).any()
     } else if key_str == "⌫" {
-        button("⌫")
-            .action(move || {
+        circle()
+            .fill(Color::rgba(0.0, 0.0, 0.0, 0.0))
+            .frame(74.0, 74.0)
+            .overlay(
+                label("⌫")
+                    .font(Font::System(24.0))
+                    .bold()
+                    .align(TextAlign::Center),
+            )
+            .on_tap(move || {
                 crate::shared::haptics::tick();
                 let mut v = input.get();
                 if !v.is_empty() {
@@ -473,11 +500,24 @@ fn setup_numpad_key(
                 }
             })
             .id("pin-setup-backspace")
-            .frame(72.0, 72.0)
             .any()
     } else {
-        button(move || key_clone2.clone())
-            .action(move || {
+        circle()
+            .fill(move || {
+                if day::dark_mode() {
+                    Color::rgba(1.0, 1.0, 1.0, 0.12)
+                } else {
+                    Color::rgba(0.0, 0.0, 0.0, 0.06)
+                }
+            })
+            .frame(74.0, 74.0)
+            .overlay(
+                label(key_clone.clone())
+                    .font(Font::System(34.0))
+                    .bold()
+                    .align(TextAlign::Center),
+            )
+            .on_tap(move || {
                 crate::shared::haptics::tick();
                 let mut v = input.get();
                 if v.len() >= PIN_LENGTH {

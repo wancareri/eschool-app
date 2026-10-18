@@ -84,13 +84,14 @@ pub fn render() -> impl Piece {
             },
         );
     }
-    // When toggle turns OFF -> delete PIN
+    // When toggle turns OFF -> delete PIN and disable biometric
     day::reactive::watch(
         move || pin_enabled.get(),
         move |on, old| {
             if old == Some(&true) && !*on {
                 crate::shared::pin::delete_pin();
-                crate::shared::nslog::nslog("[PIN] Disabled");
+                crate::shared::biometric::set_enabled(false);
+                crate::shared::nslog::nslog("[PIN] Disabled, Face ID also disabled");
             }
         },
     );
@@ -107,6 +108,7 @@ pub fn render() -> impl Piece {
         );
     }
 
+    let strip_pos = Signal::new(current_tab.get() as f64);
     let rd = restore_done.clone();
     zstack((
         scroll(column((
@@ -118,13 +120,8 @@ pub fn render() -> impl Piece {
             .spacing(6.0)
             .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
 
-            // Native segmented control
-            picker(
-                vec!["Основные", "Вид", "Защита", "Dev"],
-                current_tab,
-            )
-            .segmented()
-            .padding(Insets { top: 4.0, leading: 20.0, bottom: 14.0, trailing: 20.0 }),
+            // Liquid glass sliding tab strip that tracks finger swipes
+            tab_strip(state, current_tab, strip_pos, tap_target),
 
             // Four-page native pager
             scroll(row((
@@ -138,7 +135,9 @@ pub fn render() -> impl Piece {
             .scroll_target(tap_target)
             .scroll_jump(initial_target)
             .on_scroll(move |p| {
-                let idx = ((p.x / pager_w).round() as usize).min(3);
+                let pos = (p.x / pager_w).clamp(0.0, 3.0);
+                strip_pos.set(pos);
+                let idx = (pos.round() as usize).min(3);
                 let settled = (p.x - idx as f64 * pager_w).abs() < 0.5;
                 if let Some((want, tries)) = restore.get() {
                     if settled {
@@ -160,7 +159,7 @@ pub fn render() -> impl Piece {
                     return;
                 }
                 last_scroll_idx.set(Some(idx));
-                if settled && idx != current_tab.get() {
+                if idx != current_tab.get() {
                     current_tab.set(idx);
                 }
             })
@@ -174,6 +173,98 @@ pub fn render() -> impl Piece {
     ))
     .align(Alignment::TopLeading)
     .grow()
+}
+
+fn tab_strip(
+    state: AppState,
+    current_tab: Signal<usize>,
+    strip_pos: Signal<f64>,
+    tap_target: Signal<Option<ScrollTarget>>,
+) -> impl Piece {
+    let pager_w = crate::pages::diary::get_screen_width();
+    let track_w = pager_w - 40.0;
+    let slot_w = track_w / 4.0;
+    let pill_w = slot_w - 4.0;
+
+    let tabs = ["Основные", "Вид", "Защита", "Dev"];
+
+    zstack((
+        // Liquid glass background track
+        capsule()
+            .fill(move || {
+                if day::dark_mode() {
+                    Color::rgba(1.0, 1.0, 1.0, 0.08)
+                } else {
+                    Color::rgba(0.0, 0.0, 0.0, 0.05)
+                }
+            })
+            .frame(track_w, 36.0),
+
+        // Sliding liquid glass pill
+        capsule()
+            .fill(move || Color::hex(state.accent_color.get()))
+            .frame(pill_w, 28.0)
+            .translation(
+                move || {
+                    let pos = strip_pos.get().clamp(0.0, 3.0);
+                    slot_w * (pos - 1.5)
+                },
+                0.0,
+            ),
+
+        // 4 Tab buttons
+        row((
+            tab_button(0, tabs[0], current_tab, strip_pos, tap_target, pager_w, slot_w),
+            tab_button(1, tabs[1], current_tab, strip_pos, tap_target, pager_w, slot_w),
+            tab_button(2, tabs[2], current_tab, strip_pos, tap_target, pager_w, slot_w),
+            tab_button(3, tabs[3], current_tab, strip_pos, tap_target, pager_w, slot_w),
+        ))
+        .spacing(0.0)
+        .align(VAlign::Center)
+        .frame(track_w, 36.0),
+    ))
+    .frame(track_w, 36.0)
+    .padding(Insets {
+        top: 4.0,
+        leading: 20.0,
+        bottom: 14.0,
+        trailing: 20.0,
+    })
+}
+
+fn tab_button(
+    idx: usize,
+    title: &'static str,
+    current_tab: Signal<usize>,
+    strip_pos: Signal<f64>,
+    tap_target: Signal<Option<ScrollTarget>>,
+    pager_w: f64,
+    slot_w: f64,
+) -> impl Piece {
+    let is_active = move || (strip_pos.get() - idx as f64).abs() < 0.5;
+    label(title)
+        .font(Font::Subheadline)
+        .bold()
+        .align(TextAlign::Center)
+        .color(move || {
+            if is_active() {
+                Color::WHITE
+            } else {
+                Color::hex(0x8E8E93)
+            }
+        })
+        .frame(slot_w, 36.0)
+        .on_tap(move || {
+            crate::shared::haptics::tick();
+            current_tab.set(idx);
+            with_animation(AnimSpec::ease_out(250), move || {
+                strip_pos.set(idx as f64);
+            });
+            tap_target.set(Some(ScrollTarget::Offset(Point::new(
+                pager_w * idx as f64,
+                0.0,
+            ))));
+        })
 }
 
 fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piece {
@@ -195,7 +286,7 @@ fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piec
         .any(),
         2 => column((
             pin_section(state, pin_enabled),
-            biometric_section(state),
+            biometric_section(state, pin_enabled),
         ))
         .spacing(0.0)
         .grow()
@@ -343,10 +434,21 @@ fn pin_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
-fn biometric_section(_state: AppState) -> impl Piece {
+fn biometric_section(_state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
     let available = biometric::is_available();
     let biometric_on = Signal::new(biometric::is_enabled());
     let show_alert = Signal::new(false);
+
+    // When PIN is disabled, automatically turn biometric off
+    day::reactive::watch(
+        move || pin_enabled.get(),
+        move |on, old| {
+            if old == Some(&true) && !*on {
+                biometric_on.set(false);
+                biometric::set_enabled(false);
+            }
+        },
+    );
 
     // Persist toggle changes only when PIN is enabled
     day::reactive::watch(
