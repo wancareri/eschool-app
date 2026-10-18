@@ -11,7 +11,7 @@ pub fn render(state: AppState) -> impl Piece {
 
 pub fn render_unlock(state: AppState) -> impl Piece {
     column((
-        spacer().height(8.0),
+        spacer().grow(),
 
         column((
             label(move || res::str::app_title().format())
@@ -77,7 +77,7 @@ pub fn render_unlock(state: AppState) -> impl Piece {
     .spacing(8.0)
     .align(HAlign::Center)
     .padding(Insets {
-        top: 16.0,
+        top: 24.0,
         leading: 24.0,
         bottom: 24.0,
         trailing: 24.0,
@@ -93,7 +93,7 @@ pub fn render_setup(state: AppState) -> impl Piece {
     let error_msg = Signal::new(String::new());
 
     column((
-        spacer().height(8.0),
+        spacer().grow(),
 
         column((
             label("Установка PIN-кода")
@@ -162,7 +162,7 @@ pub fn render_setup(state: AppState) -> impl Piece {
     .spacing(8.0)
     .align(HAlign::Center)
     .padding(Insets {
-        top: 16.0,
+        top: 24.0,
         leading: 24.0,
         bottom: 24.0,
         trailing: 24.0,

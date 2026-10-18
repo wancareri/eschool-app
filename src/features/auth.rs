@@ -42,15 +42,20 @@ pub fn login(state: AppState, username: &str, password: &str, remember: bool) {
                     secure::delete(PASSWORD_KEY);
                     secure::save(REMEMBER_KEY, "false");
                 }
-                set_loading.set(false);
-                nslog::nslog("[Auth] Login OK, setting is_authenticated=true");
-                // Set is_authenticated LAST — triggers the reactive watch in window_shell
-                // which will call load_all.
-                set_authenticated.set(true);
+                day::reactive::on_main(move || {
+                    crate::shared::keyboard::dismiss();
+                    set_loading.set(false);
+                    nslog::nslog("[Auth] Login OK, setting is_authenticated=true on main thread");
+                    // Set is_authenticated LAST — triggers the reactive watch in window_shell
+                    // which will call load_all.
+                    set_authenticated.set(true);
+                });
             }
             Err(e) => {
-                set_error.set(format!("Ошибка входа: {e}"));
-                set_loading.set(false);
+                day::reactive::on_main(move || {
+                    set_error.set(format!("Ошибка входа: {e}"));
+                    set_loading.set(false);
+                });
             }
         }
     });

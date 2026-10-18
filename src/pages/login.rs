@@ -271,6 +271,7 @@ fn auth_form(state: AppState) -> impl Piece {
                                 }
                                 error_local.set(String::new());
                                 state.error_msg.set(String::new());
+                                crate::shared::keyboard::dismiss();
                                 crate::shared::haptics::pop();
                                 features::auth::login(state, &u, &p, r);
                             }),
@@ -348,6 +349,7 @@ fn auth_form(state: AppState) -> impl Piece {
                 }
                 error_local.set(String::new());
                 state.error_msg.set(String::new());
+                crate::shared::keyboard::dismiss();
                 crate::shared::haptics::pop();
                 features::auth::login(state, &u, &p, r);
             }
