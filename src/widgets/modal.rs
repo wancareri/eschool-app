@@ -20,6 +20,16 @@ fn close_modal<R: Route, S: Binding<Option<R>>>(open: &S, reason: &str) {
     open.write(None);
 }
 
+fn card_bg() -> impl Fn() -> Color + Copy {
+    move || {
+        if day::dark_mode() {
+            Color::hex(0x1C1C1E)
+        } else {
+            Color::hex(0xFFFFFF)
+        }
+    }
+}
+
 /// The material that fills the gap under the card while it is pulled up: a
 /// spare section-card surface (the same dynamic grouped-card color on iOS),
 /// parked one MAX_UP below the bottom edge and slid up by exactly the lift
@@ -36,6 +46,7 @@ fn gap_filler(drag_y: Signal<f64>, kb_h: Signal<f64>) -> AnyPiece {
             view.setBackgroundColor(Some(&UIColor::secondarySystemGroupedBackgroundColor()));
             view.setUserInteractionEnabled(false);
         })
+        .background(card_bg())
         .frame(crate::pages::diary::get_screen_width(), FILLER_H)
         .translation(0.0, move || MAX_UP + drag_y.get() - kb_h.get())
         .any()
@@ -44,8 +55,28 @@ fn gap_filler(drag_y: Signal<f64>, kb_h: Signal<f64>) -> AnyPiece {
 #[cfg(not(target_os = "ios"))]
 fn gap_filler(drag_y: Signal<f64>, kb_h: Signal<f64>) -> AnyPiece {
     column(())
+        .background(card_bg())
         .frame(crate::pages::diary::get_screen_width(), FILLER_H)
         .translation(0.0, move || MAX_UP + drag_y.get() - kb_h.get())
+        .any()
+}
+
+#[cfg(target_os = "ios")]
+fn card_surface<P: Piece + 'static>(p: P) -> AnyPiece {
+    use day_uikit::UiKitExt;
+    use objc2_ui_kit::UIColor;
+    p.uikit(|view, _class, _mtm| {
+        view.setBackgroundColor(Some(&UIColor::secondarySystemGroupedBackgroundColor()));
+    })
+    .background(card_bg())
+    .corner_radius(20.0)
+    .any()
+}
+
+#[cfg(not(target_os = "ios"))]
+fn card_surface<P: Piece + 'static>(p: P) -> AnyPiece {
+    p.background(card_bg())
+        .corner_radius(20.0)
         .any()
 }
 
@@ -165,7 +196,7 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 // the original 24/16/32pt edges. The translation is the sheet drag —
                 // the card's implicit animation would smooth it, so the live drag
                 // runs under a zero-duration ambient; only the release snaps back
-                section((
+                card_surface(section((
                     // Drag handle pill at the top
                     row((
                         spacer().grow(),
@@ -195,7 +226,7 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                     } else {
                         content(route).any()
                     },
-                ))
+                )))
                 .translation(0.0, move || drag_y.get() - kb_h.get())
                 .animation(AnimSpec::ease_out(RESIZE_MS))
                 .any(),
