@@ -182,6 +182,7 @@ fn build_nav(primary: bool) -> impl Piece {
         nav_body(state, primary),
         crate::widgets::grade_peek::modal(state),
         crate::widgets::lesson_note::modal(state),
+        crate::widgets::lesson_peek::modal(state),
         crate::widgets::bottom_sheet::network_error_sheet(state),
     ))
     .grow()
@@ -189,15 +190,23 @@ fn build_nav(primary: bool) -> impl Piece {
 
 fn nav_body(state: AppState, primary: bool) -> impl Piece {
     when(
-        move || state.is_authenticated.get(),
-        move || render_nav_content(state, primary),
+        move || state.pin_lock_active.get(),
+        move || pages::pin_lock::render_unlock(state).any(),
     )
     .otherwise(move || {
-        if state.pin_lock_active.get() {
-            pages::pin_lock::render(state).any()
-        } else {
-            pages::login::render().any()
-        }
+        when(
+            move || state.pin_setup_active.get(),
+            move || pages::pin_lock::render_setup(state).any(),
+        )
+        .otherwise(move || {
+            when(
+                move || state.is_authenticated.get(),
+                move || render_nav_content(state, primary).any(),
+            )
+            .otherwise(move || pages::login::render().any())
+            .any()
+        })
+        .any()
     })
     .grow()
 }

@@ -141,35 +141,88 @@ fn day_title(state: AppState) -> String {
 }
 
 fn day_header(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>) -> impl Piece {
-    let s1 = state;
-    let pw1 = page_width;
-    let dx1 = drag_x;
-    let s2 = state;
-    let pw2 = page_width;
-    let dx2 = drag_x;
-    let sh = state;
-    row((
-        button("<")
-            .action(move || day_go(s1, pw1, dx1, -1))
-            .id("day-prev")
-            .frame(44.0, 36.0),
-        spacer().grow(),
-        label(move || day_title(sh))
+    column((
+        // Row of 6 day-of-week pills
+        row((
+            day_pill(state, page_width, drag_x, 1, "Пн"),
+            day_pill(state, page_width, drag_x, 2, "Вт"),
+            day_pill(state, page_width, drag_x, 3, "Ср"),
+            day_pill(state, page_width, drag_x, 4, "Чт"),
+            day_pill(state, page_width, drag_x, 5, "Пт"),
+            day_pill(state, page_width, drag_x, 6, "Сб"),
+        ))
+        .spacing(6.0)
+        .padding(Insets { top: 0.0, leading: 16.0, bottom: 8.0, trailing: 16.0 }),
+
+        // Summary day title
+        label(move || day_title(state))
             .font(Font::Headline)
+            .bold()
             .align(TextAlign::Center)
-            .id("day-hdr"),
-        spacer().grow(),
-        button(">")
-            .action(move || day_go(s2, pw2, dx2, 1))
-            .id("day-next")
-            .frame(44.0, 36.0),
+            .padding(Insets { top: 0.0, leading: 16.0, bottom: 12.0, trailing: 16.0 }),
     ))
-    .spacing(8.0)
-    .padding(Insets { top: 0.0, leading: 16.0, bottom: 6.0, trailing: 16.0 })
+    .spacing(0.0)
 }
 
-fn day_go(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>, dir: i32) {
-    start_day_swipe(state, drag_x, page_width, dir, 180);
+fn day_pill(
+    state: AppState,
+    page_width: Signal<f64>,
+    drag_x: Signal<f64>,
+    dow: u32,
+    title: &'static str,
+) -> impl Piece {
+    let is_sel = move || state.schedule_day.get() == dow;
+    label(title)
+        .font(Font::Subheadline)
+        .bold()
+        .align(TextAlign::Center)
+        .color(move || {
+            if is_sel() {
+                Color::WHITE
+            } else {
+                Color::hex(0x8E8E93)
+            }
+        })
+        .frame(0.0, 34.0)
+        .grow()
+        .background(move || {
+            if is_sel() {
+                Color::hex(state.accent_color.get())
+            } else if day::dark_mode() {
+                Color::rgba(1.0, 1.0, 1.0, 0.07)
+            } else {
+                Color::rgba(0.0, 0.0, 0.0, 0.05)
+            }
+        })
+        .corner_radius(10.0)
+        .on_tap(move || {
+            let cur = state.schedule_day.get();
+            if cur != dow {
+                let dir = if (dow as i32) > (cur as i32) { 1 } else { -1 };
+                start_day_swipe_to(state, drag_x, page_width, dow as i32, dir, 180);
+            }
+        })
+}
+
+fn start_day_swipe_to(
+    _state: AppState,
+    drag_x: Signal<f64>,
+    page_width: Signal<f64>,
+    target_dow: i32,
+    dir: i32,
+    dur_ms: u32,
+) {
+    if target_dow < 1 || target_dow > 7 {
+        return;
+    }
+    DAY_PENDING.store(target_dow, Ordering::Relaxed);
+    let my_gen = DAY_SWIPE_GEN.fetch_add(1, Ordering::Relaxed) + 1;
+    let w = page_width.get();
+    let target = if dir > 0 { -w } else { w };
+    with_animation(AnimSpec::ease_out(dur_ms), || {
+        drag_x.set(target);
+    });
+    spawn_day_slide(drag_x.setter(), dur_ms, target_dow, my_gen);
 }
 
 fn start_day_swipe(
@@ -317,13 +370,30 @@ fn day_page(state: AppState, offset: i32, w: f64) -> impl Piece {
         ),
         when(
             move || !has_lessons(),
-            move || label(move || {
-                if dow_fn() >= 6 { "Выходной день" } else { "Нет уроков" }
-            })
-            .font(Font::Body)
-            .secondary()
-            .align(TextAlign::Center)
-            .padding(Insets { top: 40.0, leading: PAD, bottom: 40.0, trailing: PAD }),
+            move || column((
+                spacer().height(36.0),
+                label(move || if dow_fn() >= 6 { "🏖️" } else { "📅" })
+                    .font(Font::System(44.0))
+                    .align(TextAlign::Center),
+                spacer().height(10.0),
+                label(move || {
+                    if dow_fn() >= 6 { "Выходной день" } else { "Нет уроков" }
+                })
+                .font(Font::Headline)
+                .align(TextAlign::Center),
+                label(move || {
+                    if dow_fn() >= 6 {
+                        "В этот день уроки не проводятся. Отличного отдыха!"
+                    } else {
+                        "В расписании на этот день уроки не назначены"
+                    }
+                })
+                .font(Font::Subheadline)
+                .secondary()
+                .align(TextAlign::Center)
+                .padding(Insets { top: 4.0, leading: 32.0, bottom: 32.0, trailing: 32.0 }),
+            ))
+            .grow(),
         ),
     ))
     .spacing(0.0)
@@ -369,39 +439,48 @@ fn day_lesson_rows(state: AppState, dow: u32) -> Vec<LessonRow> {
 }
 
 fn lesson_table_row(state: AppState, slot: ItemSlot<LessonRow, String>) -> impl Piece {
-    column((
-        row((
-            label(move || slot.with(|r| r.num.to_string()))
-                .font(Font::Subheadline)
-                .weight(FontWeight::Semibold)
-                .color(move || Color::hex(state.accent_color.get()))
-                .align(TextAlign::Center)
-                .frame(24.0, 24.0),
-            label(move || slot.with(|r| r.time.clone()))
-                .font(Font::Footnote)
-                .secondary()
-                .align(TextAlign::Center)
-                .width(42.0),
+    let s_col = state;
+    row((
+        // Number badge
+        circle()
+            .fill(move || Color::hex(s_col.accent_color.get()).with_alpha(0.14))
+            .frame(36.0, 36.0)
+            .overlay(
+                label(move || slot.with(|r| r.num.to_string()))
+                    .font(Font::Headline)
+                    .bold()
+                    .color(move || Color::hex(s_col.accent_color.get()))
+                    .align(TextAlign::Center),
+            ),
+
+        // Subject & Time column
+        column((
             label(move || slot.with(|r| r.subject.clone()))
-                .font(Font::Body)
+                .font(Font::Headline)
+                .bold()
                 .grow(),
+            row((
+                label("🕐").font(Font::Caption2),
+                label(move || slot.with(|r| r.time.clone()))
+                    .font(Font::Subheadline)
+                    .secondary(),
+            ))
+            .spacing(4.0)
+            .align(VAlign::Center),
         ))
-        .spacing(12.0)
-        .align(VAlign::Center)
-        .padding(Insets { top: 14.0, leading: PAD, bottom: 14.0, trailing: PAD }),
-        
-        // Native-like thin separator line
-        spacer()
-            .frame(0.0, 0.5)
-            .background(move || {
-                if day::dark_mode() {
-                    Color::rgba(1.0, 1.0, 1.0, 0.1)
-                } else {
-                    Color::rgba(0.0, 0.0, 0.0, 0.1)
-                }
-            })
-            .padding(Insets { top: 0.0, leading: PAD + 36.0, bottom: 0.0, trailing: 0.0 })
-            .grow_w()
+        .spacing(3.0)
+        .grow(),
     ))
-    .spacing(0.0)
+    .spacing(12.0)
+    .align(VAlign::Center)
+    .padding(Insets { top: 12.0, leading: 14.0, bottom: 12.0, trailing: 14.0 })
+    .background(move || {
+        if day::dark_mode() {
+            Color::rgba(1.0, 1.0, 1.0, 0.06)
+        } else {
+            Color::rgba(0.0, 0.0, 0.0, 0.04)
+        }
+    })
+    .corner_radius(16.0)
+    .padding(Insets { top: 4.0, leading: PAD, bottom: 4.0, trailing: PAD })
 }

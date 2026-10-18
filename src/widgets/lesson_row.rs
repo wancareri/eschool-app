@@ -21,6 +21,15 @@ fn lesson_key(s: &LessonSlot) -> String {
     }
 }
 
+fn find_teacher_for_lesson(state: AppState, s: &LessonSlot) -> Option<String> {
+    if !s.teacher_id.is_empty() {
+        if let Some(st) = state.subjects_teachers.get().iter().find(|t| t.teacher_id == s.teacher_id) {
+            return Some(st.teacher.clone());
+        }
+    }
+    state.subjects_teachers.get().iter().find(|t| t.subject_title == s.subject_title).map(|t| t.teacher.clone())
+}
+
 pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
     let state = AppState::ambient();
     let s_num = slot;
@@ -37,11 +46,11 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
     let s_has_note = slot;
     let s_note_txt = slot;
     let s_note_tap = slot;
-    let s_note_icon = slot;
-    let s_note_open = slot;
+    let s_lp = slot;
 
     column((
         row((
+            // Lesson number & start time
             column((
                 label(move || s_num.with(|s| s.number.to_string()))
                     .font(Font::Title3)
@@ -56,10 +65,28 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
             .spacing(3.0)
             .align(HAlign::Center),
 
+            // Subject, Topic, Homework, Note hint
             column((
-                label(move || s_title.with(|s| s.subject_title.clone()))
-                    .font(Font::Body)
-                    .weight(FontWeight::Semibold),
+                row((
+                    label(move || s_title.with(|s| s.subject_title.clone()))
+                        .font(Font::Body)
+                        .weight(FontWeight::Semibold)
+                        .grow(),
+                    when(
+                        move || s_has_note.with(|s| {
+                            let key = lesson_key(s);
+                            crate::widgets::lesson_note::get_note(state, &key).is_some()
+                        }),
+                        move || {
+                            circle()
+                                .fill(move || Color::hex(state.accent_color.get()))
+                                .frame(6.0, 6.0)
+                        },
+                    ),
+                ))
+                .spacing(6.0)
+                .align(VAlign::Center),
+
                 when(
                     move || s_topic.with(|s| {
                         s.topic.as_deref().map(|t| !t.is_empty()).unwrap_or(false)
@@ -128,14 +155,20 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
                         .padding(Insets { top: 2.0, leading: 0.0, bottom: 2.0, trailing: 0.0 })
                         .on_tap(move || {
                             s_tap.with(|s| {
-                                let target = crate::widgets::lesson_note::LessonNoteTarget {
+                                let teacher = find_teacher_for_lesson(state, s);
+                                let target = crate::widgets::lesson_peek::LessonDetailTarget {
                                     key: lesson_key(s),
                                     subject_title: s.subject_title.clone(),
                                     lesson_number: s.number,
                                     start_time: s.start_time.clone(),
+                                    end_time: None,
                                     topic: s.topic.clone(),
+                                    homework: s.homework.clone(),
+                                    teacher,
+                                    comment: s.lesson_mark.as_ref().and_then(|m| m.comment.clone()),
+                                    mark: mark_of(s).map(|m| m.to_string()),
                                 };
-                                crate::widgets::lesson_note::open_note(state, target);
+                                crate::widgets::lesson_peek::open_peek(state, target);
                             });
                         })
                     },
@@ -145,57 +178,45 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
             .align(HAlign::Leading)
             .grow(),
 
-            row((
-                zstack((
-                    vector(crate::res::vectors::kind_note)
-                        .frame(16.0, 16.0)
-                        .tint(move || {
-                            let has = s_note_icon.with(|s| {
-                                let key = lesson_key(s);
-                                crate::widgets::lesson_note::get_note(state, &key).is_some()
-                            });
-                            if has {
-                                Color::hex(state.accent_color.get())
-                            } else {
-                                Color::rgba(0.60, 0.60, 0.65, 0.35)
-                            }
-                        }),
-                ))
-                .align(Alignment::Center)
-                .frame(36.0, 36.0)
-                .on_tap(move || {
-                    s_note_open.with(|s| {
-                        let target = crate::widgets::lesson_note::LessonNoteTarget {
-                            key: lesson_key(s),
-                            subject_title: s.subject_title.clone(),
-                            lesson_number: s.number,
-                            start_time: s.start_time.clone(),
-                            topic: s.topic.clone(),
-                        };
-                        crate::widgets::lesson_note::open_note(state, target);
-                    });
-                }),
-
-                label(move || {
-                    s_mark.with(|s| mark_of(s).map(|m| m.to_string()).unwrap_or_else(|| "—".into()))
+            // Grade
+            label(move || {
+                s_mark.with(|s| mark_of(s).map(|m| m.to_string()).unwrap_or_else(|| "—".into()))
+            })
+            .font(Font::Title3)
+            .bold()
+            .tabular()
+            .color(move || {
+                s_mark.with(|s| match mark_of(s) {
+                    Some(m) => utils::grade_color(m),
+                    None => colors::GRAY_400,
                 })
-                .font(Font::Title3)
-                .bold()
-                .tabular()
-                .color(move || {
-                    s_mark.with(|s| match mark_of(s) {
-                        Some(m) => utils::grade_color(m),
-                        None => colors::GRAY_400,
-                    })
-                }),
-            ))
-            .spacing(4.0)
-            .align(VAlign::Center),
+            })
+            .align(TextAlign::Center)
+            .frame(36.0, 36.0),
         ))
         .spacing(RAIL_GAP)
         .align(VAlign::Center)
         .grow()
-        .padding(Insets { top: 8.0, leading: 16.0, bottom: 2.0, trailing: 16.0 }),
+        .padding(Insets { top: 8.0, leading: 16.0, bottom: 2.0, trailing: 16.0 })
+        // Telegram-style long press peek
+        .on_long_press(move |_p| {
+            s_lp.with(|s| {
+                let teacher = find_teacher_for_lesson(state, s);
+                let target = crate::widgets::lesson_peek::LessonDetailTarget {
+                    key: lesson_key(s),
+                    subject_title: s.subject_title.clone(),
+                    lesson_number: s.number,
+                    start_time: s.start_time.clone(),
+                    end_time: None,
+                    topic: s.topic.clone(),
+                    homework: s.homework.clone(),
+                    teacher,
+                    comment: s.lesson_mark.as_ref().and_then(|m| m.comment.clone()),
+                    mark: mark_of(s).map(|m| m.to_string()),
+                };
+                crate::widgets::lesson_peek::open_peek(state, target);
+            });
+        }),
 
         divider().padding(Insets { top: 4.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),
     ))

@@ -11,3 +11,4 @@ pub mod grade_peek;
 pub mod modal;
 pub mod spinner;
 pub mod lesson_note;
+pub mod lesson_peek;

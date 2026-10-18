@@ -1,11 +1,15 @@
 use crate::app::AppState;
-use crate::shared::{colors, nslog, pin};
 use crate::res;
+use crate::shared::{colors, nslog, pin};
 use day::prelude::*;
 
 const PIN_LENGTH: usize = 4;
 
 pub fn render(state: AppState) -> impl Piece {
+    render_unlock(state)
+}
+
+pub fn render_unlock(state: AppState) -> impl Piece {
     column((
         spacer().grow(),
 
@@ -16,20 +20,24 @@ pub fn render(state: AppState) -> impl Piece {
 
             when(
                 move || state.pin_error.get(),
-                move || label("Неверный PIN-код")
-                    .font(Font::Subheadline)
-                    .color(colors::ERROR)
-                    .align(TextAlign::Center)
-                    .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
+                move || {
+                    label("Неверный PIN-код")
+                        .font(Font::Subheadline)
+                        .color(colors::ERROR)
+                        .align(TextAlign::Center)
+                        .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 })
+                },
             )
             .otherwise(move || {
                 when(
                     move || state.pin_input.get().len() == PIN_LENGTH,
-                    move || label("Добро пожаловать!")
-                        .font(Font::Subheadline)
-                        .color(Color::hex(state.accent_color.get()))
-                        .align(TextAlign::Center)
-                        .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
+                    move || {
+                        label("Добро пожаловать!")
+                            .font(Font::Subheadline)
+                            .color(Color::hex(state.accent_color.get()))
+                            .align(TextAlign::Center)
+                            .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 })
+                    },
                 )
                 .otherwise(|| {
                     label("Введите PIN-код")
@@ -77,6 +85,91 @@ pub fn render(state: AppState) -> impl Piece {
     .any()
 }
 
+pub fn render_setup(state: AppState) -> impl Piece {
+    let step = Signal::new(0u8); // 0 = first input, 1 = confirm
+    let input = Signal::new(String::new());
+    let first_pin = Signal::new(String::new());
+    let error_msg = Signal::new(String::new());
+
+    column((
+        spacer().grow(),
+
+        column((
+            label("Установка PIN-кода")
+                .font(Font::LargeTitle)
+                .bold()
+                .align(TextAlign::Center),
+
+            when(
+                move || !error_msg.get().is_empty(),
+                move || {
+                    label(move || error_msg.get())
+                        .font(Font::Subheadline)
+                        .color(colors::ERROR)
+                        .align(TextAlign::Center)
+                        .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 })
+                },
+            )
+            .otherwise(move || {
+                label(move || {
+                    if step.get() == 0 {
+                        "Придумайте 4-значный PIN-код"
+                    } else {
+                        "Повторите ваш PIN-код"
+                    }
+                })
+                .font(Font::Subheadline)
+                .secondary()
+                .align(TextAlign::Center)
+                .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 })
+            }),
+        ))
+        .spacing(4.0)
+        .align(HAlign::Center),
+
+        // PIN dots
+        {
+            let shake = shake_signal();
+            let inp = input;
+            let err = error_msg;
+            row((
+                setup_dot(0, state, inp, err),
+                setup_dot(1, state, inp, err),
+                setup_dot(2, state, inp, err),
+                setup_dot(3, state, inp, err),
+            ))
+            .spacing(24.0)
+            .padding(Insets { top: 28.0, leading: 0.0, bottom: 12.0, trailing: 0.0 })
+            .align(VAlign::Center)
+            .translation(move || shake.get(), 0.0)
+        },
+
+        // Setup Numpad
+        setup_numpad(state, step, input, first_pin, error_msg),
+
+        // Cancel button
+        button("Отмена")
+            .action(move || {
+                crate::shared::haptics::tick();
+                state.pin_setup_active.set(false);
+            })
+            .id("pin-setup-cancel")
+            .padding(Insets { top: 16.0, leading: 24.0, bottom: 0.0, trailing: 24.0 }),
+
+        spacer().grow(),
+    ))
+    .spacing(8.0)
+    .align(HAlign::Center)
+    .padding(Insets {
+        top: 24.0,
+        leading: 24.0,
+        bottom: 24.0,
+        trailing: 24.0,
+    })
+    .grow()
+    .any()
+}
+
 fn dot(index: usize, state: AppState) -> impl Piece {
     let filled = move || {
         let input = state.pin_input.get();
@@ -86,8 +179,6 @@ fn dot(index: usize, state: AppState) -> impl Piece {
     let s_accent = state;
     let clock = success_clock();
 
-    // UIKit back-end ignores TextAlign on labels, and a glyph dot reads as text —
-    // a drawn circle keeps the state colors (accent/error) under our control.
     when(
         move || error.get() || filled(),
         move || {
@@ -112,14 +203,39 @@ fn dot(index: usize, state: AppState) -> impl Piece {
     .scale(move || success_scale(index, clock.get()))
 }
 
+fn setup_dot(index: usize, state: AppState, input: Signal<String>, error_msg: Signal<String>) -> impl Piece {
+    let filled = move || input.get().len() > index;
+    let s_accent = state;
+    let clock = success_clock();
+
+    when(
+        move || !error_msg.get().is_empty() || filled(),
+        move || {
+            circle()
+                .fill(move || {
+                    if !error_msg.get().is_empty() {
+                        colors::ERROR
+                    } else {
+                        Color::hex(s_accent.accent_color.get())
+                    }
+                })
+                .frame(16.0, 16.0)
+                .any()
+        },
+    )
+    .otherwise(move || {
+        circle()
+            .stroke(move || Color::hex(s_accent.accent_color.get()), 1.5)
+            .frame(16.0, 16.0)
+            .any()
+    })
+    .scale(move || success_scale(index, clock.get()))
+}
+
 thread_local! {
-    /// The dots row's horizontal offset during a wrong-code shake.
     static SHAKE: Signal<f64> = Signal::new(0.0);
-    /// Bumped on every shake so a stale frame chain stops itself.
     static SHAKE_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    /// Milliseconds since the success pulse started (< 0 = idle).
     static SUCCESS_CLOCK: Signal<f64> = Signal::new(-1.0);
-    /// Bumped on every pulse so a stale frame chain stops itself.
     static SUCCESS_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 }
 
@@ -127,10 +243,6 @@ fn shake_signal() -> Signal<f64> {
     SHAKE.with(|s| *s)
 }
 
-/// Wrong-code shake: a damped sine sampled every frame — continuous motion
-/// (the old keyframe steps read as two or three discrete jerks) with a small
-/// iOS-passcode amplitude. day's AnimSpec only tweens one target per call, so
-/// the curve is computed here and the offset is set directly, no tween.
 const SHAKE_MS: u32 = 450;
 const SHAKE_FRAME_MS: u32 = 16;
 const SHAKE_AMPLITUDE: f64 = 3.0;
@@ -145,7 +257,7 @@ fn run_shake() {
 fn schedule_shake_frame(generation: u32, started: std::time::Instant) {
     day::reactive::on_main_delayed(SHAKE_FRAME_MS, move || {
         if SHAKE_GEN.with(|g| g.load(std::sync::atomic::Ordering::SeqCst)) != generation {
-            return; // a newer shake took over
+            return;
         }
         let elapsed = started.elapsed().as_millis() as u32;
         if elapsed >= SHAKE_MS {
@@ -163,8 +275,6 @@ fn shake_total_ms() -> u32 {
     SHAKE_MS + 80
 }
 
-// ── Success pulse ─────────────────────────────────────────────────────
-
 const SUC_START_MS: f64 = 60.0;
 const SUC_STAGGER_MS: f64 = 70.0;
 const SUC_DOT_MS: f64 = 480.0;
@@ -175,8 +285,6 @@ fn success_clock() -> Signal<f64> {
     SUCCESS_CLOCK.with(|s| *s)
 }
 
-/// One dot's scale during the success ripple: a sine bump of `SUC_BUMP`,
-/// staggered left-to-right — up at once, settling before the unlock beat.
 fn success_scale(index: usize, t: f64) -> f64 {
     if t < 0.0 {
         return 1.0;
@@ -281,7 +389,7 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                         let unlock = s.pin_lock_active.setter();
                         let auth = s.is_authenticated.setter();
                         let clear = s.pin_input.setter();
-                        day::reactive::on_main_delayed(1000, move || {
+                        day::reactive::on_main_delayed(800, move || {
                             unlock.set(false);
                             auth.set(true);
                             clear.set(String::new());
@@ -300,6 +408,125 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                 }
             })
             .id(format!("pin-key-{}", key_str))
+            .frame(72.0, 72.0)
+            .any()
+    }
+}
+
+fn setup_numpad(
+    state: AppState,
+    step: Signal<u8>,
+    input: Signal<String>,
+    first_pin: Signal<String>,
+    error_msg: Signal<String>,
+) -> impl Piece {
+    column((
+        setup_numpad_row(state, step, input, first_pin, error_msg, &["1", "2", "3"]),
+        setup_numpad_row(state, step, input, first_pin, error_msg, &["4", "5", "6"]),
+        setup_numpad_row(state, step, input, first_pin, error_msg, &["7", "8", "9"]),
+        setup_numpad_row(state, step, input, first_pin, error_msg, &["", "0", "⌫"]),
+    ))
+    .spacing(12.0)
+    .align(HAlign::Center)
+}
+
+fn setup_numpad_row(
+    state: AppState,
+    step: Signal<u8>,
+    input: Signal<String>,
+    first_pin: Signal<String>,
+    error_msg: Signal<String>,
+    keys: &[&str],
+) -> impl Piece {
+    row((
+        setup_numpad_key(state, step, input, first_pin, error_msg, keys[0]),
+        setup_numpad_key(state, step, input, first_pin, error_msg, keys[1]),
+        setup_numpad_key(state, step, input, first_pin, error_msg, keys[2]),
+    ))
+    .spacing(24.0)
+    .align(VAlign::Center)
+}
+
+fn setup_numpad_key(
+    state: AppState,
+    step: Signal<u8>,
+    input: Signal<String>,
+    first_pin: Signal<String>,
+    error_msg: Signal<String>,
+    key: &str,
+) -> impl Piece {
+    let key_str = key.to_string();
+    let key_clone = key_str.clone();
+    let key_clone2 = key_str.clone();
+
+    if key_str.is_empty() {
+        spacer().frame(72.0, 72.0).any()
+    } else if key_str == "⌫" {
+        button("⌫")
+            .action(move || {
+                crate::shared::haptics::tick();
+                let mut v = input.get();
+                if !v.is_empty() {
+                    v.pop();
+                    input.set(v);
+                    error_msg.set(String::new());
+                }
+            })
+            .id("pin-setup-backspace")
+            .frame(72.0, 72.0)
+            .any()
+    } else {
+        button(move || key_clone2.clone())
+            .action(move || {
+                crate::shared::haptics::tick();
+                let mut v = input.get();
+                if v.len() >= PIN_LENGTH {
+                    return;
+                }
+                v.push_str(&key_clone);
+                input.set(v.clone());
+                error_msg.set(String::new());
+
+                if v.len() == PIN_LENGTH {
+                    if step.get() == 0 {
+                        // First entry complete, advance to confirmation
+                        crate::shared::haptics::pop();
+                        first_pin.set(v);
+                        step.set(1);
+                        input.set(String::new());
+                    } else {
+                        // Confirm entry
+                        let expected = first_pin.get();
+                        if v == expected {
+                            // Match! Save pin and finish
+                            crate::shared::haptics::pop();
+                            run_success_pulse();
+                            pin::save_pin(&v);
+                            nslog::nslog("[PIN] New PIN set successfully");
+                            let setup_active = state.pin_setup_active.setter();
+                            day::reactive::on_main_delayed(800, move || {
+                                setup_active.set(false);
+                            });
+                        } else {
+                            // Mismatch! Shake and reset to step 0
+                            nslog::nslog("[PIN] Mismatch in confirmation");
+                            error_msg.set("PIN-коды не совпадают".into());
+                            run_shake();
+                            let inp = input.setter();
+                            let st = step.setter();
+                            let fp = first_pin.setter();
+                            let err = error_msg.setter();
+                            day::reactive::on_main_delayed(shake_total_ms(), move || {
+                                inp.set(String::new());
+                                fp.set(String::new());
+                                st.set(0);
+                                err.set(String::new());
+                            });
+                        }
+                    }
+                }
+            })
+            .id(format!("pin-setup-key-{}", key_str))
             .frame(72.0, 72.0)
             .any()
     }

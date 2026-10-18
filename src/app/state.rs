@@ -40,6 +40,7 @@ pub struct AppState {
 
     // ── PIN lock ────────────────────────────────────────────────────────
     pub pin_lock_active: Signal<bool>,
+    pub pin_setup_active: Signal<bool>,
     pub pin_input: Signal<String>,
     pub pin_error: Signal<bool>,
 
@@ -104,9 +105,10 @@ pub struct AppState {
     /// the wording never changes mid-fade.
     pub island_label: Signal<ConnStatus>,
 
-    // ── lesson notes ───────────────────────────────────────────────────────
+    // ── lesson notes & peek ────────────────────────────────────────────────
     pub lesson_notes: Signal<std::collections::HashMap<String, String>>,
     pub active_note: Signal<Option<crate::widgets::lesson_note::LessonNoteTarget>>,
+    pub active_lesson_peek: Signal<Option<crate::widgets::lesson_peek::LessonDetailTarget>>,
 
     // ── keyboard ───────────────────────────────────────────────────────────
     pub keyboard_height: Signal<f64>,
@@ -140,6 +142,7 @@ impl Ambient for AppState {
             remember_me: Signal::new(remember),
             biometric_ok: Signal::new(false),
             pin_lock_active: Signal::new(pin_lock),
+            pin_setup_active: Signal::new(false),
             pin_input: Signal::new(String::new()),
             pin_error: Signal::new(false),
             full_name: Signal::new(secure::load(FULL_NAME_KEY).unwrap_or_default()),
@@ -178,6 +181,7 @@ impl Ambient for AppState {
             log_version: Signal::new(0u64),
             lesson_notes: Signal::new(crate::widgets::lesson_note::load_notes_map()),
             active_note: Signal::new(None),
+            active_lesson_peek: Signal::new(None),
             keyboard_height: Signal::new(0.0),
         };
 
