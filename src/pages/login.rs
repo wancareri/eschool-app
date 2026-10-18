@@ -90,6 +90,7 @@ fn auth_form(state: AppState) -> impl Piece {
     let step = Signal::new(0u8); // 0 = username, 1 = password
     let username = Signal::new(String::new());
     let password = Signal::new(String::new());
+    let password_focused = Signal::new(false);
     let remember = Signal::new(true);
     let error_local = Signal::new(String::new());
     let kb_h = crate::shared::keyboard::keyboard_height_signal();
@@ -218,6 +219,7 @@ fn auth_form(state: AppState) -> impl Piece {
                                         error_local.set(String::new());
                                         state.error_msg.set(String::new());
                                         crate::shared::haptics::tick();
+                                        password_focused.set(true);
                                         with_animation(AnimSpec::ease_out(250), move || step.set(1));
                                     }
                                 }),
@@ -256,6 +258,7 @@ fn auth_form(state: AppState) -> impl Piece {
                             .secondary(),
                         text_field(password)
                             .secure()
+                            .focused(password_focused)
                             .id("password-field")
                             .on_submit(move || {
                                 if state.loading.get() { return; }
@@ -290,6 +293,7 @@ fn auth_form(state: AppState) -> impl Piece {
                             .action(move || {
                                 crate::shared::haptics::tick();
                                 error_local.set(String::new());
+                                password_focused.set(false);
                                 with_animation(AnimSpec::ease_out(250), move || step.set(0));
                             }),
                         spacer().grow(),
@@ -307,56 +311,51 @@ fn auth_form(state: AppState) -> impl Piece {
         })
         .grow(),
 
-        // Liquid glass prominent action button at the bottom, lifts with keyboard
-        capsule()
-            .fill(move || Color::hex(state.accent_color.get()))
-            .frame(0.0, 50.0)
-            .grow_w()
-            .overlay(
-                label(move || {
-                    if state.loading.get() {
-                        "Вход в систему…"
-                    } else if step.get() == 0 {
-                        "Продолжить"
-                    } else {
-                        "Войти"
-                    }
-                })
-                .font(Font::Headline)
-                .bold()
-                .color(Color::WHITE)
-                .align(TextAlign::Center),
-            )
-            .on_tap(move || {
-                if state.loading.get() { return; }
-                let u = username.get_untracked();
-                let p = password.get_untracked();
-                let r = remember.get_untracked();
+        // Prominent action button at the bottom, lifts with keyboard and responds immediately
+        button(move || {
+            if state.loading.get() {
+                "Вход в систему…"
+            } else if step.get() == 0 {
+                "Продолжить"
+            } else {
+                "Войти"
+            }
+        })
+        .prominent()
+        .frame(0.0, 50.0)
+        .grow_w()
+        .corner_radius(25.0)
+        .action(move || {
+            if state.loading.get() { return; }
+            let u = username.get_untracked();
+            let p = password.get_untracked();
+            let r = remember.get_untracked();
 
-                if step.get() == 0 {
-                    if u.trim().is_empty() {
-                        error_local.set("Введите имя пользователя".into());
-                    } else {
-                        error_local.set(String::new());
-                        state.error_msg.set(String::new());
-                        crate::shared::haptics::tick();
-                        with_animation(AnimSpec::ease_out(250), move || step.set(1));
-                    }
+            if step.get() == 0 {
+                if u.trim().is_empty() {
+                    error_local.set("Введите имя пользователя".into());
                 } else {
-                    if p.is_empty() {
-                        error_local.set("Введите пароль".into());
-                        return;
-                    }
                     error_local.set(String::new());
                     state.error_msg.set(String::new());
-                    crate::shared::haptics::pop();
-                    features::auth::login(state, &u, &p, r);
+                    crate::shared::haptics::tick();
+                    password_focused.set(true);
+                    with_animation(AnimSpec::ease_out(250), move || step.set(1));
                 }
-            })
-            .id("login-btn")
-            .padding(Insets { top: 8.0, leading: 20.0, bottom: 0.0, trailing: 20.0 })
-            .translation(0.0, move || -kb_h.get())
-            .animation(AnimSpec::ease_out(250)),
+            } else {
+                if p.is_empty() {
+                    error_local.set("Введите пароль".into());
+                    return;
+                }
+                error_local.set(String::new());
+                state.error_msg.set(String::new());
+                crate::shared::haptics::pop();
+                features::auth::login(state, &u, &p, r);
+            }
+        })
+        .id("login-btn")
+        .padding(Insets { top: 8.0, leading: 20.0, bottom: 0.0, trailing: 20.0 })
+        .translation(0.0, move || -kb_h.get())
+        .animation(AnimSpec::ease_out(250)),
     ))
     .grow()
 }
