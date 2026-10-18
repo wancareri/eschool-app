@@ -161,7 +161,8 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
                             }
                         }),
                 ))
-                .padding(Insets { top: 6.0, leading: 6.0, bottom: 6.0, trailing: 2.0 })
+                .align(Alignment::Center)
+                .frame(36.0, 36.0)
                 .on_tap(move || {
                     s_note_open.with(|s| {
                         let target = crate::widgets::lesson_note::LessonNoteTarget {

@@ -92,6 +92,7 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
             // Sheet drag. Vertical only (horizontal travel is simply ignored).
             // Both directions start from the finger; only the release animates.
             let drag_y = Signal::new(0.0);
+            let kb_h = crate::shared::keyboard::keyboard_height_signal();
             let o_freeze = o_drag.clone();
             let sheet_drag = move |d: Drag| {
                 // Once the close has started the card is frozen: no event may touch it —
@@ -118,25 +119,21 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                     with_animation(AnimSpec::linear(0), move || drag_y.set(off));
                 }
                 DragPhase::Ended => {
-                    if drag_y.get() > 10.0 {
-                        // Any downward pull past a tap-sized nudge dismisses — the card keeps
-                        // its dragged offset while the cover slides everything down as ONE
-                        // downward motion. No snap-back exists for the down direction any
-                        // more, so nothing can fly up here; the next open builds a fresh drag
-                        // signal anyway, so there is nothing to reset.
+                    if kb_h.get() > 20.0 {
+                        // While the keyboard is up, swiping down dismisses the keyboard, NOT the modal.
+                        crate::shared::keyboard::dismiss();
+                        with_animation(AnimSpec::ease_out(240), move || drag_y.set(0.0));
+                    } else if drag_y.get() > 70.0 {
+                        // Any downward pull past 70pt dismisses the modal.
                         close_modal(&o_freeze, "drag-end");
                     } else {
-                        // The card is at rest or above its spot: returning is downward in
-                        // every case (a rubber-band lift glides back down; a nudge under the
-                        // nudge threshold is a couple of points), so this direction can never
-                        // read as an upward jerk either.
+                        // Return card to bottom edge
                         with_animation(AnimSpec::ease_out(240), move || drag_y.set(0.0));
                     }
                 }
                 }
             };
 
-            let kb_h = crate::shared::keyboard::keyboard_height_signal();
             let o_tap = o_dim.clone();
             zstack((
                 // The dim is the cover's own background (edge-to-edge, over the
@@ -144,7 +141,13 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 // and only catches taps outside the card. The card above it is a
                 // later zstack child, so it wins the hit-test over its own area.
                 button("")
-                    .action(move || close_modal(&o_tap, "dim-tap"))
+                    .action(move || {
+                        if kb_h.get() > 20.0 {
+                            crate::shared::keyboard::dismiss();
+                        } else {
+                            close_modal(&o_tap, "dim-tap");
+                        }
+                    })
                     .grow()
                     .any(),
 

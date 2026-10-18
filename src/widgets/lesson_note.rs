@@ -120,10 +120,10 @@ fn build_card(state: AppState, target: LessonNoteTarget) -> impl Piece {
                 .font(Font::Headline)
                 .secondary()
                 .padding(Insets {
-                    top: 6.0,
-                    leading: 12.0,
-                    bottom: 6.0,
-                    trailing: 12.0,
+                    top: 10.0,
+                    leading: 16.0,
+                    bottom: 10.0,
+                    trailing: 16.0,
                 })
                 .on_tap(move || close_note(state)),
         ))
@@ -157,7 +157,9 @@ fn build_card(state: AppState, target: LessonNoteTarget) -> impl Piece {
         column((
             text_field(note_text.clone())
                 .placeholder("Заметка к уроку (видна только в приложении)...")
-                .on_submit(on_save.clone()),
+                .on_submit(move || {
+                    crate::shared::keyboard::dismiss();
+                }),
         ))
         .padding(Insets {
             top: 12.0,

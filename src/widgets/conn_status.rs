@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::app::{AppState, ConnStatus};
 use crate::res;
 use day::prelude::*;
-use crate::app::blur::apply_glass_blur;
 
 static COLLAPSE_GEN: AtomicU64 = AtomicU64::new(0);
 
@@ -249,7 +248,6 @@ pub fn render() -> impl Piece {
     })
     // Half of the 25 pt box: CALayer does not clamp a larger radius, and 14 on
     // 25 overshoots into a self-intersecting lens (the "eye").
-        .map_inner(|p| apply_glass_blur(p))
         .corner_radius(12.5)
     // Node-scoped fallback so the capsule's RESIZE animates even when the collapse's
     // with_animation ambient doesn't reach the turn-end layout (the snap-to-circle).
@@ -264,5 +262,5 @@ pub fn render() -> impl Piece {
             .set(Some(String::from("net")));
     });
 
-    apply_glass_blur(content)
+    content
 }
