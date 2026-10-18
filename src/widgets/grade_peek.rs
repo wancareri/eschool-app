@@ -49,6 +49,7 @@ impl Peek {
     }
 
     fn open(&self, subject: String, quarter: usize) {
+        crate::shared::nslog::nslog(&format!("[GradePeek] open: subject='{subject}', quarter={quarter}"));
         // Quarter first: the binding flip below is what re-runs the window's
         // build closure, so it has to observe the fresh quarter.
         self.quarter.set(quarter);
@@ -62,6 +63,7 @@ impl Peek {
     /// Closing is the binding flip: the window runs the native dismissal itself
     /// and keeps its content mounted until the backend reports it hidden.
     fn close(&self) {
+        crate::shared::nslog::nslog("[GradePeek] close: setting subject=None");
         self.subject.set(None);
     }
 }
@@ -223,7 +225,10 @@ pub fn modal(state: AppState) -> impl Piece {
     // the content alone asks for, and content that grows past the floor grows
     // the card — the shell animates that resize, the top edge slides up.
     let min_h = crate::pages::diary::get_screen_height() * 0.5;
-    crate::widgets::modal::modal_window(pk.subject, min_h, move |_subj| build_card(state, pk))
+    crate::widgets::modal::modal_window(pk.subject, min_h, move |subj| {
+        crate::shared::nslog::nslog(&format!("[GradePeek] build_card invoked, subj='{subj}'"));
+        build_card(state, pk)
+    })
 }
 
 /// One digit of the predict keypad: accent-tinted chip, tap appends that mark

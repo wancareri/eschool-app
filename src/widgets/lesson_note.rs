@@ -61,11 +61,13 @@ pub fn delete_note(state: AppState, key: &str) {
 }
 
 pub fn open_note(state: AppState, target: LessonNoteTarget) {
+    crate::shared::nslog::nslog(&format!("[LessonNote] open_note: key='{}'", target.key));
     crate::shared::keyboard::init();
     state.active_note.set(Some(target));
 }
 
 pub fn close_note(state: AppState) {
+    crate::shared::nslog::nslog("[LessonNote] close_note");
     crate::shared::keyboard::dismiss();
     crate::shared::keyboard::set_keyboard_height(0.0);
     state.active_note.set(None);
@@ -74,6 +76,7 @@ pub fn close_note(state: AppState) {
 pub fn modal(state: AppState) -> impl Piece {
     let min_h = (crate::pages::diary::get_screen_height() * 0.40).min(320.0);
     crate::widgets::modal::modal_window(state.active_note, min_h, move |target| {
+        crate::shared::nslog::nslog(&format!("[LessonNote] build_card: key='{}'", target.key));
         build_card(state, target.clone())
     })
 }

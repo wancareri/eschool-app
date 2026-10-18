@@ -930,6 +930,7 @@ fn peek_row<D: Decorate + 'static>(base: D, sj: String, st: AppState, offset: i3
     let sj_tap = sj.clone();
     base.on_tap(move || {
         let cur_q = (st.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
+        crate::shared::nslog::nslog(&format!("[Diary] on_tap grade row: subject='{sj_tap}', quarter={cur_q}"));
         crate::widgets::grade_peek::open(sj_tap.clone(), cur_q);
     })
     .on_long_press(move |_p| {

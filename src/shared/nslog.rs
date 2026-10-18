@@ -4,7 +4,7 @@
 use std::sync::Mutex;
 
 static LOG_BUFFER: Mutex<Vec<String>> = Mutex::new(Vec::new());
-const MAX_LOGS: usize = 200;
+const MAX_LOGS: usize = 1500;
 
 #[cfg(target_os = "ios")]
 unsafe extern "C" {

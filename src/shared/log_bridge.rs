@@ -12,8 +12,14 @@ impl log::Log for Bridge {
             return;
         }
         let msg = record.args().to_string();
-        if record.level() <= log::Level::Warn || msg.contains("COVERDBG") {
-            nslog::nslog(&format!("{:<5} {}: {}", record.level(), record.target(), msg));
+        let target = record.target();
+        if record.level() <= log::Level::Info
+            || msg.contains("COVER")
+            || msg.contains("Modal")
+            || target.contains("day")
+            || target.contains("eschool")
+        {
+            nslog::nslog(&format!("{:<5} {}: {}", record.level(), target, msg));
         }
     }
 

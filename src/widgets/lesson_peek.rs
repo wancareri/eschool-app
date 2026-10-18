@@ -26,17 +26,20 @@ impl Route for LessonDetailTarget {
 }
 
 pub fn open_peek(state: AppState, target: LessonDetailTarget) {
+    crate::shared::nslog::nslog(&format!("[LessonPeek] open_peek: subject='{}'", target.subject_title));
     crate::shared::haptics::tick();
     state.active_lesson_peek.set(Some(target));
 }
 
 pub fn close_peek(state: AppState) {
+    crate::shared::nslog::nslog("[LessonPeek] close_peek");
     state.active_lesson_peek.set(None);
 }
 
 pub fn modal(state: AppState) -> impl Piece {
     let min_h = (crate::pages::diary::get_screen_height() * 0.45).min(380.0);
     crate::widgets::modal::modal_window(state.active_lesson_peek, min_h, move |target| {
+        crate::shared::nslog::nslog(&format!("[LessonPeek] build_card: subject='{}'", target.subject_title));
         build_card(state, target.clone())
     })
 }

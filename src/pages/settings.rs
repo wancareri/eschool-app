@@ -520,17 +520,36 @@ fn dev_settings(state: AppState) -> impl Piece {
                     .editable(false)
                     .min_lines(12),
 
-                row((
-                    button("Обновить")
-                        .action(move || {
-                            log_doc.set(StyledText::plain(nslog::get_logs()));
-                        }),
-                    button("Очистить логи")
-                        .action(move || {
-                            nslog::clear_logs();
-                            log_doc.set(StyledText::plain(String::new()));
-                        }),
-                )).spacing(8.0),
+                {
+                    let copy_msg = Signal::new(String::new());
+                    column((
+                        row((
+                            button("Обновить")
+                                .action(move || {
+                                    copy_msg.set(String::new());
+                                    log_doc.set(StyledText::plain(nslog::get_logs()));
+                                }),
+                            button("Скопировать")
+                                .action(move || {
+                                    let txt = nslog::get_logs();
+                                    day_part_clipboard::set_text(&txt);
+                                    crate::shared::haptics::tick();
+                                    copy_msg.set("✓ Скопировано в буфер обмена!".into());
+                                }),
+                            button("Очистить")
+                                .action(move || {
+                                    nslog::clear_logs();
+                                    copy_msg.set(String::new());
+                                    log_doc.set(StyledText::plain(String::new()));
+                                }),
+                        )).spacing(8.0),
+
+                        when(
+                            move || !copy_msg.get().is_empty(),
+                            move || label(move || copy_msg.get()).font(Font::Caption).color(colors::SUCCESS)
+                        ),
+                    )).spacing(4.0)
+                },
             )
         ).title("Логи"),
     ))

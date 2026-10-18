@@ -120,6 +120,7 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
     cover(
         open,
         move |route| {
+            crate::shared::nslog::nslog(&format!("[Modal] cover closure evaluated for route: {}", route.key()));
             // Sheet drag. Vertical only (horizontal travel is simply ignored).
             // Both directions start from the finger; only the release animates.
             let drag_y = Signal::new(0.0);
@@ -156,6 +157,7 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                         with_animation(AnimSpec::ease_out(240), move || drag_y.set(0.0));
                     } else if drag_y.get() > 70.0 {
                         // Any downward pull past 70pt dismisses the modal.
+                        crate::shared::nslog::nslog(&format!("[Modal] drag ended past threshold ({:.1}), closing", drag_y.get()));
                         close_modal(&o_freeze, "drag-end");
                     } else {
                         // Return card to bottom edge
@@ -173,6 +175,7 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 // later zstack child, so it wins the hit-test over its own area.
                 button("")
                     .action(move || {
+                        crate::shared::nslog::nslog("[Modal] dim button tapped");
                         if kb_h.get() > 20.0 {
                             crate::shared::keyboard::dismiss();
                         } else {
