@@ -7,11 +7,8 @@ const MAX_UP: f64 = 70.0;
 /// the card's rounded bottom corners dissolve into filler material instead of
 /// the dim showing through.
 const FILLER_H: f64 = MAX_UP + 14.0;
-/// The card's resize animation: content that grows (a panel opens, marks
-/// appear) or shrinks re-lays the card with this ease — the window's top edge
-/// slides up instead of jumping. Attached to the card itself (§8.4 implicit
-/// animation), so it covers every content-driven size change in any caller.
-const RESIZE_MS: u32 = 240;
+/// The card's smooth animation matching cover entrance duration (COVER_SHEET_IN).
+const RESIZE_MS: u32 = 380;
 
 /// Close is just the signal flip: the cover piece runs the native dismissal
 /// itself and keeps its content mounted until the backend reports it hidden.
@@ -155,7 +152,8 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 // bottom edge — this parks the same card material one MAX_UP
                 // below and slides it up by exactly the lift distance, so the
                 // hole always shows the sheet, never the dim.
-                gap_filler(drag_y, kb_h),
+                gap_filler(drag_y, kb_h)
+                    .animation(AnimSpec::ease_out(RESIZE_MS)),
 
                 // Bottom sheet card: day's semantic section surface — the platform's
                 // theme-adaptive grouped-card material (secondary system grouped
@@ -195,12 +193,8 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                         content(route).any()
                     },
                 ))
-                // The card's own §8.4 implicit animation: every content-driven
-                // size change of the card and of everything inside it eases
-                // RESIZE_MS, so the window's top edge slides up when a panel
-                // adds elements instead of jumping.
-                .animation(AnimSpec::ease_out(RESIZE_MS))
                 .translation(0.0, move || drag_y.get() - kb_h.get())
+                .animation(AnimSpec::ease_out(RESIZE_MS))
                 .any(),
             ))
             .align(Alignment::Bottom)

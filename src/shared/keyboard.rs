@@ -24,7 +24,9 @@ pub fn set_keyboard_height(h: f64) {
     let sig = keyboard_height_signal();
     if (sig.get() - h).abs() > 0.5 {
         crate::shared::nslog::nslog(&format!("[Keyboard] Height updated to: {h:.1}"));
-        sig.set(h);
+        with_animation(AnimSpec::ease_out(380), move || {
+            sig.set(h);
+        });
     }
 }
 
