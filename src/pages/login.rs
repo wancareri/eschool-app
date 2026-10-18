@@ -354,7 +354,7 @@ fn auth_form(state: AppState) -> impl Piece {
                 }
             })
             .id("login-btn")
-            .padding(Insets { top: 8.0, leading: 20.0, bottom: 28.0, trailing: 20.0 })
+            .padding(Insets { top: 8.0, leading: 20.0, bottom: 0.0, trailing: 20.0 })
             .translation(0.0, move || -kb_h.get())
             .animation(AnimSpec::ease_out(250)),
     ))
