@@ -9,7 +9,7 @@ pub fn keyboard_height_signal() -> Signal<f64> {
         if let Some(s) = c.get() {
             s
         } else {
-            let s = Signal::new(0.0);
+            let s = Scope::root().enter(|| Signal::new(0.0));
             c.set(Some(s));
             s
         }

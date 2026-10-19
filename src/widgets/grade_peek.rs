@@ -76,7 +76,7 @@ fn peek() -> Peek {
     PEEK.with(|c| match c.get() {
         Some(p) => p,
         None => {
-            let p = Peek::new();
+            let p = Scope::root().enter(Peek::new);
             c.set(Some(p));
             p
         }
