@@ -99,25 +99,74 @@ fn attachment_row(state: AppState, att: crate::features::attachments::LessonAtta
         .spacing(1.0)
         .grow(),
 
-        // Action buttons (vertical column of clean icons)
+        // Action buttons (vertical column of clean icons with iOS-style tap feedback)
         if is_link {
-            let on_open = move || {
-                crate::features::attachments::open_or_preview_attachment(state, &att_open);
+            let link_pressed = Signal::new(false);
+            let link_setter = link_pressed.setter();
+            let link_fn_action = {
+                move || {
+                    crate::shared::haptics::tick();
+                    link_setter.set(true);
+                    day::reactive::on_main_delayed(150, move || {
+                        link_setter.set(false);
+                    });
+                    crate::features::attachments::open_or_preview_attachment(state, &att_open);
+                }
             };
+            let lp_bg = link_pressed.clone();
+            let lp_tint = link_pressed;
             vector(crate::res::vectors::external_link)
                 .frame(18.0, 18.0)
-                .tint(move || Color::hex(state.accent_color.get()))
+                .tint(move || {
+                    if lp_tint.get() {
+                        Color::hex(state.accent_color.get())
+                    } else {
+                        Color::hex(state.accent_color.get()).with_alpha(0.85)
+                    }
+                })
                 .padding(6.0)
-                .on_tap(on_open)
+                .background(move || {
+                    if lp_bg.get() {
+                        Color::hex(state.accent_color.get()).with_alpha(0.20)
+                    } else {
+                        Color::rgba(0.0, 0.0, 0.0, 0.0)
+                    }
+                })
+                .corner_radius(6.0)
+                .on_tap(link_fn_action)
                 .any()
         } else {
             let id_check = att_id.clone();
-            let open_fn = move || {
-                crate::features::attachments::open_or_preview_attachment(state, &att_open);
+            let view_pressed = Signal::new(false);
+            let view_setter = view_pressed.setter();
+            let open_fn_action = {
+                move || {
+                    crate::shared::haptics::tick();
+                    view_setter.set(true);
+                    day::reactive::on_main_delayed(150, move || {
+                        view_setter.set(false);
+                    });
+                    crate::features::attachments::open_or_preview_attachment(state, &att_open);
+                }
             };
-            let share_fn = move || {
-                crate::features::attachments::share_attachment(state, &att_share);
+            let vp_bg = view_pressed.clone();
+            let vp_tint = view_pressed;
+
+            let share_pressed = Signal::new(false);
+            let share_setter = share_pressed.setter();
+            let share_fn_action = {
+                move || {
+                    crate::shared::haptics::tick();
+                    share_setter.set(true);
+                    day::reactive::on_main_delayed(150, move || {
+                        share_setter.set(false);
+                    });
+                    crate::features::attachments::share_attachment(state, &att_share);
+                }
             };
+            let sp_bg = share_pressed.clone();
+            let sp_tint = share_pressed;
+
             column((
                 // QuickLook / View icon button
                 zstack((
@@ -126,21 +175,50 @@ fn attachment_row(state: AppState, att: crate::features::attachments::LessonAtta
                         move || crate::widgets::spinner::render(state, 16.0).any(),
                     )
                     .otherwise(move || {
+                        let tint_p = vp_tint.clone();
                         vector(crate::res::vectors::eye)
                             .frame(18.0, 18.0)
-                            .tint(move || Color::hex(state.accent_color.get()))
+                            .tint(move || {
+                                if tint_p.get() {
+                                    Color::hex(state.accent_color.get())
+                                } else {
+                                    Color::hex(state.accent_color.get()).with_alpha(0.85)
+                                }
+                            })
                             .any()
                     }),
                 ))
                 .padding(Insets { top: 4.0, leading: 6.0, bottom: 2.0, trailing: 6.0 })
-                .on_tap(open_fn),
+                .background(move || {
+                    if vp_bg.get() {
+                        Color::hex(state.accent_color.get()).with_alpha(0.20)
+                    } else {
+                        Color::rgba(0.0, 0.0, 0.0, 0.0)
+                    }
+                })
+                .corner_radius(6.0)
+                .on_tap(open_fn_action),
 
                 // Share / Save to Files / Download icon button
                 vector(crate::res::vectors::download)
                     .frame(18.0, 18.0)
-                    .tint(move || Color::hex(state.accent_color.get()))
+                    .tint(move || {
+                        if sp_tint.get() {
+                            Color::hex(state.accent_color.get())
+                        } else {
+                            Color::hex(state.accent_color.get()).with_alpha(0.85)
+                        }
+                    })
                     .padding(Insets { top: 2.0, leading: 6.0, bottom: 4.0, trailing: 6.0 })
-                    .on_tap(share_fn),
+                    .background(move || {
+                        if sp_bg.get() {
+                            Color::hex(state.accent_color.get()).with_alpha(0.20)
+                        } else {
+                            Color::rgba(0.0, 0.0, 0.0, 0.0)
+                        }
+                    })
+                    .corner_radius(6.0)
+                    .on_tap(share_fn_action),
             ))
             .spacing(0.0)
             .align(HAlign::Center)
@@ -259,9 +337,9 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
     let u_list = uuid_for_att.clone();
 
     column((
-        // ── 1. ШАПКА: Предмет, Дата, Время, Урок, Учитель, Отметка ──────
+        // ── 1. ШАПКА: Предмет, Учитель, Отметка, Дата, Время ────────
         column((
-            // Верхняя строка: Название предмета (и бейдж замены) слева + Отметка справа
+            // Верхняя строка: Предмет + Учитель слева, Отметка справа
             row((
                 column((
                     if is_substitution {
@@ -288,8 +366,19 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                         .font(Font::Title)
                         .bold()
                         .align(TextAlign::Leading),
+
+                    if let Some(ref t_name) = t_teacher.filter(|t| !t.trim().is_empty()) {
+                        label(t_name.clone())
+                            .font(Font::Subheadline)
+                            .weight(FontWeight::Medium)
+                            .secondary()
+                            .align(TextAlign::Leading)
+                            .any()
+                    } else {
+                        spacer().height(0.0).any()
+                    },
                 ))
-                .spacing(3.0)
+                .spacing(2.0)
                 .grow(),
 
                 if let Some(ref m_val) = t_mark {
@@ -316,9 +405,9 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                     spacer().width(0.0).any()
                 },
             ))
-            .align(VAlign::Center),
+            .align(VAlign::Top),
 
-            // Единая строка деталей: Дата • Урок (время) • Преподаватель
+            // Единая строка деталей: Дата • Номер урока (время)
             row((
                 if let Some(ref d_str) = date_display {
                     row((
@@ -335,19 +424,6 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                 label(format!("{lesson_num_str} ({time_str})"))
                     .font(Font::Subheadline)
                     .secondary(),
-                if let Some(ref t_name) = t_teacher.filter(|t| !t.trim().is_empty()) {
-                    row((
-                        label("•").font(Font::Subheadline).secondary(),
-                        label(t_name.clone())
-                            .font(Font::Subheadline)
-                            .weight(FontWeight::Medium)
-                            .secondary(),
-                    ))
-                    .spacing(5.0)
-                    .any()
-                } else {
-                    spacer().width(0.0).any()
-                },
             ))
             .spacing(5.0)
             .align(VAlign::Center),
