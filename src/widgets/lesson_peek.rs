@@ -99,25 +99,15 @@ fn attachment_row(state: AppState, att: crate::features::attachments::LessonAtta
         .spacing(1.0)
         .grow(),
 
-        // Action buttons
+        // Action buttons (clean icons without circle wrappers)
         if is_link {
             let on_open = move || {
                 crate::features::attachments::open_or_preview_attachment(state, &att_open);
             };
-            circle()
-                .fill(move || {
-                    if day::dark_mode() {
-                        Color::rgba(1.0, 1.0, 1.0, 0.10)
-                    } else {
-                        Color::rgba(0.0, 0.0, 0.0, 0.06)
-                    }
-                })
-                .frame(36.0, 36.0)
-                .overlay(
-                    vector(crate::res::vectors::external_link)
-                        .frame(18.0, 18.0)
-                        .tint(move || Color::hex(state.accent_color.get())),
-                )
+            vector(crate::res::vectors::external_link)
+                .frame(20.0, 20.0)
+                .tint(move || Color::hex(state.accent_color.get()))
+                .padding(6.0)
                 .on_tap(on_open)
                 .any()
         } else {
@@ -130,47 +120,29 @@ fn attachment_row(state: AppState, att: crate::features::attachments::LessonAtta
             };
             row((
                 // QuickLook / View icon button
-                circle()
-                    .fill(move || {
-                        if day::dark_mode() {
-                            Color::rgba(1.0, 1.0, 1.0, 0.10)
-                        } else {
-                            Color::rgba(0.0, 0.0, 0.0, 0.06)
-                        }
-                    })
-                    .frame(36.0, 36.0)
-                    .overlay(
-                        when(
-                            move || state.downloading_files.with(|s| s.contains(&id_check)),
-                            move || crate::widgets::spinner::render(state, 16.0).any(),
-                        )
-                        .otherwise(move || {
-                            vector(crate::res::vectors::eye)
-                                .frame(18.0, 18.0)
-                                .tint(move || Color::hex(state.accent_color.get()))
-                                .any()
-                        }),
+                zstack((
+                    when(
+                        move || state.downloading_files.with(|s| s.contains(&id_check)),
+                        move || crate::widgets::spinner::render(state, 18.0).any(),
                     )
-                    .on_tap(open_fn),
+                    .otherwise(move || {
+                        vector(crate::res::vectors::eye)
+                            .frame(20.0, 20.0)
+                            .tint(move || Color::hex(state.accent_color.get()))
+                            .any()
+                    }),
+                ))
+                .padding(6.0)
+                .on_tap(open_fn),
 
                 // Share / Save to Files / Download icon button
-                circle()
-                    .fill(move || {
-                        if day::dark_mode() {
-                            Color::rgba(1.0, 1.0, 1.0, 0.10)
-                        } else {
-                            Color::rgba(0.0, 0.0, 0.0, 0.06)
-                        }
-                    })
-                    .frame(36.0, 36.0)
-                    .overlay(
-                        vector(crate::res::vectors::download)
-                            .frame(18.0, 18.0)
-                            .tint(move || Color::hex(state.accent_color.get())),
-                    )
+                vector(crate::res::vectors::download)
+                    .frame(20.0, 20.0)
+                    .tint(move || Color::hex(state.accent_color.get()))
+                    .padding(6.0)
                     .on_tap(share_fn),
             ))
-            .spacing(8.0)
+            .spacing(4.0)
             .any()
         },
     ))
@@ -370,63 +342,44 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
         // ── 2. ОЦЕНКА ЗА УРОК (GRADE) ────────────────────────────────
         if let Some(ref m_val) = t_mark {
             let m_col = utils::grade_color(m_val);
-            row((
-                capsule()
-                    .fill(m_col.with_alpha(0.16))
-                    .frame(42.0, 42.0)
-                    .overlay(
-                        label(m_val.clone())
-                            .font(Font::Title2)
-                            .bold()
-                            .color(m_col)
-                            .align(TextAlign::Center),
-                    ),
-                column((
-                    label("Оценка за урок")
-                        .font(Font::Subheadline)
-                        .bold(),
+            column((
+                label("ОЦЕНКА ЗА УРОК")
+                    .font(Font::Caption)
+                    .weight(FontWeight::Semibold)
+                    .secondary(),
+                row((
+                    label(m_val.clone())
+                        .font(Font::Title)
+                        .bold()
+                        .color(m_col),
                     if let Some(ref c) = t_comment {
-                        label(c.clone())
-                            .font(Font::Caption)
+                        label(format!("— {}", c))
+                            .font(Font::Subheadline)
                             .secondary()
                             .any()
                     } else {
-                        label("Выставлена в электронный журнал")
-                            .font(Font::Caption2)
-                            .secondary()
-                            .any()
+                        spacer().width(0.0).any()
                     },
                 ))
-                .spacing(2.0)
-                .grow(),
+                .spacing(8.0)
+                .align(VAlign::Center),
             ))
-            .spacing(12.0)
-            .align(VAlign::Center)
+            .spacing(4.0)
+            .align(HAlign::Leading)
             .any()
         } else {
-            row((
-                circle()
-                    .fill(Color::rgba(0.5, 0.5, 0.5, 0.12))
-                    .frame(36.0, 36.0)
-                    .overlay(
-                        label("—")
-                            .font(Font::Headline)
-                            .secondary()
-                            .align(TextAlign::Center),
-                    ),
-                column((
-                    label("Оценка")
-                        .font(Font::Subheadline)
-                        .bold(),
-                    label("Пока не выставлена")
-                        .font(Font::Caption2)
-                        .secondary(),
-                ))
-                .spacing(2.0)
-                .grow(),
+            column((
+                label("ОЦЕНКА")
+                    .font(Font::Caption)
+                    .weight(FontWeight::Semibold)
+                    .secondary(),
+                label("Не выставлена")
+                    .font(Font::Body)
+                    .secondary()
+                    .italic(),
             ))
-            .spacing(12.0)
-            .align(VAlign::Center)
+            .spacing(4.0)
+            .align(HAlign::Leading)
             .any()
         },
 
@@ -481,17 +434,17 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
         if let Some(ref t_name) = t_teacher.filter(|t| !t.trim().is_empty()) {
             column((
                 divider().padding(Insets { top: 10.0, leading: 0.0, bottom: 10.0, trailing: 0.0 }),
-                row((
-                    label("👤").font(Font::Callout),
-                    column((
-                        label("Преподаватель").font(Font::Caption2).secondary(),
-                        label(t_name.clone()).font(Font::Subheadline).weight(FontWeight::Medium),
-                    ))
-                    .spacing(1.0)
-                    .grow(),
+                column((
+                    label("ПРЕПОДАВАТЕЛЬ")
+                        .font(Font::Caption)
+                        .weight(FontWeight::Semibold)
+                        .secondary(),
+                    label(t_name.clone())
+                        .font(Font::Body)
+                        .weight(FontWeight::Medium),
                 ))
-                .spacing(10.0)
-                .align(VAlign::Center),
+                .spacing(4.0)
+                .align(HAlign::Leading),
             ))
             .spacing(0.0)
             .any()
@@ -582,20 +535,10 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                     .spacing(6.0)
                     .align(VAlign::Center),
 
-                    column((
-                        text_field(edit_text.clone())
-                            .placeholder("Заметка к уроку (сохраняется на устройстве)...")
-                            .on_submit(save.clone()),
-                    ))
-                    .padding(Insets { top: 10.0, leading: 12.0, bottom: 10.0, trailing: 12.0 })
-                    .background(move || {
-                        if day::dark_mode() {
-                            Color::rgba(1.0, 1.0, 1.0, 0.08)
-                        } else {
-                            Color::rgba(0.0, 0.0, 0.0, 0.05)
-                        }
-                    })
-                    .corner_radius(10.0),
+                    text_field(edit_text.clone())
+                        .placeholder("Заметка к уроку (сохраняется на устройстве)...")
+                        .on_submit(save.clone())
+                        .padding(Insets { top: 6.0, leading: 0.0, bottom: 6.0, trailing: 0.0 }),
 
                     row((
                         button("Отмена")

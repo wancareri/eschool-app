@@ -121,5 +121,37 @@ mod ios {
         } else {
             crate::shared::nslog::nslog("[Keyboard] WARNING: DayAppDelegate class not found");
         }
+
+        // Swizzle UITextField setBorderStyle: to force UITextBorderStyleNone (0) so text fields have no native border/outline
+        let tf_cls = AnyClass::get(c"UITextField");
+        if let Some(cls) = tf_cls {
+            let sel = objc2::sel!(setBorderStyle:);
+            if let Some(method) = cls.instance_method(sel) {
+                let orig: Imp = method.implementation();
+                unsafe {
+                    ORIG_SET_BORDER_STYLE = Some(std::mem::transmute(orig));
+                }
+                let imp: Imp = unsafe { std::mem::transmute(swizzled_set_border_style as *const ()) };
+                unsafe {
+                    method.set_implementation(imp);
+                }
+                crate::shared::nslog::nslog("[TextField] Successfully swizzled UITextField setBorderStyle: to force None");
+            }
+        }
+    }
+
+    static mut ORIG_SET_BORDER_STYLE: Option<unsafe extern "C-unwind" fn(*mut AnyObject, Sel, isize)> = None;
+
+    unsafe extern "C-unwind" fn swizzled_set_border_style(
+        this: *mut AnyObject,
+        cmd: Sel,
+        _style: isize,
+    ) {
+        // Force borderStyle to UITextBorderStyleNone (0) so text fields have no native outline/border
+        unsafe {
+            if let Some(orig) = ORIG_SET_BORDER_STYLE {
+                orig(this, cmd, 0);
+            }
+        }
     }
 }

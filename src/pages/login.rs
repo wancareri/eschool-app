@@ -98,19 +98,7 @@ fn auth_form(state: AppState) -> impl Piece {
     column((
         scroll(
             column((
-                spacer().height(36.0),
-
-            // Telegram-style greeting badge
-            circle()
-                .fill(move || Color::hex(state.accent_color.get()).with_alpha(0.14))
-                .frame(76.0, 76.0)
-                .overlay(
-                    label("👋")
-                        .font(Font::System(38.0))
-                        .align(TextAlign::Center),
-                ),
-
-            spacer().height(16.0),
+                spacer().height(24.0),
 
             // Greeting header — adapts between Step 0 and Step 1
             when(

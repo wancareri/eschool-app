@@ -169,33 +169,17 @@ fn build_card(state: AppState, target: LessonNoteTarget) -> impl Piece {
         ),
 
         // Text input field
-        column((
-            text_field(note_text.clone())
-                .placeholder("Заметка к уроку (видна только в приложении)...")
-                .on_submit(move || {
-                    crate::shared::keyboard::dismiss();
-                }),
-        ))
-        .padding(Insets {
-            top: 12.0,
-            leading: 14.0,
-            bottom: 12.0,
-            trailing: 14.0,
-        })
-        .background(move || {
-            if day::dark_mode() {
-                Color::rgba(0.22, 0.22, 0.25, 1.0)
-            } else {
-                Color::rgba(0.92, 0.92, 0.95, 1.0)
-            }
-        })
-        .corner_radius(12.0)
-        .padding(Insets {
-            top: 4.0,
-            leading: 20.0,
-            bottom: 12.0,
-            trailing: 20.0,
-        }),
+        text_field(note_text.clone())
+            .placeholder("Заметка к уроку (видна только в приложении)...")
+            .on_submit(move || {
+                crate::shared::keyboard::dismiss();
+            })
+            .padding(Insets {
+                top: 8.0,
+                leading: 20.0,
+                bottom: 12.0,
+                trailing: 20.0,
+            }),
 
         // Action buttons
         row((

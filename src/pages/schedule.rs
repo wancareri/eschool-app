@@ -441,17 +441,14 @@ fn day_lesson_rows(state: AppState, dow: u32) -> Vec<LessonRow> {
 fn lesson_table_row(state: AppState, slot: ItemSlot<LessonRow, String>) -> impl Piece {
     let s_col = state;
     row((
-        // Number badge
-        circle()
-            .fill(move || Color::hex(s_col.accent_color.get()).with_alpha(0.14))
-            .frame(36.0, 36.0)
-            .overlay(
-                label(move || slot.with(|r| r.num.to_string()))
-                    .font(Font::Headline)
-                    .bold()
-                    .color(move || Color::hex(s_col.accent_color.get()))
-                    .align(TextAlign::Center),
-            ),
+        // Number
+        label(move || slot.with(|r| r.num.to_string()))
+            .font(Font::Title2)
+            .bold()
+            .tabular()
+            .color(move || Color::hex(s_col.accent_color.get()))
+            .width(28.0)
+            .align(TextAlign::Center),
 
         // Subject & Time column
         column((
