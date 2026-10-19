@@ -151,3 +151,138 @@ public struct GlassNavBarView: View {
         }
     }
 }
+
+// MARK: - Native Quick Look & File Share
+
+#if canImport(UIKit)
+import UIKit
+#if canImport(QuickLook)
+import QuickLook
+
+public final class EschoolPreviewItem: NSObject, QLPreviewItem {
+    public let previewItemURL: URL?
+    public let previewItemTitle: String?
+
+    public init(url: URL, title: String? = nil) {
+        self.previewItemURL = url
+        self.previewItemTitle = title ?? url.lastPathComponent
+        super.init()
+    }
+}
+
+public final class EschoolQuickLookDataSource: NSObject, QLPreviewControllerDataSource {
+    let item: EschoolPreviewItem
+
+    public init(item: EschoolPreviewItem) {
+        self.item = item
+        super.init()
+    }
+
+    public func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
+        return 1
+    }
+
+    public func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+        return item
+    }
+}
+
+private var qlDataSourceKey: UInt8 = 0
+#endif
+
+@_cdecl("eschool_quicklook_file")
+public func eschool_quicklook_file(path: UnsafePointer<CChar>) {
+    let filePath = String(cString: path)
+    DispatchQueue.main.async {
+        guard let windowScene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+              let rootVC = windowScene.windows.first(where: { $0.isKeyWindow })?.rootViewController else {
+            return
+        }
+
+        var topVC = rootVC
+        while let presented = topVC.presentedViewController {
+            topVC = presented
+        }
+
+        let url = URL(fileURLWithPath: filePath)
+        #if canImport(QuickLook)
+        let previewItem = EschoolPreviewItem(url: url)
+        let dataSource = EschoolQuickLookDataSource(item: previewItem)
+
+        let qlController = QLPreviewController()
+        qlController.dataSource = dataSource
+        objc_setAssociatedObject(qlController, &qlDataSourceKey, dataSource, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+        topVC.present(qlController, animated: true)
+        #else
+        let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        if let popover = activityVC.popoverPresentationController {
+            popover.sourceView = topVC.view
+        }
+        topVC.present(activityVC, animated: true)
+        #endif
+    }
+}
+
+@_cdecl("eschool_share_file")
+public func eschool_share_file(path: UnsafePointer<CChar>) {
+    let filePath = String(cString: path)
+    DispatchQueue.main.async {
+        guard let windowScene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+              let rootVC = windowScene.windows.first(where: { $0.isKeyWindow })?.rootViewController else {
+            return
+        }
+
+        var topVC = rootVC
+        while let presented = topVC.presentedViewController {
+            topVC = presented
+        }
+
+        let url = URL(fileURLWithPath: filePath)
+        let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        if let popover = activityVC.popoverPresentationController {
+            popover.sourceView = topVC.view
+        }
+        topVC.present(activityVC, animated: true)
+    }
+}
+
+@_cdecl("eschool_open_url")
+public func eschool_open_url(urlStr: UnsafePointer<CChar>) {
+    let s = String(cString: urlStr)
+    if let url = URL(string: s) {
+        DispatchQueue.main.async {
+            UIApplication.shared.open(url)
+        }
+    }
+}
+#elseif os(macOS)
+import AppKit
+
+@_cdecl("eschool_quicklook_file")
+public func eschool_quicklook_file(path: UnsafePointer<CChar>) {
+    let filePath = String(cString: path)
+    DispatchQueue.main.async {
+        NSWorkspace.shared.open(URL(fileURLWithPath: filePath))
+    }
+}
+
+@_cdecl("eschool_share_file")
+public func eschool_share_file(path: UnsafePointer<CChar>) {
+    let filePath = String(cString: path)
+    DispatchQueue.main.async {
+        NSWorkspace.shared.open(URL(fileURLWithPath: filePath))
+    }
+}
+
+@_cdecl("eschool_open_url")
+public func eschool_open_url(urlStr: UnsafePointer<CChar>) {
+    let s = String(cString: urlStr)
+    if let url = URL(string: s) {
+        DispatchQueue.main.async {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+#endif
+

@@ -63,7 +63,8 @@ pub fn delete_note(state: AppState, key: &str) {
 pub fn open_note(state: AppState, target: LessonNoteTarget) {
     crate::shared::nslog::nslog(&format!("[LessonNote] open_note forwarding to peek: key='{}'", target.key));
     let peek_target = crate::widgets::lesson_peek::LessonDetailTarget {
-        key: target.key,
+        key: target.key.clone(),
+        lesson_uuid: target.key,
         subject_title: target.subject_title,
         lesson_number: target.lesson_number,
         start_time: target.start_time,

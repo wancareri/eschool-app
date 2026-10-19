@@ -107,6 +107,9 @@ pub struct AppState {
 
     // ── lesson notes & peek ────────────────────────────────────────────────
     pub lesson_notes: Signal<std::collections::HashMap<String, String>>,
+    pub lesson_attachments: Signal<std::collections::HashMap<String, Vec<crate::features::attachments::LessonAttachment>>>,
+    pub attachments_loading: Signal<std::collections::HashSet<String>>,
+    pub downloading_files: Signal<std::collections::HashSet<String>>,
     pub active_note: Signal<Option<crate::widgets::lesson_note::LessonNoteTarget>>,
     pub active_lesson_peek: Signal<Option<crate::widgets::lesson_peek::LessonDetailTarget>>,
 
@@ -180,6 +183,9 @@ impl Ambient for AppState {
             island_label: Signal::new(ConnStatus::Idle),
             log_version: Signal::new(0u64),
             lesson_notes: Signal::new(crate::widgets::lesson_note::load_notes_map()),
+            lesson_attachments: Signal::new(std::collections::HashMap::new()),
+            attachments_loading: Signal::new(std::collections::HashSet::new()),
+            downloading_files: Signal::new(std::collections::HashSet::new()),
             active_note: Signal::new(None),
             active_lesson_peek: Signal::new(None),
             keyboard_height: Signal::new(0.0),

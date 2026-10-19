@@ -5,6 +5,8 @@ use day::prelude::*;
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LessonDetailTarget {
     pub key: String,
+    #[serde(default)]
+    pub lesson_uuid: String,
     pub subject_title: String,
     pub lesson_number: u32,
     pub start_time: String,
@@ -49,6 +51,95 @@ pub fn modal(state: AppState) -> impl Piece {
         crate::shared::nslog::nslog(&format!("[LessonPeek] build_card: subject='{}'", target.subject_title));
         build_card(state, target.clone())
     })
+}
+
+fn attachment_row(state: AppState, att: crate::features::attachments::LessonAttachment) -> impl Piece {
+    let is_link = att.is_link;
+    let title_str = att.title.clone();
+    let size_str = att.file_size.clone();
+    let att_open = att.clone();
+    let att_share = att.clone();
+    let att_id = if !att.id.is_empty() { att.id.clone() } else { att.url.clone() };
+
+    row((
+        // Left icon
+        if is_link {
+            label("🔗")
+                .font(Font::Headline)
+                .any()
+        } else {
+            vector(crate::res::vectors::attachment)
+                .frame(16.0, 16.0)
+                .tint(move || Color::hex(state.accent_color.get()))
+                .any()
+        },
+
+        // Title and size column
+        column((
+            label(title_str)
+                .font(Font::Subheadline)
+                .weight(FontWeight::Medium)
+                .grow(),
+            if let Some(sz) = size_str {
+                label(sz)
+                    .font(Font::Caption2)
+                    .secondary()
+                    .any()
+            } else if is_link {
+                label("Внешняя ссылка")
+                    .font(Font::Caption2)
+                    .secondary()
+                    .any()
+            } else {
+                spacer().height(0.0).any()
+            },
+        ))
+        .spacing(2.0)
+        .grow(),
+
+        // Action buttons
+        if is_link {
+            button("Открыть")
+                .action(move || {
+                    crate::features::attachments::open_or_preview_attachment(state, &att_open);
+                })
+                .any()
+        } else {
+            let id_check = att_id.clone();
+            row((
+                // QuickLook button
+                button(move || {
+                    if state.downloading_files.with(|s| s.contains(&id_check)) {
+                        "Загрузка...".to_string()
+                    } else {
+                        "Просмотр".to_string()
+                    }
+                })
+                .action(move || {
+                    crate::features::attachments::open_or_preview_attachment(state, &att_open);
+                }),
+
+                // Share / Save to Files button
+                button("Скачать")
+                    .action(move || {
+                        crate::features::attachments::share_attachment(state, &att_share);
+                    }),
+            ))
+            .spacing(6.0)
+            .any()
+        },
+    ))
+    .spacing(8.0)
+    .align(VAlign::Center)
+    .padding(Insets { top: 6.0, leading: 8.0, bottom: 6.0, trailing: 8.0 })
+    .background(move || {
+        if day::dark_mode() {
+            Color::rgba(1.0, 1.0, 1.0, 0.05)
+        } else {
+            Color::rgba(0.0, 0.0, 0.0, 0.03)
+        }
+    })
+    .corner_radius(10.0)
 }
 
 fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
@@ -140,6 +231,19 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
     let k_chk2 = key.clone();
     let k_lbl = key.clone();
     let k_del_btn_chk = key.clone();
+
+    // Attachments fetching
+    let uuid_for_att = if !target.lesson_uuid.is_empty() {
+        target.lesson_uuid.clone()
+    } else {
+        target.key.clone()
+    };
+    if (has_attachments || !target.lesson_uuid.is_empty()) && !uuid_for_att.is_empty() {
+        crate::features::attachments::fetch_attachments_async(state, &uuid_for_att);
+    }
+    let u_load = uuid_for_att.clone();
+    let u_check = uuid_for_att.clone();
+    let u_list = uuid_for_att.clone();
 
     column((
         // Header: Subject + Number & Time
@@ -323,6 +427,61 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
             ))
             .spacing(2.0)
             .padding(Insets { top: 4.0, leading: 10.0, bottom: 4.0, trailing: 10.0 })
+            .any()
+        } else {
+            spacer().height(0.0).any()
+        },
+
+        // Attachments section (Прикреплённые материалы)
+        if has_attachments || !target.lesson_uuid.is_empty() {
+            column((
+                row((
+                    vector(crate::res::vectors::attachment)
+                        .frame(14.0, 14.0)
+                        .tint(move || Color::hex(state.accent_color.get())),
+                    label("Прикреплённые материалы")
+                        .font(Font::Caption)
+                        .bold()
+                        .color(move || Color::hex(state.accent_color.get())),
+                    spacer().grow(),
+                    when(
+                        move || state.attachments_loading.with(|s| s.contains(&u_load)),
+                        move || label("загрузка...").font(Font::Caption2).secondary(),
+                    ),
+                ))
+                .spacing(6.0)
+                .align(VAlign::Center),
+
+                when(
+                    move || {
+                        state.lesson_attachments.with(|m| m.get(&u_check).map(|v| v.is_empty()).unwrap_or(false))
+                            && !state.attachments_loading.with(|s| s.contains(&u_check))
+                    },
+                    move || {
+                        label("Нет прикреплённых файлов к этому уроку")
+                            .font(Font::Caption)
+                            .secondary()
+                            .padding(Insets { top: 2.0, leading: 4.0, bottom: 2.0, trailing: 4.0 })
+                    },
+                ),
+
+                each(
+                    items(
+                        move || state.lesson_attachments.with(|m| m.get(&u_list).cloned().unwrap_or_default()),
+                        |att: &crate::features::attachments::LessonAttachment| {
+                            if !att.id.is_empty() { att.id.clone() } else { att.url.clone() }
+                        },
+                    ),
+                    move |slot| {
+                        let att = slot.with(|a| a.clone());
+                        attachment_row(state, att).any()
+                    },
+                ),
+            ))
+            .spacing(6.0)
+            .padding(Insets { top: 6.0, leading: 10.0, bottom: 6.0, trailing: 10.0 })
+            .background(move || Color::hex(state.accent_color.get()).with_alpha(0.06))
+            .corner_radius(12.0)
             .any()
         } else {
             spacer().height(0.0).any()
