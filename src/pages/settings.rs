@@ -4,7 +4,6 @@ use crate::widgets;
 use crate::res;
 use crate::shared::{biometric, colors, haptics, nslog, pin};
 use day::prelude::*;
-use day_piece_texteditor::text_editor;
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
@@ -456,7 +455,8 @@ pub fn settings_body() -> impl Piece {
 }
 
 fn dev_settings(state: AppState) -> impl Piece {
-    let log_doc = Signal::new(StyledText::plain(nslog::get_logs()));
+    let copy_msg = Signal::new(String::new());
+    let log_count = Signal::new(nslog::get_logs().lines().count());
 
     form((
         section(
@@ -473,20 +473,20 @@ fn dev_settings(state: AppState) -> impl Piece {
                             "Нет токена".into()
                         };
                         nslog::nslog(&format!("[Dev] {msg}"));
-                        log_doc.set(StyledText::plain(nslog::get_logs()));
+                        log_count.set(nslog::get_logs().lines().count());
                     }),
 
                 button("Обновить токен")
                     .action(move || {
                         nslog::nslog("[Dev] Manual token refresh...");
-                        let log_setter = log_doc.setter();
+                        let count_setter = log_count.setter();
                         std::thread::spawn(move || {
                             let msg: String = match features::auth::try_refresh_token() {
                                 Some(_) => "Refresh OK".into(),
                                 None => "Refresh FAILED".into(),
                             };
                             nslog::nslog(&format!("[Dev] {msg}"));
-                            log_setter.set(StyledText::plain(nslog::get_logs()));
+                            count_setter.set(nslog::get_logs().lines().count());
                         });
                     }),
 
@@ -494,20 +494,21 @@ fn dev_settings(state: AppState) -> impl Piece {
                     .action(move || {
                         day::prefs::set("diary.cache", "");
                         nslog::nslog("[Dev] Cache cleared");
-                        log_doc.set(StyledText::plain(nslog::get_logs()));
+                        log_count.set(nslog::get_logs().lines().count());
                     }),
 
                 button("Перезагрузить данные")
                     .action(move || {
-                        log_doc.set(StyledText::plain("Загрузка...".to_string()));
+                        nslog::nslog("[Dev] Reloading data...");
                         features::diary::load_all(state);
+                        log_count.set(nslog::get_logs().lines().count());
                     }),
 
                 button("Показать ID")
                     .action(move || {
                         let (sid, cid, pid) = features::auth::get_stored_ids();
                         nslog::nslog(&format!("[Dev] school={sid} class={cid} profile={pid}"));
-                        log_doc.set(StyledText::plain(nslog::get_logs()));
+                        log_count.set(nslog::get_logs().lines().count());
                     }),
             )
         ).title("Dev Tools"),
@@ -516,40 +517,31 @@ fn dev_settings(state: AppState) -> impl Piece {
             (
                 label("Логи приложения").font(Font::Headline).color(colors::INFO),
 
-                text_editor(log_doc.clone())
-                    .editable(false)
-                    .min_lines(12),
+                row((
+                    button("Скопировать логи")
+                        .action(move || {
+                            let txt = nslog::get_logs();
+                            let lines = txt.lines().count();
+                            day_part_clipboard::set_text(&txt);
+                            crate::shared::haptics::tick();
+                            copy_msg.set(format!("✓ Скопировано ({lines} строк)"));
+                        }),
+                    button("Очистить")
+                        .action(move || {
+                            nslog::clear_logs();
+                            copy_msg.set("Логи очищены".into());
+                            log_count.set(0);
+                        }),
+                )).spacing(8.0),
 
-                {
-                    let copy_msg = Signal::new(String::new());
-                    column((
-                        row((
-                            button("Обновить")
-                                .action(move || {
-                                    copy_msg.set(String::new());
-                                    log_doc.set(StyledText::plain(nslog::get_logs()));
-                                }),
-                            button("Скопировать")
-                                .action(move || {
-                                    let txt = nslog::get_logs();
-                                    day_part_clipboard::set_text(&txt);
-                                    crate::shared::haptics::tick();
-                                    copy_msg.set("✓ Скопировано в буфер обмена!".into());
-                                }),
-                            button("Очистить")
-                                .action(move || {
-                                    nslog::clear_logs();
-                                    copy_msg.set(String::new());
-                                    log_doc.set(StyledText::plain(String::new()));
-                                }),
-                        )).spacing(8.0),
+                when(
+                    move || !copy_msg.get().is_empty(),
+                    move || label(move || copy_msg.get()).font(Font::Subheadline).color(colors::SUCCESS)
+                ),
 
-                        when(
-                            move || !copy_msg.get().is_empty(),
-                            move || label(move || copy_msg.get()).font(Font::Caption).color(colors::SUCCESS)
-                        ),
-                    )).spacing(4.0)
-                },
+                label(move || format!("Записей в буфере: {}", log_count.get()))
+                    .font(Font::Caption)
+                    .color(colors::SECONDARY),
             )
         ).title("Логи"),
     ))
