@@ -43,9 +43,13 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
     let s_hw = slot;
     let s_has_msg = slot;
     let s_msg = slot;
+    let s_attach = slot;
+    let s_subst = slot;
     let s_has_note = slot;
+    let s_has_note_preview = slot;
     let s_note_txt = slot;
     let s_note_tap = slot;
+    let s_badge_tap = slot;
     let s_lp = slot;
 
     column((
@@ -72,17 +76,62 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
                         .font(Font::Body)
                         .weight(FontWeight::Semibold)
                         .grow(),
-                    when(
-                        move || s_has_note.with(|s| {
-                            let key = lesson_key(s);
-                            crate::widgets::lesson_note::get_note(state, &key).is_some()
-                        }),
-                        move || {
-                            circle()
-                                .fill(move || Color::hex(state.accent_color.get()))
-                                .frame(6.0, 6.0)
-                        },
-                    ),
+                    // Accent badges (attachments, substitution, note)
+                    row((
+                        // Attachment badge
+                        when(
+                            move || s_attach.with(|s| s.has_attachments_or_links),
+                            move || {
+                                vector(crate::res::vectors::attachment)
+                                    .frame(13.0, 13.0)
+                                    .tint(move || Color::hex(state.accent_color.get()))
+                            },
+                        ),
+                        // Substitution badge
+                        when(
+                            move || s_subst.with(|s| s.substitution.is_some()),
+                            move || {
+                                vector(crate::res::vectors::substitution)
+                                    .frame(13.0, 13.0)
+                                    .tint(move || Color::hex(state.accent_color.get()))
+                            },
+                        ),
+                        // Note badge
+                        when(
+                            move || {
+                                let key = s_has_note.with(|s| lesson_key(s));
+                                state.lesson_notes.with(|m| m.contains_key(&key))
+                            },
+                            move || {
+                                vector(crate::res::vectors::kind_note)
+                                    .frame(13.0, 13.0)
+                                    .tint(move || Color::hex(state.accent_color.get()))
+                            },
+                        ),
+                    ))
+                    .spacing(5.0)
+                    .align(VAlign::Center)
+                    .on_tap(move || {
+                        s_badge_tap.with(|s| {
+                            let teacher = find_teacher_for_lesson(state, s);
+                            let target = crate::widgets::lesson_peek::LessonDetailTarget {
+                                key: lesson_key(s),
+                                subject_title: s.subject_title.clone(),
+                                lesson_number: s.number,
+                                start_time: s.start_time.clone(),
+                                end_time: None,
+                                topic: s.topic.clone(),
+                                homework: s.homework.clone(),
+                                teacher,
+                                comment: s.lesson_mark.as_ref().and_then(|m| m.comment.clone()),
+                                mark: mark_of(s).map(|m| m.to_string()),
+                                has_attachments: s.has_attachments_or_links,
+                                is_substitution: s.substitution.is_some(),
+                                start_editing_note: false,
+                            };
+                            crate::widgets::lesson_peek::open_peek(state, target);
+                        });
+                    }),
                 ))
                 .spacing(6.0)
                 .align(VAlign::Center),
@@ -137,21 +186,28 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
                     .padding(Insets { top: 1.0, leading: 0.0, bottom: 1.0, trailing: 0.0 }),
                 ),
                 when(
-                    move || s_has_note.with(|s| {
-                        let key = lesson_key(s);
-                        crate::widgets::lesson_note::get_note(state, &key).is_some()
-                    }),
+                    move || {
+                        let key = s_has_note_preview.with(|s| lesson_key(s));
+                        state.lesson_notes.with(|m| m.get(&key).map(|s| !s.trim().is_empty()).unwrap_or(false))
+                    },
                     move || {
                         let s_txt = s_note_txt;
                         let s_tap = s_note_tap;
-                        label(move || {
-                            s_txt.with(|s| {
-                                let key = lesson_key(s);
-                                format!("📝 {}", crate::widgets::lesson_note::get_note(state, &key).unwrap_or_default())
+                        row((
+                            vector(crate::res::vectors::kind_note)
+                                .frame(11.0, 11.0)
+                                .tint(move || Color::hex(state.accent_color.get())),
+                            label(move || {
+                                s_txt.with(|s| {
+                                    let key = lesson_key(s);
+                                    state.lesson_notes.with(|m| m.get(&key).cloned().unwrap_or_default())
+                                })
                             })
-                        })
-                        .font(Font::Caption)
-                        .color(move || Color::hex(state.accent_color.get()))
+                            .font(Font::Caption)
+                            .color(move || Color::hex(state.accent_color.get())),
+                        ))
+                        .spacing(4.0)
+                        .align(VAlign::Center)
                         .padding(Insets { top: 2.0, leading: 0.0, bottom: 2.0, trailing: 0.0 })
                         .on_tap(move || {
                             s_tap.with(|s| {
@@ -167,6 +223,9 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
                                     teacher,
                                     comment: s.lesson_mark.as_ref().and_then(|m| m.comment.clone()),
                                     mark: mark_of(s).map(|m| m.to_string()),
+                                    has_attachments: s.has_attachments_or_links,
+                                    is_substitution: s.substitution.is_some(),
+                                    start_editing_note: false,
                                 };
                                 crate::widgets::lesson_peek::open_peek(state, target);
                             });
@@ -213,6 +272,9 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
                     teacher,
                     comment: s.lesson_mark.as_ref().and_then(|m| m.comment.clone()),
                     mark: mark_of(s).map(|m| m.to_string()),
+                    has_attachments: s.has_attachments_or_links,
+                    is_substitution: s.substitution.is_some(),
+                    start_editing_note: false,
                 };
                 crate::widgets::lesson_peek::open_peek(state, target);
             });

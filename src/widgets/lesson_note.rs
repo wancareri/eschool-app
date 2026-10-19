@@ -61,26 +61,36 @@ pub fn delete_note(state: AppState, key: &str) {
 }
 
 pub fn open_note(state: AppState, target: LessonNoteTarget) {
-    crate::shared::nslog::nslog(&format!("[LessonNote] open_note: key='{}'", target.key));
-    crate::shared::keyboard::init();
-    state.active_note.set(Some(target));
+    crate::shared::nslog::nslog(&format!("[LessonNote] open_note forwarding to peek: key='{}'", target.key));
+    let peek_target = crate::widgets::lesson_peek::LessonDetailTarget {
+        key: target.key,
+        subject_title: target.subject_title,
+        lesson_number: target.lesson_number,
+        start_time: target.start_time,
+        end_time: None,
+        topic: target.topic,
+        homework: None,
+        teacher: None,
+        comment: None,
+        mark: None,
+        has_attachments: false,
+        is_substitution: false,
+        start_editing_note: true,
+    };
+    crate::widgets::lesson_peek::open_peek(state, peek_target);
 }
 
 pub fn close_note(state: AppState) {
     crate::shared::nslog::nslog("[LessonNote] close_note");
     crate::shared::keyboard::dismiss();
-    crate::shared::keyboard::set_keyboard_height(0.0);
     state.active_note.set(None);
 }
 
-pub fn modal(state: AppState) -> impl Piece {
-    let min_h = (crate::pages::diary::get_screen_height() * 0.40).min(320.0);
-    crate::widgets::modal::modal_window(state.active_note, min_h, move |target| {
-        crate::shared::nslog::nslog(&format!("[LessonNote] build_card: key='{}'", target.key));
-        build_card(state, target.clone())
-    })
+pub fn modal(_state: AppState) -> impl Piece {
+    spacer().height(0.0)
 }
 
+#[allow(dead_code)]
 fn build_card(state: AppState, target: LessonNoteTarget) -> impl Piece {
     let existing_note = get_note(state, &target.key).unwrap_or_default();
     let note_text = Signal::new(existing_note.clone());

@@ -14,6 +14,12 @@ pub struct LessonDetailTarget {
     pub teacher: Option<String>,
     pub comment: Option<String>,
     pub mark: Option<String>,
+    #[serde(default)]
+    pub has_attachments: bool,
+    #[serde(default)]
+    pub is_substitution: bool,
+    #[serde(default)]
+    pub start_editing_note: bool,
 }
 
 impl Route for LessonDetailTarget {
@@ -33,6 +39,7 @@ pub fn open_peek(state: AppState, target: LessonDetailTarget) {
 
 pub fn close_peek(state: AppState) {
     crate::shared::nslog::nslog("[LessonPeek] close_peek");
+    crate::shared::keyboard::dismiss();
     state.active_lesson_peek.set(None);
 }
 
@@ -45,11 +52,9 @@ pub fn modal(state: AppState) -> impl Piece {
 }
 
 fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
-    let target = std::sync::Arc::new(target);
     let key = target.key.clone();
-    let note = crate::widgets::lesson_note::get_note(state, &key);
-    let s_target = target.clone();
-    let s_del_key = key.clone();
+    let is_editing = Signal::new(target.start_editing_note);
+    let edit_text = Signal::new(crate::widgets::lesson_note::get_note(state, &key).unwrap_or_default());
 
     let initial = target
         .subject_title
@@ -75,6 +80,66 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
     let t_homework = target.homework.clone();
     let t_comment = target.comment.clone();
     let t_mark = target.mark.clone();
+    let has_attachments = target.has_attachments;
+    let is_substitution = target.is_substitution;
+
+    let k_save = key.clone();
+    let txt_save = edit_text.clone();
+    let ed_save = is_editing.clone();
+    let on_save = move || {
+        let t = txt_save.get();
+        crate::widgets::lesson_note::save_note(state, &k_save, &t);
+        ed_save.set(false);
+        crate::shared::keyboard::dismiss();
+    };
+
+    let k_cancel = key.clone();
+    let txt_cancel = edit_text.clone();
+    let ed_cancel = is_editing.clone();
+    let on_cancel = move || {
+        let prev = crate::widgets::lesson_note::get_note(state, &k_cancel).unwrap_or_default();
+        txt_cancel.set(prev);
+        ed_cancel.set(false);
+        crate::shared::keyboard::dismiss();
+    };
+
+    let k_del_edit = key.clone();
+    let txt_del_edit = edit_text.clone();
+    let ed_del_edit = is_editing.clone();
+    let on_del_edit = move || {
+        crate::widgets::lesson_note::delete_note(state, &k_del_edit);
+        txt_del_edit.set("".to_string());
+        ed_del_edit.set(false);
+        crate::shared::keyboard::dismiss();
+    };
+
+    let k_del_view = key.clone();
+    let txt_del_view = edit_text.clone();
+    let on_del_view = move || {
+        crate::widgets::lesson_note::delete_note(state, &k_del_view);
+        txt_del_view.set("".to_string());
+    };
+
+    let k_start_edit = key.clone();
+    let txt_start_edit = edit_text.clone();
+    let ed_start_edit = is_editing.clone();
+    let on_start_edit = move || {
+        let cur = crate::widgets::lesson_note::get_note(state, &k_start_edit).unwrap_or_default();
+        txt_start_edit.set(cur);
+        ed_start_edit.set(true);
+    };
+
+    let txt_add = edit_text.clone();
+    let ed_add = is_editing.clone();
+    let on_add_note = move || {
+        txt_add.set("".to_string());
+        ed_add.set(true);
+    };
+
+    let k_chk1 = key.clone();
+    let k_chk2 = key.clone();
+    let k_lbl = key.clone();
+    let k_del_btn_chk = key.clone();
 
     column((
         // Header: Subject + Number & Time
@@ -131,7 +196,57 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
         ))
         .spacing(12.0)
         .align(VAlign::Center)
-        .padding(Insets { top: 0.0, leading: 0.0, bottom: 10.0, trailing: 0.0 }),
+        .padding(Insets { top: 0.0, leading: 0.0, bottom: 8.0, trailing: 0.0 }),
+
+        // Indicator pills: Attachments / Substitution
+        if has_attachments || is_substitution {
+            row((
+                if has_attachments {
+                    row((
+                        vector(crate::res::vectors::attachment)
+                            .frame(12.0, 12.0)
+                            .tint(move || Color::hex(state.accent_color.get())),
+                        label("Прикреплены файлы")
+                            .font(Font::Caption2)
+                            .weight(FontWeight::Medium)
+                            .color(move || Color::hex(state.accent_color.get())),
+                    ))
+                    .spacing(5.0)
+                    .align(VAlign::Center)
+                    .padding(Insets { top: 3.0, leading: 8.0, bottom: 3.0, trailing: 8.0 })
+                    .background(move || Color::hex(state.accent_color.get()).with_alpha(0.12))
+                    .corner_radius(6.0)
+                    .any()
+                } else {
+                    spacer().width(0.0).any()
+                },
+                if is_substitution {
+                    row((
+                        vector(crate::res::vectors::substitution)
+                            .frame(12.0, 12.0)
+                            .tint(move || Color::hex(state.accent_color.get())),
+                        label("Замена урока")
+                            .font(Font::Caption2)
+                            .weight(FontWeight::Medium)
+                            .color(move || Color::hex(state.accent_color.get())),
+                    ))
+                    .spacing(5.0)
+                    .align(VAlign::Center)
+                    .padding(Insets { top: 3.0, leading: 8.0, bottom: 3.0, trailing: 8.0 })
+                    .background(move || Color::hex(state.accent_color.get()).with_alpha(0.12))
+                    .corner_radius(6.0)
+                    .any()
+                } else {
+                    spacer().width(0.0).any()
+                },
+            ))
+            .spacing(8.0)
+            .align(VAlign::Center)
+            .padding(Insets { top: 0.0, leading: 0.0, bottom: 6.0, trailing: 0.0 })
+            .any()
+        } else {
+            spacer().height(0.0).any()
+        },
 
         divider().padding(Insets { top: 0.0, leading: 0.0, bottom: 8.0, trailing: 0.0 }),
 
@@ -213,80 +328,152 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
             spacer().height(0.0).any()
         },
 
-        spacer().height(8.0),
+        spacer().height(6.0),
 
-        // Note section: If note exists, show note and edit/delete. If not, prominent "Add note" button.
-        if let Some(existing_text) = note {
-            let edit_target = s_target.clone();
-            let note_display = existing_text.clone();
-            column((
+        // 1. Inline note editor mode
+        when(
+            move || is_editing.get(),
+            move || {
+                let save = on_save.clone();
+                let cancel = on_cancel.clone();
+                let del = on_del_edit.clone();
+                let k_del_chk = k_del_btn_chk.clone();
                 column((
                     row((
-                        label("📝 Ваша заметка").font(Font::Caption2).bold().color(move || Color::hex(state.accent_color.get())),
+                        vector(crate::res::vectors::kind_note)
+                            .frame(15.0, 15.0)
+                            .tint(move || Color::hex(state.accent_color.get())),
+                        label("Заметка к уроку")
+                            .font(Font::Caption)
+                            .bold()
+                            .color(move || Color::hex(state.accent_color.get())),
                         spacer().grow(),
-                        label("видна только вам").font(Font::Caption2).secondary(),
-                    )),
-                    label(move || note_display.clone())
-                        .font(Font::Body)
-                        .padding(Insets { top: 2.0, leading: 0.0, bottom: 2.0, trailing: 0.0 }),
+                        label("видна только вам")
+                            .font(Font::Caption2)
+                            .secondary(),
+                    ))
+                    .spacing(6.0)
+                    .align(VAlign::Center),
+
+                    column((
+                        text_field(edit_text.clone())
+                            .placeholder("Заметка к уроку (сохраняется на устройстве)...")
+                            .on_submit(save.clone()),
+                    ))
+                    .padding(Insets { top: 8.0, leading: 10.0, bottom: 8.0, trailing: 10.0 })
+                    .background(move || {
+                        if day::dark_mode() {
+                            Color::rgba(0.22, 0.22, 0.25, 1.0)
+                        } else {
+                            Color::rgba(0.92, 0.92, 0.95, 1.0)
+                        }
+                    })
+                    .corner_radius(10.0),
+
+                    row((
+                        button("Отмена")
+                            .action(cancel),
+                        spacer().grow(),
+                        when(
+                            move || {
+                                state.lesson_notes.with(|m| m.get(&k_del_chk).map(|s| !s.trim().is_empty()).unwrap_or(false))
+                            },
+                            move || {
+                                button("Удалить")
+                                    .action(del.clone())
+                            },
+                        ),
+                        button("Сохранить")
+                            .prominent()
+                            .action(save),
+                    ))
+                    .spacing(8.0)
+                    .align(VAlign::Center),
                 ))
-                .spacing(3.0)
+                .spacing(8.0)
                 .padding(Insets { top: 8.0, leading: 12.0, bottom: 8.0, trailing: 12.0 })
                 .background(move || Color::hex(state.accent_color.get()).with_alpha(0.08))
-                .corner_radius(12.0),
+                .corner_radius(12.0)
+            },
+        ),
 
-                row((
-                    button("Изменить")
-                        .action(move || {
-                            let note_t = crate::widgets::lesson_note::LessonNoteTarget {
-                                key: edit_target.key.clone(),
-                                subject_title: edit_target.subject_title.clone(),
-                                lesson_number: edit_target.lesson_number,
-                                start_time: edit_target.start_time.clone(),
-                                topic: edit_target.topic.clone(),
-                            };
-                            close_peek(state);
-                            crate::widgets::lesson_note::open_note(state, note_t);
-                        })
-                        .grow(),
+        // 2. Note exists, not editing
+        when(
+            move || !is_editing.get() && state.lesson_notes.with(|m| m.get(&k_chk1).map(|s| !s.trim().is_empty()).unwrap_or(false)),
+            move || {
+                let k_label = k_lbl.clone();
+                let start_edit = on_start_edit.clone();
+                let del = on_del_view.clone();
+                column((
+                    row((
+                        vector(crate::res::vectors::kind_note)
+                            .frame(15.0, 15.0)
+                            .tint(move || Color::hex(state.accent_color.get())),
+                        label("Ваша заметка")
+                            .font(Font::Caption)
+                            .bold()
+                            .color(move || Color::hex(state.accent_color.get())),
+                        spacer().grow(),
+                        label("видна только вам")
+                            .font(Font::Caption2)
+                            .secondary(),
+                    ))
+                    .spacing(6.0)
+                    .align(VAlign::Center),
 
-                    button("Удалить")
-                        .action(move || {
-                            crate::widgets::lesson_note::delete_note(state, &s_del_key);
-                            close_peek(state);
-                        })
-                        .padding(Insets { top: 4.0, leading: 16.0, bottom: 4.0, trailing: 16.0 }),
-                ))
-                .spacing(10.0)
-                .padding(Insets { top: 4.0, leading: 0.0, bottom: 0.0, trailing: 0.0 }),
-            ))
-            .spacing(6.0)
-            .any()
-        } else {
-            let add_target = s_target.clone();
-            column((
-                button("📝 Добавить заметку")
-                    .prominent()
-                    .action(move || {
-                        let note_t = crate::widgets::lesson_note::LessonNoteTarget {
-                            key: add_target.key.clone(),
-                            subject_title: add_target.subject_title.clone(),
-                            lesson_number: add_target.lesson_number,
-                            start_time: add_target.start_time.clone(),
-                            topic: add_target.topic.clone(),
-                        };
-                        close_peek(state);
-                        crate::widgets::lesson_note::open_note(state, note_t);
+                    label(move || {
+                        state.lesson_notes.with(|m| m.get(&k_label).cloned().unwrap_or_default())
                     })
-                    .grow(),
-                label("Заметка сохраняется локально и видна только вам")
-                    .font(Font::Caption2)
-                    .secondary()
-                    .align(TextAlign::Center),
-            ))
-            .spacing(6.0)
-            .any()
-        },
+                    .font(Font::Body)
+                    .padding(Insets { top: 2.0, leading: 0.0, bottom: 2.0, trailing: 0.0 }),
+
+                    row((
+                        button("Изменить")
+                            .action(start_edit)
+                            .grow(),
+                        button("Удалить")
+                            .action(del)
+                            .padding(Insets { top: 4.0, leading: 16.0, bottom: 4.0, trailing: 16.0 }),
+                    ))
+                    .spacing(10.0),
+                ))
+                .spacing(6.0)
+                .padding(Insets { top: 8.0, leading: 12.0, bottom: 8.0, trailing: 12.0 })
+                .background(move || Color::hex(state.accent_color.get()).with_alpha(0.08))
+                .corner_radius(12.0)
+            },
+        ),
+
+        // 3. No note exists, not editing
+        when(
+            move || !is_editing.get() && !state.lesson_notes.with(|m| m.get(&k_chk2).map(|s| !s.trim().is_empty()).unwrap_or(false)),
+            move || {
+                let add = on_add_note.clone();
+                column((
+                    row((
+                        vector(crate::res::vectors::kind_note)
+                            .frame(16.0, 16.0)
+                            .tint(move || Color::WHITE),
+                        label("Добавить заметку")
+                            .font(Font::Headline)
+                            .bold()
+                            .color(Color::WHITE),
+                    ))
+                    .spacing(8.0)
+                    .align(VAlign::Center)
+                    .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
+                    .background(move || Color::hex(state.accent_color.get()))
+                    .corner_radius(12.0)
+                    .on_tap(add),
+
+                    label("Заметка сохраняется локально и видна только вам")
+                        .font(Font::Caption2)
+                        .secondary()
+                        .align(TextAlign::Center),
+                ))
+                .spacing(6.0)
+            },
+        ),
     ))
     .spacing(8.0)
     .padding(Insets { top: 4.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
