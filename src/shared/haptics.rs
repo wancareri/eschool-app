@@ -19,14 +19,32 @@ pub fn set_enabled(on: bool) {
     nslog::nslog(&format!("[Haptics] enabled={on}"));
 }
 
+#[cfg(target_os = "ios")]
+#[link(name = "AudioToolbox", kind = "framework")]
+unsafe extern "C" {
+    fn AudioServicesPlaySystemSound(inSystemSoundID: u32);
+}
+
 /// A week page commits under the finger — a light thump.
 pub fn bump() {
     impact(true);
+    #[cfg(target_os = "ios")]
+    {
+        if is_enabled() {
+            unsafe { AudioServicesPlaySystemSound(1519); }
+        }
+    }
 }
 
 /// The «+» peek panel flips — a firmer tap.
 pub fn pop() {
     impact(false);
+    #[cfg(target_os = "ios")]
+    {
+        if is_enabled() {
+            unsafe { AudioServicesPlaySystemSound(1520); }
+        }
+    }
 }
 
 /// A light tick: mode tabs, the quarter picker, an accent pick.
@@ -60,7 +78,7 @@ fn impact(light: bool) {
         let style = if light {
             UIImpactFeedbackStyle::Light
         } else {
-            UIImpactFeedbackStyle::Medium
+            UIImpactFeedbackStyle::Heavy
         };
         // initWithStyle is THE designated initializer — the generated
         // `#[deprecated]` mirrors a header annotation, not the real API.

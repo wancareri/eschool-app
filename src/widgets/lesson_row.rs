@@ -80,7 +80,10 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
                     row((
                         // Attachment badge
                         when(
-                            move || s_attach.with(|s| s.has_attachments_or_links),
+                            move || s_attach.with(|s| {
+                                s.has_attachments()
+                                    || (!s.lesson_uuid.is_empty() && state.lesson_attachments.with(|m| m.get(&s.lesson_uuid).map_or(false, |l| !l.is_empty())))
+                            }),
                             move || {
                                 vector(crate::res::vectors::attachment)
                                     .frame(13.0, 13.0)
@@ -116,6 +119,8 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
                         s_badge_tap.with(|s| {
                             let teacher = find_teacher_for_lesson(state, s);
                             let end_time = state.bell_times.get().iter().find(|b| b.number == s.number).map(|b| b.end_time.clone());
+                            let has_att = s.has_attachments()
+                                || (!s.lesson_uuid.is_empty() && state.lesson_attachments.with(|m| m.get(&s.lesson_uuid).map_or(false, |l| !l.is_empty())));
                             let target = crate::widgets::lesson_peek::LessonDetailTarget {
                                 key: lesson_key(s),
                                 lesson_uuid: s.lesson_uuid.clone(),
@@ -129,7 +134,7 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
                                 teacher,
                                 comment: s.lesson_mark.as_ref().and_then(|m| m.comment.clone()),
                                 mark: mark_of(s).map(|m| m.to_string()),
-                                has_attachments: s.has_attachments_or_links,
+                                has_attachments: has_att,
                                 is_substitution: s.substitution.is_some(),
                                 start_editing_note: false,
                             };
@@ -215,13 +220,15 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
         .grow()
         // Tap to open lesson detail modal
         .on_tap({
-            let d_str = d_lp.clone();
+            let d_str = d_lp;
             let slot = s_lp;
             move || {
                 let d = d_str.clone();
                 slot.with(|s| {
                     let teacher = find_teacher_for_lesson(state, s);
                     let end_time = state.bell_times.get().iter().find(|b| b.number == s.number).map(|b| b.end_time.clone());
+                    let has_att = s.has_attachments()
+                        || (!s.lesson_uuid.is_empty() && state.lesson_attachments.with(|m| m.get(&s.lesson_uuid).map_or(false, |l| !l.is_empty())));
                     let target = crate::widgets::lesson_peek::LessonDetailTarget {
                         key: lesson_key(s),
                         lesson_uuid: s.lesson_uuid.clone(),
@@ -235,39 +242,13 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
                         teacher,
                         comment: s.lesson_mark.as_ref().and_then(|m| m.comment.clone()),
                         mark: mark_of(s).map(|m| m.to_string()),
-                        has_attachments: s.has_attachments_or_links,
+                        has_attachments: has_att,
                         is_substitution: s.substitution.is_some(),
                         start_editing_note: false,
                     };
                     crate::widgets::lesson_peek::open_peek(state, target);
                 });
             }
-        })
-        // Telegram-style long press peek
-        .on_long_press(move |_p| {
-            let d_str = d_lp.clone();
-            s_lp.with(|s| {
-                let teacher = find_teacher_for_lesson(state, s);
-                let end_time = state.bell_times.get().iter().find(|b| b.number == s.number).map(|b| b.end_time.clone());
-                let target = crate::widgets::lesson_peek::LessonDetailTarget {
-                    key: lesson_key(s),
-                    lesson_uuid: s.lesson_uuid.clone(),
-                    subject_title: s.subject_title.clone(),
-                    lesson_number: s.number,
-                    date_str: Some(d_str),
-                    start_time: s.start_time.clone(),
-                    end_time,
-                    topic: s.topic.clone(),
-                    homework: s.homework.clone(),
-                    teacher,
-                    comment: s.lesson_mark.as_ref().and_then(|m| m.comment.clone()),
-                    mark: mark_of(s).map(|m| m.to_string()),
-                    has_attachments: s.has_attachments_or_links,
-                    is_substitution: s.substitution.is_some(),
-                    start_editing_note: false,
-                };
-                crate::widgets::lesson_peek::open_peek(state, target);
-            });
         }),
 
         divider().padding(Insets { top: 4.0, leading: 16.0, bottom: 0.0, trailing: 0.0 }),

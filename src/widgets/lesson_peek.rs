@@ -99,13 +99,13 @@ fn attachment_row(state: AppState, att: crate::features::attachments::LessonAtta
         .spacing(1.0)
         .grow(),
 
-        // Action buttons (clean icons without circle wrappers)
+        // Action buttons (vertical column of clean icons)
         if is_link {
             let on_open = move || {
                 crate::features::attachments::open_or_preview_attachment(state, &att_open);
             };
             vector(crate::res::vectors::external_link)
-                .frame(20.0, 20.0)
+                .frame(18.0, 18.0)
                 .tint(move || Color::hex(state.accent_color.get()))
                 .padding(6.0)
                 .on_tap(on_open)
@@ -118,31 +118,32 @@ fn attachment_row(state: AppState, att: crate::features::attachments::LessonAtta
             let share_fn = move || {
                 crate::features::attachments::share_attachment(state, &att_share);
             };
-            row((
+            column((
                 // QuickLook / View icon button
                 zstack((
                     when(
                         move || state.downloading_files.with(|s| s.contains(&id_check)),
-                        move || crate::widgets::spinner::render(state, 18.0).any(),
+                        move || crate::widgets::spinner::render(state, 16.0).any(),
                     )
                     .otherwise(move || {
                         vector(crate::res::vectors::eye)
-                            .frame(20.0, 20.0)
+                            .frame(18.0, 18.0)
                             .tint(move || Color::hex(state.accent_color.get()))
                             .any()
                     }),
                 ))
-                .padding(6.0)
+                .padding(Insets { top: 4.0, leading: 6.0, bottom: 2.0, trailing: 6.0 })
                 .on_tap(open_fn),
 
                 // Share / Save to Files / Download icon button
                 vector(crate::res::vectors::download)
-                    .frame(20.0, 20.0)
+                    .frame(18.0, 18.0)
                     .tint(move || Color::hex(state.accent_color.get()))
-                    .padding(6.0)
+                    .padding(Insets { top: 2.0, leading: 6.0, bottom: 4.0, trailing: 6.0 })
                     .on_tap(share_fn),
             ))
-            .spacing(4.0)
+            .spacing(0.0)
+            .align(HAlign::Center)
             .any()
         },
     ))
@@ -182,7 +183,6 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
     let t_homework = target.homework.clone().filter(|h| !h.trim().is_empty());
     let t_comment = target.comment.clone().filter(|c| !c.trim().is_empty());
     let t_mark = target.mark.clone().filter(|m| !m.trim().is_empty());
-    let has_attachments = target.has_attachments;
     let is_substitution = target.is_substitution;
 
     let k_save = key.clone();
@@ -249,6 +249,8 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
     } else {
         target.key.clone()
     };
+    let has_attachments = target.has_attachments
+        || (!uuid_for_att.is_empty() && state.lesson_attachments.with(|m| m.get(&uuid_for_att).map_or(false, |list| !list.is_empty())));
     if (has_attachments || !target.lesson_uuid.is_empty()) && !uuid_for_att.is_empty() {
         crate::features::attachments::fetch_attachments_async(state, &uuid_for_att);
     }
@@ -257,10 +259,11 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
     let u_list = uuid_for_att.clone();
 
     column((
-        // ── 1. HEADER: Subject + Chips + Date & Time ────────────────
+        // ── 1. ШАПКА: Предмет, Дата, Время, Урок, Учитель, Отметка ──────
         column((
-            if is_substitution || has_attachments {
-                row((
+            // Верхняя строка: Название предмета (и бейдж замены) слева + Отметка справа
+            row((
+                column((
                     if is_substitution {
                         row((
                             vector(crate::res::vectors::substitution)
@@ -271,58 +274,60 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                                 .weight(FontWeight::Medium)
                                 .color(move || Color::hex(state.accent_color.get())),
                         ))
-                        .spacing(5.0)
+                        .spacing(4.0)
                         .align(VAlign::Center)
-                        .padding(Insets { top: 3.0, leading: 8.0, bottom: 3.0, trailing: 8.0 })
+                        .padding(Insets { top: 2.0, leading: 6.0, bottom: 2.0, trailing: 6.0 })
                         .background(move || Color::hex(state.accent_color.get()).with_alpha(0.12))
                         .corner_radius(6.0)
                         .any()
                     } else {
-                        spacer().width(0.0).any()
+                        spacer().height(0.0).any()
                     },
-                    if has_attachments {
-                        row((
-                            vector(crate::res::vectors::attachment)
-                                .frame(12.0, 12.0)
-                                .tint(move || Color::hex(state.accent_color.get())),
-                            label("Материалы")
-                                .font(Font::Caption2)
-                                .weight(FontWeight::Medium)
-                                .color(move || Color::hex(state.accent_color.get())),
-                        ))
-                        .spacing(5.0)
-                        .align(VAlign::Center)
-                        .padding(Insets { top: 3.0, leading: 8.0, bottom: 3.0, trailing: 8.0 })
-                        .background(move || Color::hex(state.accent_color.get()).with_alpha(0.12))
-                        .corner_radius(6.0)
-                        .any()
-                    } else {
-                        spacer().width(0.0).any()
-                    },
+
+                    label(subject_title)
+                        .font(Font::Title)
+                        .bold()
+                        .align(TextAlign::Leading),
                 ))
-                .spacing(8.0)
-                .align(VAlign::Center)
-                .padding(Insets { top: 0.0, leading: 0.0, bottom: 4.0, trailing: 0.0 })
-                .any()
-            } else {
-                spacer().height(0.0).any()
-            },
+                .spacing(3.0)
+                .grow(),
 
-            label(subject_title)
-                .font(Font::Title)
-                .bold()
-                .align(TextAlign::Leading),
+                if let Some(ref m_val) = t_mark {
+                    let m_col = utils::grade_color(m_val);
+                    column((
+                        label(m_val.clone())
+                            .font(Font::LargeTitle)
+                            .bold()
+                            .color(m_col),
+                        if let Some(ref c) = t_comment {
+                            label(c.clone())
+                                .font(Font::Caption2)
+                                .secondary()
+                                .italic()
+                                .any()
+                        } else {
+                            spacer().height(0.0).any()
+                        },
+                    ))
+                    .spacing(1.0)
+                    .align(HAlign::Trailing)
+                    .any()
+                } else {
+                    spacer().width(0.0).any()
+                },
+            ))
+            .align(VAlign::Center),
 
+            // Единая строка деталей: Дата • Урок (время) • Преподаватель
             row((
                 if let Some(ref d_str) = date_display {
                     row((
                         label(d_str.clone())
                             .font(Font::Subheadline)
-                            .weight(FontWeight::Medium)
                             .secondary(),
                         label("•").font(Font::Subheadline).secondary(),
                     ))
-                    .spacing(6.0)
+                    .spacing(5.0)
                     .any()
                 } else {
                     spacer().width(0.0).any()
@@ -330,184 +335,135 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                 label(format!("{lesson_num_str} ({time_str})"))
                     .font(Font::Subheadline)
                     .secondary(),
+                if let Some(ref t_name) = t_teacher.filter(|t| !t.trim().is_empty()) {
+                    row((
+                        label("•").font(Font::Subheadline).secondary(),
+                        label(t_name.clone())
+                            .font(Font::Subheadline)
+                            .weight(FontWeight::Medium)
+                            .secondary(),
+                    ))
+                    .spacing(5.0)
+                    .any()
+                } else {
+                    spacer().width(0.0).any()
+                },
             ))
-            .spacing(6.0)
+            .spacing(5.0)
             .align(VAlign::Center),
         ))
-        .spacing(4.0)
+        .spacing(6.0)
         .align(HAlign::Leading),
 
-        divider().padding(Insets { top: 10.0, leading: 0.0, bottom: 10.0, trailing: 0.0 }),
+        divider().padding(Insets { top: 12.0, leading: 0.0, bottom: 12.0, trailing: 0.0 }),
 
-        // ── 2. ОЦЕНКА ЗА УРОК (GRADE) ────────────────────────────────
-        if let Some(ref m_val) = t_mark {
-            let m_col = utils::grade_color(m_val);
+        // ── 2. ПОСЕРЕДИНЕ: Тема урока + Домашнее задание ────────────
+        column((
+            // Тема
             column((
-                label("ОЦЕНКА ЗА УРОК")
+                label("ТЕМА УРОКА")
                     .font(Font::Caption)
                     .weight(FontWeight::Semibold)
                     .secondary(),
-                row((
-                    label(m_val.clone())
-                        .font(Font::Title)
-                        .bold()
-                        .color(m_col),
-                    if let Some(ref c) = t_comment {
-                        label(format!("— {}", c))
-                            .font(Font::Subheadline)
-                            .secondary()
-                            .any()
-                    } else {
-                        spacer().width(0.0).any()
-                    },
-                ))
-                .spacing(8.0)
-                .align(VAlign::Center),
-            ))
-            .spacing(4.0)
-            .align(HAlign::Leading)
-            .any()
-        } else {
-            column((
-                label("ОЦЕНКА")
-                    .font(Font::Caption)
-                    .weight(FontWeight::Semibold)
-                    .secondary(),
-                label("Не выставлена")
-                    .font(Font::Body)
-                    .secondary()
-                    .italic(),
-            ))
-            .spacing(4.0)
-            .align(HAlign::Leading)
-            .any()
-        },
-
-        divider().padding(Insets { top: 10.0, leading: 0.0, bottom: 10.0, trailing: 0.0 }),
-
-        // ── 3. ТЕМА УРОКА (TOPIC) ────────────────────────────────────
-        column((
-            label("ТЕМА УРОКА")
-                .font(Font::Caption)
-                .weight(FontWeight::Semibold)
-                .secondary(),
-            if let Some(ref top) = t_topic {
-                label(top.clone())
-                    .font(Font::Body)
-                    .any()
-            } else {
-                label("Тема не указана")
-                    .font(Font::Body)
-                    .secondary()
-                    .italic()
-                    .any()
-            },
-        ))
-        .spacing(4.0)
-        .align(HAlign::Leading),
-
-        divider().padding(Insets { top: 10.0, leading: 0.0, bottom: 10.0, trailing: 0.0 }),
-
-        // ── 4. ДОМАШНЕЕ ЗАДАНИЕ (HOMEWORK) ──────────────────────────
-        column((
-            label("ДОМАШНЕЕ ЗАДАНИЕ")
-                .font(Font::Caption)
-                .weight(FontWeight::Semibold)
-                .color(move || Color::hex(state.accent_color.get())),
-            if let Some(ref hw) = t_homework {
-                label(hw.clone())
-                    .font(Font::Body)
-                    .weight(FontWeight::Medium)
-                    .any()
-            } else {
-                label("Задание не задано")
-                    .font(Font::Body)
-                    .secondary()
-                    .italic()
-                    .any()
-            },
-        ))
-        .spacing(4.0)
-        .align(HAlign::Leading),
-
-        // ── 5. ПРЕПОДАВАТЕЛЬ (TEACHER) ───────────────────────────────
-        if let Some(ref t_name) = t_teacher.filter(|t| !t.trim().is_empty()) {
-            column((
-                divider().padding(Insets { top: 10.0, leading: 0.0, bottom: 10.0, trailing: 0.0 }),
-                column((
-                    label("ПРЕПОДАВАТЕЛЬ")
-                        .font(Font::Caption)
-                        .weight(FontWeight::Semibold)
-                        .secondary(),
-                    label(t_name.clone())
+                if let Some(ref top) = t_topic {
+                    label(top.clone())
                         .font(Font::Body)
-                        .weight(FontWeight::Medium),
-                ))
-                .spacing(4.0)
-                .align(HAlign::Leading),
+                        .any()
+                } else {
+                    label("Тема не указана")
+                        .font(Font::Body)
+                        .secondary()
+                        .italic()
+                        .any()
+                },
             ))
-            .spacing(0.0)
-            .any()
-        } else {
-            spacer().height(0.0).any()
-        },
+            .spacing(3.0)
+            .align(HAlign::Leading),
 
-        // ── 6. ПРИКРЕПЛЁННЫЕ МАТЕРИАЛЫ (ATTACHMENTS) ─────────────────
-        if has_attachments || !target.lesson_uuid.is_empty() {
+            // Домашнее задание
             column((
-                divider().padding(Insets { top: 10.0, leading: 0.0, bottom: 10.0, trailing: 0.0 }),
-                row((
-                    vector(crate::res::vectors::attachment)
-                        .frame(14.0, 14.0)
-                        .tint(move || Color::hex(state.accent_color.get())),
-                    label("МАТЕРИАЛЫ К УРОКУ")
-                        .font(Font::Caption)
-                        .weight(FontWeight::Semibold)
-                        .secondary(),
-                    spacer().grow(),
-                    when(
-                        move || state.attachments_loading.with(|s| s.contains(&u_load)),
-                        move || label("загрузка...").font(Font::Caption2).secondary(),
-                    ),
-                ))
-                .spacing(6.0)
-                .align(VAlign::Center),
+                label("ДОМАШНЕЕ ЗАДАНИЕ")
+                    .font(Font::Caption)
+                    .weight(FontWeight::Semibold)
+                    .color(move || Color::hex(state.accent_color.get())),
+                if let Some(ref hw) = t_homework {
+                    label(hw.clone())
+                        .font(Font::Body)
+                        .weight(FontWeight::Medium)
+                        .any()
+                } else {
+                    label("Задание не задано")
+                        .font(Font::Body)
+                        .secondary()
+                        .italic()
+                        .any()
+                },
+            ))
+            .spacing(3.0)
+            .align(HAlign::Leading),
+        ))
+        .spacing(12.0)
+        .align(HAlign::Leading),
 
-                when(
-                    move || {
-                        state.lesson_attachments.with(|m| m.get(&u_check).map(|v| v.is_empty()).unwrap_or(false))
-                            && !state.attachments_loading.with(|s| s.contains(&u_check))
-                    },
-                    move || {
-                        label("Нет прикреплённых файлов к этому уроку")
+        divider().padding(Insets { top: 12.0, leading: 0.0, bottom: 12.0, trailing: 0.0 }),
+
+        // ── 3. СНИЗУ: Файлы (Материалы) + Заметки ────────────────────
+        column((
+            // Материалы к уроку (файлы)
+            if has_attachments || !target.lesson_uuid.is_empty() {
+                column((
+                    row((
+                        vector(crate::res::vectors::attachment)
+                            .frame(14.0, 14.0)
+                            .tint(move || Color::hex(state.accent_color.get())),
+                        label("МАТЕРИАЛЫ К УРОКУ")
                             .font(Font::Caption)
-                            .secondary()
-                            .italic()
-                            .padding(Insets { top: 2.0, leading: 0.0, bottom: 2.0, trailing: 0.0 })
-                    },
-                ),
+                            .weight(FontWeight::Semibold)
+                            .secondary(),
+                        spacer().grow(),
+                        when(
+                            move || state.attachments_loading.with(|s| s.contains(&u_load)),
+                            move || label("загрузка...").font(Font::Caption2).secondary(),
+                        ),
+                    ))
+                    .spacing(6.0)
+                    .align(VAlign::Center),
 
-                each(
-                    items(
-                        move || state.lesson_attachments.with(|m| m.get(&u_list).cloned().unwrap_or_default()),
-                        |att: &crate::features::attachments::LessonAttachment| {
-                            if !att.id.is_empty() { att.id.clone() } else { att.url.clone() }
+                    when(
+                        move || {
+                            state.lesson_attachments.with(|m| m.get(&u_check).map(|v| v.is_empty()).unwrap_or(false))
+                                && !state.attachments_loading.with(|s| s.contains(&u_check))
+                        },
+                        move || {
+                            label("Нет прикреплённых файлов к этому уроку")
+                                .font(Font::Caption)
+                                .secondary()
+                                .italic()
+                                .padding(Insets { top: 2.0, leading: 0.0, bottom: 2.0, trailing: 0.0 })
                         },
                     ),
-                    move |slot| {
-                        let att = slot.with(|a| a.clone());
-                        attachment_row(state, att).any()
-                    },
-                ),
-            ))
-            .spacing(6.0)
-            .align(HAlign::Leading)
-            .any()
-        } else {
-            spacer().height(0.0).any()
-        },
 
-        divider().padding(Insets { top: 10.0, leading: 0.0, bottom: 10.0, trailing: 0.0 }),
+                    each(
+                        items(
+                            move || state.lesson_attachments.with(|m| m.get(&u_list).cloned().unwrap_or_default()),
+                            |att: &crate::features::attachments::LessonAttachment| {
+                                if !att.id.is_empty() { att.id.clone() } else { att.url.clone() }
+                            },
+                        ),
+                        move |slot| {
+                            let att = slot.with(|a| a.clone());
+                            attachment_row(state, att).any()
+                        },
+                    ),
+
+                    divider().padding(Insets { top: 10.0, leading: 0.0, bottom: 10.0, trailing: 0.0 }),
+                ))
+                .spacing(6.0)
+                .align(HAlign::Leading)
+                .any()
+            } else {
+                spacer().height(0.0).any()
+            },
 
         // ── 7. ЗАМЕТКА К УРОКУ (NOTE) ────────────────────────────────
         // 1. Inline editing mode
@@ -637,7 +593,10 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
             },
         ),
     ))
-    .spacing(4.0)
-    .align(HAlign::Leading)
-    .padding(Insets { top: 8.0, leading: 20.0, bottom: 24.0, trailing: 20.0 })
+    .spacing(6.0)
+    .align(HAlign::Leading),
+))
+.spacing(0.0)
+.align(HAlign::Leading)
+.padding(Insets { top: 8.0, leading: 20.0, bottom: 24.0, trailing: 20.0 })
 }
