@@ -37,7 +37,7 @@ impl Route for LessonDetailTarget {
 
 pub fn open_peek(state: AppState, target: LessonDetailTarget) {
     crate::shared::nslog::nslog(&format!("[LessonPeek] open_peek: subject='{}'", target.subject_title));
-    crate::shared::haptics::tick();
+    crate::shared::haptics::pop();
     state.active_lesson_peek.set(Some(target));
 }
 

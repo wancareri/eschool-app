@@ -213,7 +213,36 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
         .spacing(RAIL_GAP)
         .align(VAlign::Center)
         .grow()
-        .padding(Insets { top: 8.0, leading: 16.0, bottom: 2.0, trailing: 16.0 })
+        // Tap to open lesson detail modal
+        .on_tap({
+            let d_str = d_lp.clone();
+            let slot = s_lp;
+            move || {
+                let d = d_str.clone();
+                slot.with(|s| {
+                    let teacher = find_teacher_for_lesson(state, s);
+                    let end_time = state.bell_times.get().iter().find(|b| b.number == s.number).map(|b| b.end_time.clone());
+                    let target = crate::widgets::lesson_peek::LessonDetailTarget {
+                        key: lesson_key(s),
+                        lesson_uuid: s.lesson_uuid.clone(),
+                        subject_title: s.subject_title.clone(),
+                        lesson_number: s.number,
+                        date_str: Some(d),
+                        start_time: s.start_time.clone(),
+                        end_time,
+                        topic: s.topic.clone(),
+                        homework: s.homework.clone(),
+                        teacher,
+                        comment: s.lesson_mark.as_ref().and_then(|m| m.comment.clone()),
+                        mark: mark_of(s).map(|m| m.to_string()),
+                        has_attachments: s.has_attachments_or_links,
+                        is_substitution: s.substitution.is_some(),
+                        start_editing_note: false,
+                    };
+                    crate::widgets::lesson_peek::open_peek(state, target);
+                });
+            }
+        })
         // Telegram-style long press peek
         .on_long_press(move |_p| {
             let d_str = d_lp.clone();
