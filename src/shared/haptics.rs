@@ -20,9 +20,23 @@ pub fn set_enabled(on: bool) {
 }
 
 #[cfg(target_os = "ios")]
-#[link(name = "AudioToolbox", kind = "framework")]
 unsafe extern "C" {
-    fn AudioServicesPlaySystemSound(inSystemSoundID: u32);
+    fn dlsym(handle: *mut std::ffi::c_void, symbol: *const std::ffi::c_char) -> *mut std::ffi::c_void;
+}
+
+#[cfg(target_os = "ios")]
+fn play_system_sound(sound_id: u32) {
+    type FnType = unsafe extern "C" fn(u32);
+    unsafe {
+        let sym = dlsym(
+            (-2isize) as *mut std::ffi::c_void,
+            b"AudioServicesPlaySystemSound\0".as_ptr() as *const _,
+        );
+        if !sym.is_null() {
+            let func: FnType = std::mem::transmute(sym);
+            func(sound_id);
+        }
+    }
 }
 
 /// A week page commits under the finger — a light thump.
@@ -31,7 +45,7 @@ pub fn bump() {
     #[cfg(target_os = "ios")]
     {
         if is_enabled() {
-            unsafe { AudioServicesPlaySystemSound(1519); }
+            play_system_sound(1519);
         }
     }
 }
@@ -42,7 +56,7 @@ pub fn pop() {
     #[cfg(target_os = "ios")]
     {
         if is_enabled() {
-            unsafe { AudioServicesPlaySystemSound(1520); }
+            play_system_sound(1520);
         }
     }
 }
@@ -64,6 +78,12 @@ pub fn tick() {
     }
 }
 
+#[cfg(target_os = "ios")]
+thread_local! {
+    static GENERATOR_HEAVY: std::cell::RefCell<Option<objc2::rc::Retained<objc2_ui_kit::UIImpactFeedbackGenerator>>> = std::cell::RefCell::new(None);
+    static GENERATOR_LIGHT: std::cell::RefCell<Option<objc2::rc::Retained<objc2_ui_kit::UIImpactFeedbackGenerator>>> = std::cell::RefCell::new(None);
+}
+
 fn impact(light: bool) {
     #[cfg(target_os = "ios")]
     {
@@ -75,20 +95,39 @@ fn impact(light: bool) {
         let Some(mtm) = MainThreadMarker::new() else {
             return;
         };
-        let style = if light {
-            UIImpactFeedbackStyle::Light
+        if light {
+            GENERATOR_LIGHT.with(|cell| {
+                let mut opt = cell.borrow_mut();
+                if opt.is_none() {
+                    #[allow(deprecated)]
+                    let g = UIImpactFeedbackGenerator::initWithStyle(
+                        UIImpactFeedbackGenerator::alloc(mtm),
+                        UIImpactFeedbackStyle::Light,
+                    );
+                    *opt = Some(g);
+                }
+                if let Some(g) = opt.as_ref() {
+                    g.prepare();
+                    g.impactOccurred();
+                }
+            });
         } else {
-            UIImpactFeedbackStyle::Heavy
-        };
-        // initWithStyle is THE designated initializer — the generated
-        // `#[deprecated]` mirrors a header annotation, not the real API.
-        #[allow(deprecated)]
-        let g = UIImpactFeedbackGenerator::initWithStyle(
-            UIImpactFeedbackGenerator::alloc(mtm),
-            style,
-        );
-        g.prepare();
-        g.impactOccurred();
+            GENERATOR_HEAVY.with(|cell| {
+                let mut opt = cell.borrow_mut();
+                if opt.is_none() {
+                    #[allow(deprecated)]
+                    let g = UIImpactFeedbackGenerator::initWithStyle(
+                        UIImpactFeedbackGenerator::alloc(mtm),
+                        UIImpactFeedbackStyle::Heavy,
+                    );
+                    *opt = Some(g);
+                }
+                if let Some(g) = opt.as_ref() {
+                    g.prepare();
+                    g.impactOccurred();
+                }
+            });
+        }
     }
     #[cfg(not(target_os = "ios"))]
     {
