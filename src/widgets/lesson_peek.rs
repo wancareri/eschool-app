@@ -101,33 +101,76 @@ fn attachment_row(state: AppState, att: crate::features::attachments::LessonAtta
 
         // Action buttons
         if is_link {
-            button("Открыть")
-                .action(move || {
-                    crate::features::attachments::open_or_preview_attachment(state, &att_open);
+            let on_open = move || {
+                crate::features::attachments::open_or_preview_attachment(state, &att_open);
+            };
+            circle()
+                .fill(move || {
+                    if day::dark_mode() {
+                        Color::rgba(1.0, 1.0, 1.0, 0.10)
+                    } else {
+                        Color::rgba(0.0, 0.0, 0.0, 0.06)
+                    }
                 })
+                .frame(36.0, 36.0)
+                .overlay(
+                    vector(crate::res::vectors::external_link)
+                        .frame(18.0, 18.0)
+                        .tint(move || Color::hex(state.accent_color.get())),
+                )
+                .on_tap(on_open)
                 .any()
         } else {
             let id_check = att_id.clone();
+            let open_fn = move || {
+                crate::features::attachments::open_or_preview_attachment(state, &att_open);
+            };
+            let share_fn = move || {
+                crate::features::attachments::share_attachment(state, &att_share);
+            };
             row((
-                // QuickLook button
-                button(move || {
-                    if state.downloading_files.with(|s| s.contains(&id_check)) {
-                        "Загрузка...".to_string()
-                    } else {
-                        "Просмотр".to_string()
-                    }
-                })
-                .action(move || {
-                    crate::features::attachments::open_or_preview_attachment(state, &att_open);
-                }),
+                // QuickLook / View icon button
+                circle()
+                    .fill(move || {
+                        if day::dark_mode() {
+                            Color::rgba(1.0, 1.0, 1.0, 0.10)
+                        } else {
+                            Color::rgba(0.0, 0.0, 0.0, 0.06)
+                        }
+                    })
+                    .frame(36.0, 36.0)
+                    .overlay(
+                        when(
+                            move || state.downloading_files.with(|s| s.contains(&id_check)),
+                            move || crate::widgets::spinner::render(state, 16.0).any(),
+                        )
+                        .otherwise(move || {
+                            vector(crate::res::vectors::eye)
+                                .frame(18.0, 18.0)
+                                .tint(move || Color::hex(state.accent_color.get()))
+                                .any()
+                        }),
+                    )
+                    .on_tap(open_fn),
 
-                // Share / Save to Files button
-                button("Скачать")
-                    .action(move || {
-                        crate::features::attachments::share_attachment(state, &att_share);
-                    }),
+                // Share / Save to Files / Download icon button
+                circle()
+                    .fill(move || {
+                        if day::dark_mode() {
+                            Color::rgba(1.0, 1.0, 1.0, 0.10)
+                        } else {
+                            Color::rgba(0.0, 0.0, 0.0, 0.06)
+                        }
+                    })
+                    .frame(36.0, 36.0)
+                    .overlay(
+                        vector(crate::res::vectors::download)
+                            .frame(18.0, 18.0)
+                            .tint(move || Color::hex(state.accent_color.get())),
+                    )
+                    .on_tap(share_fn),
             ))
-            .spacing(6.0)
+            .spacing(8.0)
             .any()
         },
     ))
