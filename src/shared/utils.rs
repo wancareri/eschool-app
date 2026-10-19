@@ -48,6 +48,29 @@ pub fn format_date_header(dow: u32, ts: u64) -> String {
     format!("{}, {}", dow_name, format_date_short(ts))
 }
 
+/// Full date with month name in Russian: "Понедельник, 19 октября".
+pub fn format_date_full(dow: u32, ts: u64) -> String {
+    let epoch_days = ((ts + 12 * 3600 * 1000) / 86_400_000) as i64;
+    let calc_dow = ((epoch_days + 3) % 7 + 1) as u32;
+    let dow_name = weekday_name(if (1..=7).contains(&calc_dow) { calc_dow } else { dow });
+    let d = day_piece_datetime::DayDate::from_epoch_days(epoch_days);
+    let month_name = match d.month {
+        1 => "января",
+        2 => "февраля",
+        3 => "марта",
+        4 => "апреля",
+        5 => "мая",
+        6 => "июня",
+        7 => "июля",
+        8 => "августа",
+        9 => "сентября",
+        10 => "октября",
+        11 => "ноября",
+        _ => "декабря",
+    };
+    format!("{}, {} {}", dow_name, d.day, month_name)
+}
+
 /// Current weekday as a 1-based index (1 = Monday), computed from the system clock
 /// using the same Europe/Minsk day-rollover convention as the timestamp formatters.
 pub fn today_dow() -> u32 {

@@ -632,6 +632,7 @@ fn day_card_with(
     let s_header = day_slot;
     let s_slots = day_slot;
     let s_empty = day_slot;
+    let s_date_for_row = day_slot;
     let get_slots = move || s_slots.with(|d| d.slots.clone());
 
     column((
@@ -662,7 +663,8 @@ fn day_card_with(
         each(
             items(get_slots, |s: &LessonSlot| s.number),
             move |slot| {
-                widgets::lesson_row::render(slot).any()
+                let date_str = s_date_for_row.with(|d| utils::format_date_full(d.day_of_week, d.date));
+                widgets::lesson_row::render(slot, date_str).any()
             },
         ),
     ))

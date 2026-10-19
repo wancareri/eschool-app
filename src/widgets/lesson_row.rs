@@ -30,7 +30,7 @@ fn find_teacher_for_lesson(state: AppState, s: &LessonSlot) -> Option<String> {
     state.subjects_teachers.get().iter().find(|t| t.subject_title == s.subject_title).map(|t| t.teacher.clone())
 }
 
-pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
+pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
     let state = AppState::ambient();
     let s_num = slot;
     let s_time = slot;
@@ -48,6 +48,9 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
     let s_has_note = slot;
     let s_badge_tap = slot;
     let s_lp = slot;
+
+    let d_badge = date_str.clone();
+    let d_lp = date_str;
 
     column((
         row((
@@ -109,15 +112,18 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
                     .spacing(5.0)
                     .align(VAlign::Center)
                     .on_tap(move || {
+                        let d_str = d_badge.clone();
                         s_badge_tap.with(|s| {
                             let teacher = find_teacher_for_lesson(state, s);
+                            let end_time = state.bell_times.get().iter().find(|b| b.number == s.number).map(|b| b.end_time.clone());
                             let target = crate::widgets::lesson_peek::LessonDetailTarget {
                                 key: lesson_key(s),
                                 lesson_uuid: s.lesson_uuid.clone(),
                                 subject_title: s.subject_title.clone(),
                                 lesson_number: s.number,
+                                date_str: Some(d_str),
                                 start_time: s.start_time.clone(),
-                                end_time: None,
+                                end_time,
                                 topic: s.topic.clone(),
                                 homework: s.homework.clone(),
                                 teacher,
@@ -210,15 +216,18 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>) -> impl Piece {
         .padding(Insets { top: 8.0, leading: 16.0, bottom: 2.0, trailing: 16.0 })
         // Telegram-style long press peek
         .on_long_press(move |_p| {
+            let d_str = d_lp.clone();
             s_lp.with(|s| {
                 let teacher = find_teacher_for_lesson(state, s);
+                let end_time = state.bell_times.get().iter().find(|b| b.number == s.number).map(|b| b.end_time.clone());
                 let target = crate::widgets::lesson_peek::LessonDetailTarget {
                     key: lesson_key(s),
                     lesson_uuid: s.lesson_uuid.clone(),
                     subject_title: s.subject_title.clone(),
                     lesson_number: s.number,
+                    date_str: Some(d_str),
                     start_time: s.start_time.clone(),
-                    end_time: None,
+                    end_time,
                     topic: s.topic.clone(),
                     homework: s.homework.clone(),
                     teacher,

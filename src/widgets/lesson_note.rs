@@ -67,6 +67,7 @@ pub fn open_note(state: AppState, target: LessonNoteTarget) {
         lesson_uuid: target.key,
         subject_title: target.subject_title,
         lesson_number: target.lesson_number,
+        date_str: None,
         start_time: target.start_time,
         end_time: None,
         topic: target.topic,
