@@ -166,6 +166,33 @@ fn window_shell(primary: bool) -> impl Piece {
             crate::shared::biometric::authenticate_async(state);
         }
 
+        // Keep pin_setup_active and pin_setup_route in sync
+        day::reactive::watch(
+            move || state.pin_setup_active.get(),
+            move |&active, old| {
+                if old.is_some() {
+                    if active {
+                        if state.pin_setup_route.get().is_none() {
+                            state.pin_setup_route.set(Some("setup".to_string()));
+                        }
+                    } else if state.pin_setup_route.get().is_some() {
+                        state.pin_setup_route.set(None);
+                    }
+                }
+            },
+        );
+        day::reactive::watch(
+            move || state.pin_setup_route.get(),
+            move |route, old| {
+                if old.is_some() {
+                    let active = route.is_some();
+                    if state.pin_setup_active.get() != active {
+                        state.pin_setup_active.set(active);
+                    }
+                }
+            },
+        );
+
         build_nav(primary)
     })
 }
@@ -181,6 +208,7 @@ fn build_nav(primary: bool) -> impl Piece {
     // visible beneath its translucent dim.
     zstack((
         nav_body(state, primary),
+        crate::pages::pin_lock::modal(state),
         crate::widgets::grade_peek::modal(state),
         crate::widgets::lesson_note::modal(state),
         crate::widgets::lesson_peek::modal(state),
@@ -196,17 +224,10 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
     )
     .otherwise(move || {
         when(
-            move || state.pin_setup_active.get(),
-            move || pages::pin_lock::render_setup(state).any(),
+            move || state.is_authenticated.get(),
+            move || render_nav_content(state, primary).any(),
         )
-        .otherwise(move || {
-            when(
-                move || state.is_authenticated.get(),
-                move || render_nav_content(state, primary).any(),
-            )
-            .otherwise(move || pages::login::render().any())
-            .any()
-        })
+        .otherwise(move || pages::login::render().any())
         .any()
     })
     .grow()

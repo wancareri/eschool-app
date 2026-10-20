@@ -41,6 +41,7 @@ pub struct AppState {
     // ── PIN lock ────────────────────────────────────────────────────────
     pub pin_lock_active: Signal<bool>,
     pub pin_setup_active: Signal<bool>,
+    pub pin_setup_route: Signal<Option<String>>,
     pub pin_input: Signal<String>,
     pub pin_error: Signal<bool>,
 
@@ -151,6 +152,7 @@ impl Ambient for AppState {
             biometric_ok: Signal::new(false),
             pin_lock_active: Signal::new(pin_lock),
             pin_setup_active: Signal::new(false),
+            pin_setup_route: Signal::new(None),
             pin_input: Signal::new(String::new()),
             pin_error: Signal::new(false),
             full_name: Signal::new(secure::load(FULL_NAME_KEY).unwrap_or_default()),

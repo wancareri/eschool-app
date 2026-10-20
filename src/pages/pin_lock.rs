@@ -1,7 +1,7 @@
 use crate::app::AppState;
 use crate::res;
 use crate::shared::{colors, nslog, pin};
-use crate::shared::layout_diag::{debug_log_button, debug_log_overlay, PosLogExt};
+use crate::shared::layout_diag::{debug_log_overlay, PosLogExt};
 use day::prelude::*;
 #[cfg(target_os = "ios")]
 use day_uikit::UiKitExt;
@@ -61,6 +61,32 @@ pub fn ios_back_arrow_button(action: impl Fn() + 'static) -> impl Piece {
 }
 
 const PIN_LENGTH: usize = 4;
+
+pub fn open_setup(state: AppState) {
+    state.pin_setup_active.set(true);
+    state.pin_setup_route.set(Some("setup".to_string()));
+}
+
+pub fn close_setup(state: AppState) {
+    state.pin_setup_active.set(false);
+    state.pin_setup_route.set(None);
+}
+
+pub fn modal(state: AppState) -> impl Piece {
+    cover(
+        state.pin_setup_route,
+        move |_| {
+            render_setup(state)
+        },
+    )
+    .background(|_| {
+        if day::dark_mode() {
+            Color::hex(0x000000)
+        } else {
+            Color::hex(0xFFFFFF)
+        }
+    })
+}
 
 pub fn render(state: AppState) -> impl Piece {
     render_unlock(state)
@@ -157,10 +183,17 @@ pub fn render_setup(state: AppState) -> impl Piece {
             row((
                 ios_back_arrow_button(move || {
                     crate::shared::haptics::tick();
-                    state.pin_setup_active.set(false);
+                    close_setup(state);
                 }),
                 spacer().grow(),
-                debug_log_button(show_logs),
+                button("📋 Логи")
+                    .action(move || {
+                        crate::shared::haptics::tick();
+                        show_logs.set(true);
+                    })
+                    .padding(Insets { top: 4.0, leading: 8.0, bottom: 4.0, trailing: 8.0 })
+                    .background(Color::rgba(0.5, 0.5, 0.5, 0.2))
+                    .corner_radius(12.0),
             ))
             .align(VAlign::Center)
             .grow_w()
@@ -228,7 +261,7 @@ pub fn render_setup(state: AppState) -> impl Piece {
             button("Отмена")
                 .action(move || {
                     crate::shared::haptics::tick();
-                    state.pin_setup_active.set(false);
+                    close_setup(state);
                 })
                 .id("pin-setup-cancel")
                 .log_pos("PinSetup:Cancel")
@@ -244,8 +277,16 @@ pub fn render_setup(state: AppState) -> impl Piece {
             bottom: 24.0,
             trailing: 24.0,
         })
-        .log_pos("PinSetup:Root")
-        .grow(),
+        .background(move || {
+            if day::dark_mode() {
+                Color::hex(0x000000)
+            } else {
+                Color::hex(0xFFFFFF)
+            }
+        })
+        .grow_w()
+        .grow()
+        .log_pos("PinSetup:Root"),
 
         when(
             move || show_logs.get(),
@@ -590,8 +631,10 @@ fn setup_numpad_key(
                             pin::save_pin(&v);
                             nslog::nslog("[PIN] New PIN set successfully");
                             let setup_active = state.pin_setup_active.setter();
+                            let setup_route = state.pin_setup_route.setter();
                             day::reactive::on_main_delayed(800, move || {
                                 setup_active.set(false);
+                                setup_route.set(None);
                             });
                         } else {
                             // Mismatch! Shake and reset to step 0

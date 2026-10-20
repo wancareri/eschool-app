@@ -78,7 +78,7 @@ pub fn render() -> impl Piece {
             move || pin_enabled.get(),
             move |on, old| {
                 if old == Some(&false) && *on {
-                    state.pin_setup_active.set(true);
+                    crate::pages::pin_lock::open_setup(state);
                 }
             },
         );
@@ -343,7 +343,7 @@ fn pin_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
                             button("Сменить")
                                 .action(move || {
                                     crate::shared::haptics::tick();
-                                    state.pin_setup_active.set(true);
+                                    crate::pages::pin_lock::open_setup(state);
                                 }),
                         )),
                     ),
