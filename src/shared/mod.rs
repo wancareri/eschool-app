@@ -4,6 +4,7 @@ pub mod colors;
 pub mod haptics;
 pub mod i18n;
 pub mod keyboard;
+pub mod layout_diag;
 pub mod locale;
 pub mod log_bridge;
 pub mod notifications;

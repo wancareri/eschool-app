@@ -1,11 +1,13 @@
 use crate::app::AppState;
 use crate::features;
 use crate::shared::colors;
+use crate::shared::layout_diag::{debug_log_button, debug_log_overlay, PosLogExt};
 use crate::res;
 use day::prelude::*;
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
+    let show_logs = Signal::new(false);
 
     zstack((
         when(
@@ -14,11 +16,15 @@ pub fn render() -> impl Piece {
         ),
         when(
             move || !state.is_authenticated.get() && state.setup_new_password_active.get(),
-            move || setup_password_form(state).animation(AnimSpec::ease_out(350)).any(),
+            move || setup_password_form(state, show_logs).animation(AnimSpec::ease_out(350)).any(),
         ),
         when(
             move || !state.is_authenticated.get() && !state.setup_new_password_active.get(),
-            move || auth_form(state).animation(AnimSpec::ease_out(350)).any(),
+            move || auth_form(state, show_logs).animation(AnimSpec::ease_out(350)).any(),
+        ),
+        when(
+            move || show_logs.get(),
+            move || debug_log_overlay(show_logs).animation(AnimSpec::ease_out(250)).any(),
         ),
     ))
     .grow()
@@ -165,7 +171,7 @@ fn profile_view(state: AppState) -> impl Piece {
     .grow()
 }
 
-fn auth_form(state: AppState) -> impl Piece {
+fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
     let step = Signal::new(0u8); // 0 = username, 1 = password
     let username = Signal::new(String::new());
     let password = Signal::new(String::new());
@@ -176,7 +182,8 @@ fn auth_form(state: AppState) -> impl Piece {
 
     scroll(
         column((
-            spacer().height(24.0),
+            debug_log_button(show_logs),
+            spacer().height(16.0),
 
             // Greeting header — adapts between Step 0 and Step 1
             when(
@@ -283,6 +290,7 @@ fn auth_form(state: AppState) -> impl Piece {
                             text_field(username)
                                 .frame(0.0, 44.0)
                                 .grow_w()
+                                .log_pos("Auth:UsernameField")
                                 .on_submit(move || {
                                     let u = username.get_untracked();
                                     if u.trim().is_empty() {
@@ -337,6 +345,7 @@ fn auth_form(state: AppState) -> impl Piece {
                             .frame(0.0, 44.0)
                             .grow_w()
                             .id("password-field")
+                            .log_pos("Auth:PasswordField")
                             .on_submit(move || {
                                 if state.loading.get() { return; }
                                 let u = username.get_untracked();
@@ -426,6 +435,7 @@ fn auth_form(state: AppState) -> impl Piece {
                 }
             })
             .id("login-btn")
+            .log_pos("Auth:ActionButton")
             .padding(Insets { top: 8.0, leading: 20.0, bottom: 16.0, trailing: 20.0 }),
 
             when(
@@ -441,7 +451,7 @@ fn auth_form(state: AppState) -> impl Piece {
     .grow()
 }
 
-fn setup_password_form(state: AppState) -> impl Piece {
+fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
     let new_password = Signal::new(String::new());
     let confirm_password = Signal::new(String::new());
     let confirm_focused = Signal::new(false);
@@ -451,7 +461,8 @@ fn setup_password_form(state: AppState) -> impl Piece {
 
     scroll(
         column((
-            spacer().height(24.0),
+            debug_log_button(show_logs),
+            spacer().height(16.0),
 
             column((
                 label("Создание постоянного пароля")
@@ -464,6 +475,7 @@ fn setup_password_form(state: AppState) -> impl Piece {
                     .align(TextAlign::Center)
                     .padding(Insets { top: 6.0, leading: 24.0, bottom: 16.0, trailing: 24.0 }),
             ))
+            .log_pos("Setup:TitleColumn")
             .grow_w(),
 
             when(
@@ -498,6 +510,7 @@ fn setup_password_form(state: AppState) -> impl Piece {
                     .secure()
                     .frame(0.0, 44.0)
                     .grow_w()
+                    .log_pos("Setup:NewPasswordField")
                     .on_submit(move || {
                         confirm_focused.set(true);
                     }),
@@ -525,6 +538,7 @@ fn setup_password_form(state: AppState) -> impl Piece {
                     .focused(confirm_focused)
                     .frame(0.0, 44.0)
                     .grow_w()
+                    .log_pos("Setup:ConfirmPasswordField")
                     .on_submit(move || {
                         if state.loading.get() { return; }
                         let np = new_password.get_untracked();
@@ -577,6 +591,7 @@ fn setup_password_form(state: AppState) -> impl Piece {
             .frame(0.0, 50.0)
             .grow_w()
             .corner_radius(25.0)
+            .log_pos("Setup:SubmitButton")
             .action(move || {
                 if state.loading.get() { return; }
                 let np = new_password.get_untracked();
@@ -608,6 +623,7 @@ fn setup_password_form(state: AppState) -> impl Piece {
             .grow_w(),
 
             button("← Назад к входу")
+                .log_pos("Setup:BackButton")
                 .action(move || {
                     crate::shared::haptics::tick();
                     crate::shared::keyboard::dismiss();
@@ -703,7 +719,8 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                     text_field(old_password)
                         .secure()
                         .frame(0.0, 44.0)
-                        .grow_w(),
+                        .grow_w()
+                        .log_pos("ChangePwd:OldPasswordField"),
                 ))
                 .spacing(4.0)
                 .padding(Insets { top: 10.0, leading: 16.0, bottom: 10.0, trailing: 16.0 })
@@ -727,6 +744,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         .secure()
                         .frame(0.0, 44.0)
                         .grow_w()
+                        .log_pos("ChangePwd:NewPasswordField")
                         .on_submit(move || {
                             confirm_focused.set(true);
                         }),
@@ -753,7 +771,8 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         .secure()
                         .focused(confirm_focused)
                         .frame(0.0, 44.0)
-                        .grow_w(),
+                        .grow_w()
+                        .log_pos("ChangePwd:ConfirmPasswordField"),
                 ))
                 .spacing(4.0)
                 .padding(Insets { top: 10.0, leading: 16.0, bottom: 10.0, trailing: 16.0 })
@@ -779,6 +798,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                 .frame(0.0, 50.0)
                 .grow_w()
                 .corner_radius(25.0)
+                .log_pos("ChangePwd:SubmitButton")
                 .action(move || {
                     if state.loading.get() { return; }
                     let op = old_password.get_untracked();

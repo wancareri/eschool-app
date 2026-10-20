@@ -1,6 +1,7 @@
 use crate::app::AppState;
 use crate::res;
 use crate::shared::{colors, nslog, pin};
+use crate::shared::layout_diag::{debug_log_button, debug_log_overlay, PosLogExt};
 use day::prelude::*;
 
 const PIN_LENGTH: usize = 4;
@@ -67,10 +68,11 @@ pub fn render_unlock(state: AppState) -> impl Piece {
             .padding(Insets { top: 20.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
             .align(VAlign::Center)
             .translation(move || shake.get(), 0.0)
+            .log_pos("PinUnlock:DotsRow")
         },
 
         // Numpad
-        numpad(state),
+        numpad(state).log_pos("PinUnlock:Numpad"),
 
         spacer().grow(),
     ))
@@ -82,6 +84,7 @@ pub fn render_unlock(state: AppState) -> impl Piece {
         bottom: 24.0,
         trailing: 24.0,
     })
+    .log_pos("PinUnlock:Root")
     .grow()
     .any()
 }
@@ -91,82 +94,98 @@ pub fn render_setup(state: AppState) -> impl Piece {
     let input = Signal::new(String::new());
     let first_pin = Signal::new(String::new());
     let error_msg = Signal::new(String::new());
+    let show_logs = Signal::new(false);
 
-    column((
-        spacer().grow(),
-
+    zstack((
         column((
-            label("Установка PIN-кода")
-                .font(Font::LargeTitle)
-                .bold()
-                .align(TextAlign::Center),
+            debug_log_button(show_logs),
 
-            when(
-                move || !error_msg.get().is_empty(),
-                move || {
-                    label(move || error_msg.get())
-                        .font(Font::Subheadline)
-                        .color(colors::ERROR)
-                        .align(TextAlign::Center)
-                        .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 })
-                },
-            )
-            .otherwise(move || {
-                label(move || {
-                    if step.get() == 0 {
-                        "Придумайте 4-значный PIN-код"
-                    } else {
-                        "Повторите ваш PIN-код"
-                    }
-                })
-                .font(Font::Subheadline)
-                .secondary()
-                .align(TextAlign::Center)
-                .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 })
-            }),
-        ))
-        .spacing(4.0)
-        .align(HAlign::Center),
+            spacer().grow(),
 
-        // PIN dots
-        {
-            let shake = shake_signal();
-            let inp = input;
-            let err = error_msg;
-            row((
-                setup_dot(0, state, inp, err),
-                setup_dot(1, state, inp, err),
-                setup_dot(2, state, inp, err),
-                setup_dot(3, state, inp, err),
+            column((
+                label("Установка PIN-кода")
+                    .font(Font::LargeTitle)
+                    .bold()
+                    .align(TextAlign::Center),
+
+                when(
+                    move || !error_msg.get().is_empty(),
+                    move || {
+                        label(move || error_msg.get())
+                            .font(Font::Subheadline)
+                            .color(colors::ERROR)
+                            .align(TextAlign::Center)
+                            .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 })
+                    },
+                )
+                .otherwise(move || {
+                    label(move || {
+                        if step.get() == 0 {
+                            "Придумайте 4-значный PIN-код"
+                        } else {
+                            "Повторите ваш PIN-код"
+                        }
+                    })
+                    .font(Font::Subheadline)
+                    .secondary()
+                    .align(TextAlign::Center)
+                    .padding(Insets { top: 6.0, leading: 0.0, bottom: 0.0, trailing: 0.0 })
+                }),
             ))
-            .spacing(24.0)
-            .padding(Insets { top: 20.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
-            .align(VAlign::Center)
-            .translation(move || shake.get(), 0.0)
-        },
+            .spacing(4.0)
+            .align(HAlign::Center)
+            .log_pos("PinSetup:Title"),
 
-        // Setup Numpad
-        setup_numpad(state, step, input, first_pin, error_msg),
+            // PIN dots
+            {
+                let shake = shake_signal();
+                let inp = input;
+                let err = error_msg;
+                row((
+                    setup_dot(0, state, inp, err),
+                    setup_dot(1, state, inp, err),
+                    setup_dot(2, state, inp, err),
+                    setup_dot(3, state, inp, err),
+                ))
+                .spacing(24.0)
+                .padding(Insets { top: 20.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
+                .align(VAlign::Center)
+                .translation(move || shake.get(), 0.0)
+                .log_pos("PinSetup:DotsRow")
+            },
 
-        // Cancel button
-        button("Отмена")
-            .action(move || {
-                crate::shared::haptics::tick();
-                state.pin_setup_active.set(false);
-            })
-            .id("pin-setup-cancel")
-            .padding(Insets { top: 12.0, leading: 24.0, bottom: 0.0, trailing: 24.0 }),
+            // Setup Numpad
+            setup_numpad(state, step, input, first_pin, error_msg)
+                .log_pos("PinSetup:Numpad"),
 
-        spacer().grow(),
+            // Cancel button
+            button("Отмена")
+                .action(move || {
+                    crate::shared::haptics::tick();
+                    state.pin_setup_active.set(false);
+                })
+                .id("pin-setup-cancel")
+                .log_pos("PinSetup:Cancel")
+                .padding(Insets { top: 12.0, leading: 24.0, bottom: 0.0, trailing: 24.0 }),
+
+            spacer().grow(),
+        ))
+        .spacing(8.0)
+        .align(HAlign::Center)
+        .padding(Insets {
+            top: 24.0,
+            leading: 24.0,
+            bottom: 24.0,
+            trailing: 24.0,
+        })
+        .log_pos("PinSetup:Root")
+        .grow(),
+
+        when(
+            move || show_logs.get(),
+            move || debug_log_overlay(show_logs).animation(AnimSpec::ease_out(250)).any(),
+        ),
     ))
-    .spacing(8.0)
-    .align(HAlign::Center)
-    .padding(Insets {
-        top: 24.0,
-        leading: 24.0,
-        bottom: 24.0,
-        trailing: 24.0,
-    })
     .grow()
     .any()
 }
