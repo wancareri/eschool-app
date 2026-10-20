@@ -184,6 +184,75 @@ pub fn complete_parent_new_password(
     });
 }
 
+pub fn change_logged_in_parent_password(
+    state: AppState,
+    old_password: &str,
+    new_password: &str,
+    on_success: impl Fn() + Send + 'static,
+) {
+    let set_loading = state.loading.setter();
+    let set_error = state.error_msg.setter();
+
+    if let Err(e) = eschool_api::auth::validate_parent_password(new_password) {
+        set_error.set(e);
+        return;
+    }
+
+    set_loading.set(true);
+    set_error.set(String::new());
+
+    let old_p = old_password.to_string();
+    let new_p = new_password.to_string();
+
+    std::thread::spawn(move || {
+        let token = match get_token() {
+            Some(t) => t,
+            None => {
+                day::reactive::on_main(move || {
+                    set_error.set("Сессия истекла. Войдите заново.".into());
+                    set_loading.set(false);
+                });
+                return;
+            }
+        };
+
+        let parent_uuid = match eschool_api::auth::extract_token_usi(&token) {
+            Some(u) => u,
+            None => {
+                day::reactive::on_main(move || {
+                    set_error.set("Не удалось определить ID родителя.".into());
+                    set_loading.set(false);
+                });
+                return;
+            }
+        };
+
+        let client = eschool_api::client::blocking::build_client(&token);
+        match eschool_api::client::blocking::change_parent_password(&client, &parent_uuid, &old_p, &new_p) {
+            Ok(()) => {
+                if let Some(u) = secure::load(USERNAME_KEY) {
+                    let auth = eschool_api::auth::Auth::new();
+                    if let Ok(new_token) = auth.login_parent_blocking(&u, &new_p) {
+                        secure::save(TOKEN_KEY, &new_token.access_token);
+                        secure::save(REFRESH_KEY, &new_token.refresh_token);
+                        secure::save(PASSWORD_KEY, &new_p);
+                    }
+                }
+                day::reactive::on_main(move || {
+                    set_loading.set(false);
+                    on_success();
+                });
+            }
+            Err(e) => {
+                day::reactive::on_main(move || {
+                    set_error.set(format!("Не удалось сменить пароль: {e}"));
+                    set_loading.set(false);
+                });
+            }
+        }
+    });
+}
+
 pub fn logout(state: AppState) {
     logout_keys();
     state.is_authenticated.set(false);
