@@ -3,6 +3,62 @@ use crate::res;
 use crate::shared::{colors, nslog, pin};
 use crate::shared::layout_diag::{debug_log_button, debug_log_overlay, PosLogExt};
 use day::prelude::*;
+#[cfg(target_os = "ios")]
+use day_uikit::UiKitExt;
+
+pub fn ios_back_arrow_button(action: impl Fn() + 'static) -> impl Piece {
+    let act = std::rc::Rc::new(action);
+    let act_clone = act.clone();
+
+    #[cfg(target_os = "ios")]
+    {
+        button("‹")
+            .frame(44.0, 44.0)
+            .corner_radius(22.0)
+            .background(move || {
+                if day::dark_mode() {
+                    Color::rgba(1.0, 1.0, 1.0, 0.12)
+                } else {
+                    Color::rgba(0.0, 0.0, 0.0, 0.06)
+                }
+            })
+            .action(move || {
+                crate::shared::haptics::tick();
+                act_clone();
+            })
+            .uikit(|view, _class, _mtm| {
+                use objc2_foundation::NSString;
+                use objc2_ui_kit::{UIButton, UIImage, UIControlState};
+                if let Some(btn) = view.downcast_ref::<UIButton>() {
+                    let name = NSString::from_str("chevron.backward");
+                    if let Some(img) = UIImage::systemImageNamed(&name) {
+                        btn.setImage_forState(Some(&img), UIControlState::Normal);
+                        btn.setTitle_forState(None, UIControlState::Normal);
+                    }
+                }
+            })
+            .id("ios-back-arrow")
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    {
+        button("‹ Назад")
+            .frame(44.0, 44.0)
+            .corner_radius(22.0)
+            .background(move || {
+                if day::dark_mode() {
+                    Color::rgba(1.0, 1.0, 1.0, 0.12)
+                } else {
+                    Color::rgba(0.0, 0.0, 0.0, 0.06)
+                }
+            })
+            .action(move || {
+                crate::shared::haptics::tick();
+                act_clone();
+            })
+            .id("ios-back-arrow")
+    }
+}
 
 const PIN_LENGTH: usize = 4;
 
@@ -98,7 +154,17 @@ pub fn render_setup(state: AppState) -> impl Piece {
 
     zstack((
         column((
-            debug_log_button(show_logs),
+            row((
+                ios_back_arrow_button(move || {
+                    crate::shared::haptics::tick();
+                    state.pin_setup_active.set(false);
+                }),
+                spacer().grow(),
+                debug_log_button(show_logs),
+            ))
+            .align(VAlign::Center)
+            .grow_w()
+            .log_pos("PinSetup:TopBar"),
 
             spacer().grow(),
 
