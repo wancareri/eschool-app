@@ -93,6 +93,9 @@ pub fn render(state: AppState) -> impl Piece {
 }
 
 pub fn render_unlock(state: AppState) -> impl Piece {
+    let shake = Signal::new(0.0);
+    let success_clock = Signal::new(-1.0);
+
     column((
         spacer().grow(),
 
@@ -139,12 +142,12 @@ pub fn render_unlock(state: AppState) -> impl Piece {
         // PIN dots — the row rides the wrong-code shake
         {
             let s = state;
-            let shake = shake_signal();
+            let clk = success_clock;
             row((
-                dot(0, s),
-                dot(1, s),
-                dot(2, s),
-                dot(3, s),
+                dot(0, s, clk),
+                dot(1, s, clk),
+                dot(2, s, clk),
+                dot(3, s, clk),
             ))
             .spacing(24.0)
             .padding(Insets { top: 20.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
@@ -154,7 +157,7 @@ pub fn render_unlock(state: AppState) -> impl Piece {
         },
 
         // Numpad
-        numpad(state).log_pos("PinUnlock:Numpad"),
+        numpad(state, shake, success_clock).log_pos("PinUnlock:Numpad"),
 
         spacer().grow(),
     ))
@@ -177,6 +180,8 @@ pub fn render_setup(state: AppState) -> impl Piece {
     let first_pin = Signal::new(String::new());
     let error_msg = Signal::new(String::new());
     let show_logs = Signal::new(false);
+    let shake = Signal::new(0.0);
+    let success_clock = Signal::new(-1.0);
 
     zstack((
         column((
@@ -237,14 +242,15 @@ pub fn render_setup(state: AppState) -> impl Piece {
 
             // PIN dots
             {
-                let shake = shake_signal();
                 let inp = input;
                 let err = error_msg;
+                let s = state;
+                let clk = success_clock;
                 row((
-                    setup_dot(0, state, inp, err),
-                    setup_dot(1, state, inp, err),
-                    setup_dot(2, state, inp, err),
-                    setup_dot(3, state, inp, err),
+                    setup_dot(0, s, inp, err, clk),
+                    setup_dot(1, s, inp, err, clk),
+                    setup_dot(2, s, inp, err, clk),
+                    setup_dot(3, s, inp, err, clk),
                 ))
                 .spacing(24.0)
                 .padding(Insets { top: 20.0, leading: 0.0, bottom: 8.0, trailing: 0.0 })
@@ -254,7 +260,7 @@ pub fn render_setup(state: AppState) -> impl Piece {
             },
 
             // Setup Numpad
-            setup_numpad(state, step, input, first_pin, error_msg)
+            setup_numpad(state, step, input, first_pin, error_msg, shake, success_clock)
                 .log_pos("PinSetup:Numpad"),
 
             // Cancel button
@@ -297,14 +303,13 @@ pub fn render_setup(state: AppState) -> impl Piece {
     .any()
 }
 
-fn dot(index: usize, state: AppState) -> impl Piece {
+fn dot(index: usize, state: AppState, clock: Signal<f64>) -> impl Piece {
     let filled = move || {
         let input = state.pin_input.get();
         input.len() > index
     };
     let error = state.pin_error;
     let s_accent = state;
-    let clock = success_clock();
 
     when(
         move || error.get() || filled(),
@@ -330,10 +335,15 @@ fn dot(index: usize, state: AppState) -> impl Piece {
     .scale(move || success_scale(index, clock.get()))
 }
 
-fn setup_dot(index: usize, state: AppState, input: Signal<String>, error_msg: Signal<String>) -> impl Piece {
+fn setup_dot(
+    index: usize,
+    state: AppState,
+    input: Signal<String>,
+    error_msg: Signal<String>,
+    clock: Signal<f64>,
+) -> impl Piece {
     let filled = move || input.get().len() > index;
     let s_accent = state;
-    let clock = success_clock();
 
     when(
         move || !error_msg.get().is_empty() || filled(),
@@ -359,42 +369,41 @@ fn setup_dot(index: usize, state: AppState, input: Signal<String>, error_msg: Si
     .scale(move || success_scale(index, clock.get()))
 }
 
-thread_local! {
-    static SHAKE: Signal<f64> = Signal::new(0.0);
-    static SHAKE_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    static SUCCESS_CLOCK: Signal<f64> = Signal::new(-1.0);
-    static SUCCESS_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-}
-
-fn shake_signal() -> Signal<f64> {
-    SHAKE.with(|s| *s)
-}
+static UNLOCK_SHAKE_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static UNLOCK_SUCCESS_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static SETUP_SHAKE_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static SETUP_SUCCESS_GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 const SHAKE_MS: u32 = 450;
 const SHAKE_FRAME_MS: u32 = 16;
 const SHAKE_AMPLITUDE: f64 = 3.0;
 const SHAKE_PERIOD_MS: f64 = 80.0;
 
-fn run_shake() {
-    let generation = SHAKE_GEN.with(|g| g.fetch_add(1, std::sync::atomic::Ordering::SeqCst)) + 1;
-    shake_signal().set(0.0);
-    schedule_shake_frame(generation, std::time::Instant::now());
+fn run_shake(shake: Signal<f64>, gen_counter: &'static std::sync::atomic::AtomicU32) {
+    let generation = gen_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    shake.set(0.0);
+    schedule_shake_frame(shake.setter(), gen_counter, generation, std::time::Instant::now());
 }
 
-fn schedule_shake_frame(generation: u32, started: std::time::Instant) {
+fn schedule_shake_frame(
+    shake: Setter<f64>,
+    gen_counter: &'static std::sync::atomic::AtomicU32,
+    generation: u32,
+    started: std::time::Instant,
+) {
     day::reactive::on_main_delayed(SHAKE_FRAME_MS, move || {
-        if SHAKE_GEN.with(|g| g.load(std::sync::atomic::Ordering::SeqCst)) != generation {
+        if gen_counter.load(std::sync::atomic::Ordering::SeqCst) != generation {
             return;
         }
         let elapsed = started.elapsed().as_millis() as u32;
         if elapsed >= SHAKE_MS {
-            shake_signal().set(0.0);
+            shake.set(0.0);
             return;
         }
         let decay = 1.0 - elapsed as f64 / SHAKE_MS as f64;
         let phase = elapsed as f64 / SHAKE_PERIOD_MS * std::f64::consts::TAU;
-        shake_signal().set(SHAKE_AMPLITUDE * decay * phase.sin());
-        schedule_shake_frame(generation, started);
+        shake.set(SHAKE_AMPLITUDE * decay * phase.sin());
+        schedule_shake_frame(shake, gen_counter, generation, started);
     });
 }
 
@@ -408,10 +417,6 @@ const SUC_DOT_MS: f64 = 480.0;
 const SUC_TOTAL_MS: f64 = SUC_START_MS + 3.0 * SUC_STAGGER_MS + SUC_DOT_MS;
 const SUC_BUMP: f64 = 0.35;
 
-fn success_clock() -> Signal<f64> {
-    SUCCESS_CLOCK.with(|s| *s)
-}
-
 fn success_scale(index: usize, t: f64) -> f64 {
     if t < 0.0 {
         return 1.0;
@@ -424,37 +429,42 @@ fn success_scale(index: usize, t: f64) -> f64 {
     1.0 + SUC_BUMP * (std::f64::consts::PI * p).sin()
 }
 
-fn run_success_pulse() {
-    let generation = SUCCESS_GEN.with(|g| g.fetch_add(1, std::sync::atomic::Ordering::SeqCst)) + 1;
-    success_clock().set(0.0);
-    schedule_success_frame(generation, std::time::Instant::now());
+fn run_success_pulse(clock: Signal<f64>, gen_counter: &'static std::sync::atomic::AtomicU32) {
+    let generation = gen_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    clock.set(0.0);
+    schedule_success_frame(clock.setter(), gen_counter, generation, std::time::Instant::now());
 }
 
-fn schedule_success_frame(generation: u32, started: std::time::Instant) {
+fn schedule_success_frame(
+    clock: Setter<f64>,
+    gen_counter: &'static std::sync::atomic::AtomicU32,
+    generation: u32,
+    started: std::time::Instant,
+) {
     day::reactive::on_main_delayed(16, move || {
-        if SUCCESS_GEN.with(|g| g.load(std::sync::atomic::Ordering::SeqCst)) != generation {
+        if gen_counter.load(std::sync::atomic::Ordering::SeqCst) != generation {
             return;
         }
         let t = started.elapsed().as_millis() as f64;
-        success_clock().set(t);
+        clock.set(t);
         if t < SUC_TOTAL_MS {
-            schedule_success_frame(generation, started);
+            schedule_success_frame(clock, gen_counter, generation, started);
         }
     });
 }
 
-fn numpad(state: AppState) -> impl Piece {
+fn numpad(state: AppState, shake: Signal<f64>, clock: Signal<f64>) -> impl Piece {
     column((
-        numpad_row(state, &["1", "2", "3"]),
-        numpad_row(state, &["4", "5", "6"]),
-        numpad_row(state, &["7", "8", "9"]),
-        numpad_row(state, &["", "0", "⌫"]),
+        numpad_row(state, shake, clock, &["1", "2", "3"]),
+        numpad_row(state, shake, clock, &["4", "5", "6"]),
+        numpad_row(state, shake, clock, &["7", "8", "9"]),
+        numpad_row(state, shake, clock, &["", "0", "⌫"]),
     ))
     .spacing(12.0)
     .align(HAlign::Center)
 }
 
-fn numpad_row(state: AppState, keys: &[&str]) -> impl Piece {
+fn numpad_row(state: AppState, shake: Signal<f64>, clock: Signal<f64>, keys: &[&str]) -> impl Piece {
     let s1 = state;
     let s2 = state;
     let s3 = state;
@@ -463,15 +473,15 @@ fn numpad_row(state: AppState, keys: &[&str]) -> impl Piece {
     let k3 = keys[2];
 
     row((
-        numpad_key(s1, k1),
-        numpad_key(s2, k2),
-        numpad_key(s3, k3),
+        numpad_key(s1, shake, clock, k1),
+        numpad_key(s2, shake, clock, k2),
+        numpad_key(s3, shake, clock, k3),
     ))
     .spacing(24.0)
     .align(VAlign::Center)
 }
 
-fn numpad_key(state: AppState, key: &str) -> impl Piece {
+fn numpad_key(state: AppState, shake: Signal<f64>, clock: Signal<f64>, key: &str) -> impl Piece {
     let key_str = key.to_string();
     let key_clone = key_str.clone();
     let key_clone2 = key_str.clone();
@@ -512,7 +522,7 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                     if pin::verify(&input) {
                         nslog::nslog("[PIN] Correct, unlocking");
                         crate::shared::haptics::pop();
-                        run_success_pulse();
+                        run_success_pulse(clock, &UNLOCK_SUCCESS_GEN);
                         let unlock = s.pin_lock_active.setter();
                         let auth = s.is_authenticated.setter();
                         let clear = s.pin_input.setter();
@@ -524,7 +534,7 @@ fn numpad_key(state: AppState, key: &str) -> impl Piece {
                     } else {
                         nslog::nslog("[PIN] Wrong");
                         s.pin_error.set(true);
-                        run_shake();
+                        run_shake(shake, &UNLOCK_SHAKE_GEN);
                         let clear = s.pin_input.setter();
                         let err = s.pin_error.setter();
                         day::reactive::on_main_delayed(shake_total_ms(), move || {
@@ -546,12 +556,14 @@ fn setup_numpad(
     input: Signal<String>,
     first_pin: Signal<String>,
     error_msg: Signal<String>,
+    shake: Signal<f64>,
+    clock: Signal<f64>,
 ) -> impl Piece {
     column((
-        setup_numpad_row(state, step, input, first_pin, error_msg, &["1", "2", "3"]),
-        setup_numpad_row(state, step, input, first_pin, error_msg, &["4", "5", "6"]),
-        setup_numpad_row(state, step, input, first_pin, error_msg, &["7", "8", "9"]),
-        setup_numpad_row(state, step, input, first_pin, error_msg, &["", "0", "⌫"]),
+        setup_numpad_row(state, step, input, first_pin, error_msg, shake, clock, &["1", "2", "3"]),
+        setup_numpad_row(state, step, input, first_pin, error_msg, shake, clock, &["4", "5", "6"]),
+        setup_numpad_row(state, step, input, first_pin, error_msg, shake, clock, &["7", "8", "9"]),
+        setup_numpad_row(state, step, input, first_pin, error_msg, shake, clock, &["", "0", "⌫"]),
     ))
     .spacing(12.0)
     .align(HAlign::Center)
@@ -563,12 +575,14 @@ fn setup_numpad_row(
     input: Signal<String>,
     first_pin: Signal<String>,
     error_msg: Signal<String>,
+    shake: Signal<f64>,
+    clock: Signal<f64>,
     keys: &[&str],
 ) -> impl Piece {
     row((
-        setup_numpad_key(state, step, input, first_pin, error_msg, keys[0]),
-        setup_numpad_key(state, step, input, first_pin, error_msg, keys[1]),
-        setup_numpad_key(state, step, input, first_pin, error_msg, keys[2]),
+        setup_numpad_key(state, step, input, first_pin, error_msg, shake, clock, keys[0]),
+        setup_numpad_key(state, step, input, first_pin, error_msg, shake, clock, keys[1]),
+        setup_numpad_key(state, step, input, first_pin, error_msg, shake, clock, keys[2]),
     ))
     .spacing(24.0)
     .align(VAlign::Center)
@@ -580,6 +594,8 @@ fn setup_numpad_key(
     input: Signal<String>,
     first_pin: Signal<String>,
     error_msg: Signal<String>,
+    shake: Signal<f64>,
+    clock: Signal<f64>,
     key: &str,
 ) -> impl Piece {
     let key_str = key.to_string();
@@ -627,7 +643,7 @@ fn setup_numpad_key(
                         if v == expected {
                             // Match! Save pin and finish
                             crate::shared::haptics::pop();
-                            run_success_pulse();
+                            run_success_pulse(clock, &SETUP_SUCCESS_GEN);
                             pin::save_pin(&v);
                             nslog::nslog("[PIN] New PIN set successfully");
                             let setup_active = state.pin_setup_active.setter();
@@ -640,7 +656,7 @@ fn setup_numpad_key(
                             // Mismatch! Shake and reset to step 0
                             nslog::nslog("[PIN] Mismatch in confirmation");
                             error_msg.set("PIN-коды не совпадают".into());
-                            run_shake();
+                            run_shake(shake, &SETUP_SHAKE_GEN);
                             let inp = input.setter();
                             let st = step.setter();
                             let fp = first_pin.setter();
