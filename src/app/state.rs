@@ -49,6 +49,11 @@ pub struct AppState {
     pub school_name: Signal<String>,
     pub class_label: Signal<String>,
     pub is_graduating: Signal<bool>,
+    pub is_parent: Signal<bool>,
+    pub parent_children: Signal<Vec<StudentForParent>>,
+    pub active_child_index: Signal<usize>,
+    pub setup_new_password_active: Signal<bool>,
+    pub setup_temp_password_data: Signal<Option<(String, String, String)>>,
 
     // ── theme ────────────────────────────────────────────────────────────
     pub accent_color: Signal<u32>,
@@ -152,6 +157,11 @@ impl Ambient for AppState {
             school_name: Signal::new(secure::load(SCHOOL_NAME_KEY).unwrap_or_default()),
             class_label: Signal::new(String::new()),
             is_graduating: Signal::new(false),
+            is_parent: Signal::new(false),
+            parent_children: Signal::new(Vec::new()),
+            active_child_index: Signal::new(0),
+            setup_new_password_active: Signal::new(false),
+            setup_temp_password_data: Signal::new(None),
             accent_color: Signal::new(accent),
             current_section: Signal::new(crate::Section::Diary),
             settings_tab: Signal::new(0),

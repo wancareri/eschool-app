@@ -78,3 +78,23 @@ pub struct FinalMarks {
     #[serde(default)]
     pub diary_signature: serde_json::Value,
 }
+
+/// School institution record from `/api/v1/institution/schools`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InstitutionSchool {
+    pub uuid: String,
+    #[serde(default)]
+    pub org_id: Option<String>,
+    #[serde(default)]
+    pub short_name: Option<String>,
+    #[serde(default)]
+    pub short_name_be: Option<String>,
+    #[serde(default)]
+    pub unp: Option<String>,
+    #[serde(default)]
+    pub region_name: Option<String>,
+    #[serde(default)]
+    pub district_name: Option<String>,
+    #[serde(default)]
+    pub settlement_name: Option<String>,
+}

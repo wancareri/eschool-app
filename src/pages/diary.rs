@@ -107,6 +107,7 @@ pub fn render() -> impl Piece {
                     label(move || res::str::diary_title().format())
                         .font(Font::LargeTitle)
                         .align(TextAlign::Center),
+                    child_switcher(state),
                 ))
                 .spacing(6.0)
                 .padding(Insets { top: 8.0, leading: PAD, bottom: 4.0, trailing: PAD }),
@@ -138,6 +139,53 @@ pub fn render() -> impl Piece {
     ))
     .align(Alignment::TopLeading)
     .grow()
+}
+
+fn child_switcher(state: AppState) -> impl Piece {
+    when(
+        move || state.is_parent.get(),
+        move || {
+            let children = state.parent_children.get();
+            if children.len() > 1 {
+                let pills: Vec<AnyPiece> = children
+                    .into_iter()
+                    .enumerate()
+                    .map(|(this_idx, ch)| {
+                        let name = ch.full_name.clone();
+                        button(move || {
+                            if state.active_child_index.get() == this_idx {
+                                format!("● {}", name)
+                            } else {
+                                name.clone()
+                            }
+                        })
+                        .action(move || {
+                            haptics::tick();
+                            features::diary::switch_child(state, this_idx);
+                        })
+                        .padding(Insets { top: 4.0, leading: 10.0, bottom: 4.0, trailing: 10.0 })
+                        .any()
+                    })
+                    .collect();
+
+                row(PieceVec(pills))
+                    .spacing(8.0)
+                    .align(VAlign::Center)
+                    .padding(Insets { top: 2.0, leading: PAD, bottom: 6.0, trailing: PAD })
+                    .any()
+            } else if let Some(ch) = children.first() {
+                let name = ch.full_name.clone();
+                label(move || format!("Обучающийся: {}", name))
+                    .font(Font::Subheadline)
+                    .secondary()
+                    .align(TextAlign::Center)
+                    .padding(Insets { top: 0.0, leading: PAD, bottom: 4.0, trailing: PAD })
+                    .any()
+            } else {
+                spacer().height(0.0).any()
+            }
+        },
+    )
 }
 
 // ── Quarter / Year tabs ────────────────────────────────────────────────

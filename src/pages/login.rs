@@ -13,7 +13,11 @@ pub fn render() -> impl Piece {
             move || profile_view(state).animation(AnimSpec::ease_out(350)).any(),
         ),
         when(
-            move || !state.is_authenticated.get(),
+            move || !state.is_authenticated.get() && state.setup_new_password_active.get(),
+            move || setup_password_form(state).animation(AnimSpec::ease_out(350)).any(),
+        ),
+        when(
+            move || !state.is_authenticated.get() && !state.setup_new_password_active.get(),
             move || auth_form(state).animation(AnimSpec::ease_out(350)).any(),
         ),
     ))
@@ -52,7 +56,48 @@ fn profile_view(state: AppState) -> impl Piece {
                         .font(Font::Caption)
                         .secondary(),
                 )
-            ).title("Ученик"),
+            ).title(move || if state.is_parent.get() { "Родитель" } else { "Ученик" }),
+            when(
+                move || state.is_parent.get() && !state.parent_children.get().is_empty(),
+                move || {
+                    let children = state.parent_children.get();
+                    let rows: Vec<AnyPiece> = children
+                        .into_iter()
+                        .enumerate()
+                        .map(|(this_idx, ch)| {
+                            let name = ch.full_name.clone();
+                            row((
+                                column((
+                                    label(name.clone())
+                                        .font(Font::Headline),
+                                    when(
+                                        move || state.active_child_index.get() == this_idx,
+                                        move || label("Выбран для дневника")
+                                            .font(Font::Caption)
+                                            .color(move || Color::hex(state.accent_color.get()))
+                                            .any(),
+                                    ),
+                                ))
+                                .grow(),
+                                when(
+                                    move || state.active_child_index.get() != this_idx,
+                                    move || button("Выбрать")
+                                        .action(move || {
+                                            crate::shared::haptics::tick();
+                                            features::diary::switch_child(state, this_idx);
+                                        })
+                                        .any(),
+                                ),
+                            ))
+                            .align(VAlign::Center)
+                            .padding(Insets { top: 6.0, leading: 0.0, bottom: 6.0, trailing: 0.0 })
+                            .any()
+                        })
+                        .collect();
+
+                    section(PieceVec(rows)).title("Дети в дневнике").any()
+                },
+            ),
             section(
                 (
                     when(
@@ -108,7 +153,7 @@ fn auth_form(state: AppState) -> impl Piece {
                         .font(Font::Title)
                         .bold()
                         .align(TextAlign::Center),
-                    label("Введите логин или email вашей школы для доступа к дневнику")
+                    label("Введите логин ученика или пригласительный код родителя для доступа к дневнику")
                         .font(Font::Subheadline)
                         .secondary()
                         .align(TextAlign::Center)
@@ -194,7 +239,7 @@ fn auth_form(state: AppState) -> impl Piece {
                 move || {
                     column((
                         column((
-                            label("ЛОГИН ИЛИ EMAIL")
+                            label("ЛОГИН ИЛИ ПРИГЛАСИТЕЛЬНЫЙ КОД")
                                 .font(Font::Caption2)
                                 .bold()
                                 .secondary(),
@@ -343,6 +388,163 @@ fn auth_form(state: AppState) -> impl Piece {
             }
         })
         .id("login-btn")
+        .padding(Insets { top: 8.0, leading: 20.0, bottom: 0.0, trailing: 20.0 }),
+
+        when(
+            move || kb_h.get() > 0.0,
+            move || {
+                let h = kb_h.get();
+                spacer().frame(0.0, h).any()
+            },
+        )
+        .animation(AnimSpec::ease_out(250)),
+    ))
+    .grow()
+}
+
+fn setup_password_form(state: AppState) -> impl Piece {
+    let new_password = Signal::new(String::new());
+    let confirm_password = Signal::new(String::new());
+    let error_local = Signal::new(String::new());
+    let remember = Signal::new(true);
+    let kb_h = crate::shared::keyboard::keyboard_height_signal();
+
+    column((
+        scroll(
+            column((
+                spacer().height(24.0),
+
+                column((
+                    label("Создание постоянного пароля")
+                        .font(Font::Title)
+                        .bold()
+                        .align(TextAlign::Center),
+                    label("Вы вошли по временному коду. Придумайте надёжный постоянный пароль для кабинета родителя (12–15 символов, строчные и заглавные латинские буквы, цифры и спецсимволы)")
+                        .font(Font::Subheadline)
+                        .secondary()
+                        .align(TextAlign::Center)
+                        .padding(Insets { top: 6.0, leading: 24.0, bottom: 20.0, trailing: 24.0 }),
+                )),
+
+                when(
+                    move || {
+                        let local = error_local.get();
+                        let state_err = state.error_msg.get();
+                        !local.is_empty() || !state_err.is_empty()
+                    },
+                    move || {
+                        let local = error_local.get();
+                        let state_err = state.error_msg.get();
+                        let msg = if !local.is_empty() { local } else { state_err };
+                        label(msg)
+                            .font(Font::Callout)
+                            .color(colors::ERROR)
+                            .align(TextAlign::Center)
+                            .padding(Insets { top: 8.0, leading: 14.0, bottom: 8.0, trailing: 14.0 })
+                            .background(colors::ERROR.with_alpha(0.12))
+                            .corner_radius(12.0)
+                            .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
+                            .any()
+                    },
+                ),
+
+                column((
+                    column((
+                        label("НОВЫЙ ПАРОЛЬ")
+                            .font(Font::Caption2)
+                            .bold()
+                            .secondary(),
+                        text_field(new_password)
+                            .secure(),
+                    ))
+                    .spacing(6.0)
+                    .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
+                    .background(move || {
+                        if day::dark_mode() {
+                            Color::rgba(1.0, 1.0, 1.0, 0.07)
+                        } else {
+                            Color::rgba(0.0, 0.0, 0.0, 0.04)
+                        }
+                    })
+                    .corner_radius(16.0)
+                    .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
+
+                    column((
+                        label("ПОВТОРИТЕ ПАРОЛЬ")
+                            .font(Font::Caption2)
+                            .bold()
+                            .secondary(),
+                        text_field(confirm_password)
+                            .secure(),
+                    ))
+                    .spacing(6.0)
+                    .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
+                    .background(move || {
+                        if day::dark_mode() {
+                            Color::rgba(1.0, 1.0, 1.0, 0.07)
+                        } else {
+                            Color::rgba(0.0, 0.0, 0.0, 0.04)
+                        }
+                    })
+                    .corner_radius(16.0)
+                    .padding(Insets { top: 0.0, leading: 20.0, bottom: 16.0, trailing: 20.0 }),
+
+                    button("← Назад к входу")
+                        .action(move || {
+                            crate::shared::haptics::tick();
+                            state.setup_new_password_active.set(false);
+                            state.setup_temp_password_data.set(None);
+                        })
+                        .padding(Insets { top: 0.0, leading: 24.0, bottom: 20.0, trailing: 24.0 }),
+                )),
+
+                spacer().height(24.0),
+            ))
+            .align(HAlign::Center)
+        )
+        .on_tap(move || {
+            crate::shared::keyboard::dismiss();
+        })
+        .grow(),
+
+        button(move || {
+            if state.loading.get() {
+                "Сохранение…"
+            } else {
+                "Создать пароль и войти"
+            }
+        })
+        .prominent()
+        .frame(0.0, 50.0)
+        .grow_w()
+        .corner_radius(25.0)
+        .action(move || {
+            if state.loading.get() { return; }
+            let np = new_password.get_untracked();
+            let cp = confirm_password.get_untracked();
+            let r = remember.get_untracked();
+
+            if np.is_empty() {
+                error_local.set("Введите новый пароль".into());
+                return;
+            }
+            if np != cp {
+                error_local.set("Пароли не совпадают. Проверьте правильность ввода".into());
+                return;
+            }
+            if let Err(e) = eschool_api::auth::validate_parent_password(&np) {
+                error_local.set(e);
+                return;
+            }
+
+            if let Some((puuid, old_pwd, uname)) = state.setup_temp_password_data.get_untracked() {
+                error_local.set(String::new());
+                state.error_msg.set(String::new());
+                crate::shared::keyboard::dismiss();
+                crate::shared::haptics::pop();
+                features::auth::complete_parent_new_password(state, &puuid, &old_pwd, &np, &uname, r);
+            }
+        })
         .padding(Insets { top: 8.0, leading: 20.0, bottom: 0.0, trailing: 20.0 }),
 
         when(

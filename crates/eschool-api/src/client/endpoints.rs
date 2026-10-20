@@ -3,6 +3,7 @@
 // ── Auth ──────────────────────────────────────────────────────────────
 pub const AUTH_ME: &str = "/api/v1/admin/auth/me";
 pub const LOGIN_STUDENT: &str = "/api/v1/admin/auth/login/student";
+pub const LOGIN_PARENT: &str = "/api/v1/auth/login/parent";
 pub const AUTH_LOGIN: &str = "/api/v1/auth/login";
 pub const AUTH_REFRESH: &str = "/api/v1/auth/refresh";
 pub const IC_LOGIN: &str = "/api/ic/login";
@@ -13,6 +14,34 @@ pub fn data_for_login(uuid: &str) -> String {
 
 pub fn auth_callback(code: &str) -> String {
     format!("/api/v1/admin/auth/callback?code={code}")
+}
+
+pub fn parent_details(parent_uuid: &str) -> String {
+    format!("/api/v1/admin/schools/parents/{parent_uuid}")
+}
+
+pub fn change_temp_password(parent_uuid: &str) -> String {
+    format!("/api/v1/admin/schools/parents/{parent_uuid}/change/temppassword")
+}
+
+pub fn change_password(parent_uuid: &str) -> String {
+    format!("/api/v1/admin/schools/parents/{parent_uuid}/change/password")
+}
+
+pub const FORGOT_PASSWORD: &str = "/api/v1/admin/schools/parents/forgot-password";
+pub const RESET_PASSWORD: &str = "/api/v1/admin/schools/parents/reset-password";
+pub const RESET_PASSWORD_VALIDATE: &str = "/api/v1/admin/schools/parents/reset-password/validate";
+
+pub fn child_representative(parent_uuid: &str) -> String {
+    format!("/api/v1/institution/child_representatives/{parent_uuid}")
+}
+
+pub const INSTITUTION_SCHOOLS: &str = "/api/v1/institution/schools";
+
+pub fn school_by_id(school_id: &str) -> String {
+    format!(
+        "/api/v1/institution/schools?q=%7B%22expr%22%3A%7B%22units%22%3A%5B%7B%22field%22%3A%22uuid%22%2C%22operator%22%3A%22EQUAL%22%2C%22operands%22%3A%5B%22{school_id}%22%5D%7D%5D%2C%22operator%22%3A%22AND%22%7D%7D"
+    )
 }
 
 // ── School year & periods ─────────────────────────────────────────────

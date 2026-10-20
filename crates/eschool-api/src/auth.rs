@@ -13,6 +13,19 @@ pub struct Token {
     pub refresh_token: String,
 }
 
+/// Result of parent login indicating if initial password setup is required.
+#[derive(Debug, Clone)]
+pub enum ParentLoginResult {
+    /// Standard successful login
+    Success(Token),
+    /// Account logged in with temporary password / invitation code and needs permanent password
+    RequiresNewPassword {
+        token: Token,
+        parent_uuid: String,
+        temp_password: Option<String>,
+    },
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct AuthResponse {
     #[serde(alias = "access_token")]
@@ -28,8 +41,8 @@ impl Auth {
         Self
     }
 
-    /// Login with username and password — pure HTTP redirect flow.
-    pub fn login_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
+    /// Login with username and password as a student (OAuth 7-step redirect flow).
+    pub fn login_student_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
         let client = reqwest::blocking::Client::builder()
             .cookie_store(true)
             .redirect(reqwest::redirect::Policy::none())
@@ -205,6 +218,118 @@ impl Auth {
             refresh_token: auth_data.refresh_token,
         })
     }
+
+    /// Login as parent: direct POST to `/api/v1/auth/login/parent` with JSON `{"login": "...", "password": "..."}`.
+    pub fn login_parent_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .danger_accept_invalid_certs(true)
+            .user_agent(UA)
+            .build()
+            .map_err(|e| format!("Client build: {e}"))?;
+
+        let url = format!("{}/{}", blocking::BASE_URL, endpoints::LOGIN_PARENT.trim_start_matches('/'));
+        let body = serde_json::json!({
+            "login": username,
+            "password": password
+        });
+
+        let resp = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .map_err(|e| format_reqwest_error("Вход для родителя", &e))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().unwrap_or_default();
+            if let Ok(err_val) = serde_json::from_str::<serde_json::Value>(&body_text) {
+                if let Some(err_msg) = err_val.get("detail").and_then(|v| v.as_str()) {
+                    return Err(err_msg.to_string());
+                }
+                if let Some(err_msg) = err_val.get("message").and_then(|v| v.as_str()) {
+                    return Err(err_msg.to_string());
+                }
+                if let Some(arr) = err_val.get("non_field_errors").and_then(|v| v.as_array()) {
+                    if let Some(msg) = arr.first().and_then(|v| v.as_str()) {
+                        return Err(msg.to_string());
+                    }
+                }
+            }
+            if status.as_u16() == 400 || status.as_u16() == 401 || status.as_u16() == 403 {
+                return Err("Неверное имя пользователя или пароль (родительский вход)".to_string());
+            }
+            return Err(format!("Ошибка входа родителя (HTTP {status}): {body_text}"));
+        }
+
+        let auth_data: AuthResponse = resp
+            .json()
+            .map_err(|e| format!("Парсинг ответа авторизации: {e}"))?;
+
+        Ok(Token {
+            access_token: auth_data.auth_token,
+            refresh_token: auth_data.refresh_token,
+        })
+    }
+
+    /// Login as parent and inspect if the account requires temporary password setup (registration).
+    pub fn login_parent_with_status_blocking(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<ParentLoginResult, String> {
+        let token = self.login_parent_blocking(username, password)?;
+        if let Some(parent_uuid) = extract_token_usi(&token.access_token) {
+            let client = blocking::build_client(&token.access_token);
+            if let Ok(info) = blocking::get_parent_details(&client, &parent_uuid) {
+                if info.is_temp_password == Some(true) {
+                    return Ok(ParentLoginResult::RequiresNewPassword {
+                        token,
+                        parent_uuid,
+                        temp_password: info.temp_password.or_else(|| Some(password.to_string())),
+                    });
+                }
+            }
+        }
+        Ok(ParentLoginResult::Success(token))
+    }
+
+    /// Automatically attempts login based on username format.
+    /// If the username consists only of digits (typical for parent IDs), tries parent login first.
+    /// If that fails or if the username has letters, tries student login, then falls back.
+    pub fn login_auto_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
+        let is_all_digits = !username.is_empty() && username.chars().all(|c| c.is_ascii_digit());
+        if is_all_digits {
+            match self.login_parent_blocking(username, password) {
+                Ok(token) => return Ok(token),
+                Err(err) => {
+                    // Try student login in case it's a student with numeric username
+                    if let Ok(token) = self.login_student_blocking(username, password) {
+                        return Ok(token);
+                    }
+                    return Err(err);
+                }
+            }
+        }
+
+        // Otherwise try student login first
+        match self.login_student_blocking(username, password) {
+            Ok(token) => Ok(token),
+            Err(student_err) => {
+                // Try parent login as fallback
+                match self.login_parent_blocking(username, password) {
+                    Ok(token) => Ok(token),
+                    Err(_) => Err(student_err),
+                }
+            }
+        }
+    }
+
+    /// Login with username and password (auto-detects student or parent account).
+    pub fn login_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
+        self.login_auto_blocking(username, password)
+    }
 }
 
 /// Refresh an expired access token using the stored refresh token.
@@ -367,6 +492,76 @@ fn extract_login_error(html: &str) -> Option<String> {
     }
 }
 
+/// Extracts the `usi` (user/parent UUID) claim from a JWT access token.
+pub fn extract_token_usi(token: &str) -> Option<String> {
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    use base64::Engine;
+    let payload_bytes = base64::engine::general_purpose::STANDARD
+        .decode(parts[1])
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[1]))
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(parts[1]))
+        .ok()?;
+    let json: serde_json::Value = serde_json::from_slice(&payload_bytes).ok()?;
+    json.get("usi").and_then(|v| v.as_str()).map(|s| s.to_string())
+}
+
+const SPECIAL_PASSWORD_CHARS: &str = "!@#$%^*()-_=+[]{};:,.?/";
+
+/// Validates parent password against e-schools rules:
+/// - 12 to 15 chars
+/// - at least 1 lowercase letter (a-z)
+/// - at least 1 uppercase letter (A-Z)
+/// - at least 1 digit (0-9)
+/// - at least 1 special character (!@#$%^*()-_=+[]{};:,.?/)
+/// - no spaces, quotes, backslashes, angle brackets, cyrillic, etc.
+pub fn validate_parent_password(password: &str) -> Result<(), String> {
+    let mut missing = Vec::new();
+    if !password.chars().any(|c| c.is_ascii_lowercase()) {
+        missing.push("одну строчную латинскую букву");
+    }
+    if !password.chars().any(|c| c.is_ascii_uppercase()) {
+        missing.push("одну заглавную латинскую букву");
+    }
+    if !password.chars().any(|c| c.is_ascii_digit()) {
+        missing.push("одну цифру");
+    }
+    if !password.chars().any(|c| SPECIAL_PASSWORD_CHARS.contains(c)) {
+        missing.push("один спецсимвол (!@#$%^*()-_=+[]{};:,.?/)");
+    }
+
+    let len_invalid = password.len() < 12 || password.len() > 15;
+    if len_invalid && !missing.is_empty() {
+        return Err(format!(
+            "Пароль должен содержать от 12 до 15 символов, включая минимум: {}",
+            missing.join(", ")
+        ));
+    }
+    if len_invalid {
+        return Err("Пароль должен содержать от 12 до 15 символов".to_string());
+    }
+    if !missing.is_empty() {
+        return Err(format!(
+            "Пароль должен содержать минимум: {}",
+            missing.join(", ")
+        ));
+    }
+
+    for c in password.chars() {
+        if c.is_whitespace()
+            || matches!(c, '"' | '\'' | '\\' | '<' | '>' | '~' | '`' | '&' | '|')
+            || ('\u{0400}'..='\u{04FF}').contains(&c)
+            || c.is_control()
+        {
+            return Err("Пароль содержит запрещенные символы (пробел, кавычки, \\, <, >, ~, `, &, |, кириллица)".to_string());
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,5 +583,40 @@ mod tests {
             extract_login_error(html),
             Some("Неверное имя пользователя или пароль".into())
         );
+    }
+
+    #[test]
+    fn test_extract_token_usi() {
+        // Token payload with usi="d3a55788-19b4-47e4-abe6-bf5141b2ed50"
+        let token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJqdGkiOiI5ZmMwZjNhZC1hNzg1LTQ4MjMtOTFjNi00OGY1Mjc1N2M1NDIiLCJzdWIiOiJBVVRIIiwiaWF0IjoxNzkyNDQ1NDk3LCJleHAiOjE3OTI0NTI2OTcsInVzaSI6ImQzYTU1Nzg4LTE5YjQtNDdlNC1hYmU2LWJmNTE0MWIyZWQ1MCJ9.JXVjMwy7MjdHpruXIC9Ltur26EE2ChgfqP1lOCpzMlo";
+        let usi = extract_token_usi(token);
+        assert_eq!(usi, Some("d3a55788-19b4-47e4-abe6-bf5141b2ed50".to_string()));
+    }
+
+    #[test]
+    fn test_validate_parent_password() {
+        // Valid password: 12-15 chars, uppercase, lowercase, digit, special char
+        assert!(validate_parent_password("*tQ6gjZUz9yP").is_ok());
+
+        // Too short (< 12)
+        assert!(validate_parent_password("Short1!").is_err());
+
+        // Too long (> 15)
+        assert!(validate_parent_password("VeryLongPassword123!@#").is_err());
+
+        // Missing digit
+        assert!(validate_parent_password("PasswordSpecial!").is_err());
+
+        // Missing uppercase
+        assert!(validate_parent_password("password12345!").is_err());
+
+        // Missing lowercase
+        assert!(validate_parent_password("PASSWORD12345!").is_err());
+
+        // Missing special char
+        assert!(validate_parent_password("Password123456").is_err());
+
+        // Prohibited char (cyrillic)
+        assert!(validate_parent_password("*tQ6gjZUz9yП").is_err());
     }
 }
