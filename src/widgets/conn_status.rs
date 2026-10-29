@@ -5,6 +5,8 @@
 use crate::app::{AppState, ConnStatus};
 use crate::res;
 use day::prelude::*;
+#[cfg(target_os = "ios")]
+use objc2::MainThreadOnly;
 
 #[cfg(target_os = "ios")]
 pub fn safe_area_top() -> f64 {
@@ -57,7 +59,7 @@ pub fn page_overlay() -> impl Piece {
                 }
             }
 
-            // Native iOS liquid glass blur effect and subtle perimeter ring
+            // Native iOS liquid glass blur effect
             let tag: objc2::ffi::NSInteger = 9992;
             if view.viewWithTag(tag).is_none() {
                 let blur = objc2_ui_kit::UIBlurEffect::effectWithStyle(
@@ -79,9 +81,6 @@ pub fn page_overlay() -> impl Piece {
                 let view_layer: objc2::rc::Retained<objc2_quartz_core::CALayer> = view.layer();
                 view_layer.setCornerRadius(19.0);
                 view_layer.setMasksToBounds(true);
-                view_layer.setBorderWidth(0.5);
-                let border_color = objc2_ui_kit::UIColor::colorWithWhite_alpha(1.0, 0.22);
-                view_layer.setBorderColor(Some(&border_color.CGColor()));
 
                 view.insertSubview_atIndex(&effect_view, 0);
                 view.setClipsToBounds(true);
@@ -152,6 +151,18 @@ pub fn render() -> impl Piece {
     });
 
     zstack((
+        circle()
+            .stroke(
+                move || {
+                    if day::dark_mode() {
+                        Color::rgba(1.0, 1.0, 1.0, 0.18)
+                    } else {
+                        Color::rgba(0.0, 0.0, 0.0, 0.08)
+                    }
+                },
+                0.5,
+            )
+            .frame(38.0, 38.0),
         icon_piece,
     ))
     .align(Alignment::Center)
