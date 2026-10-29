@@ -37,7 +37,7 @@ fn schedule_collapse(state: AppState) {
 }
 
 #[cfg(target_os = "ios")]
-pub fn navbar_bottom_top() -> f64 {
+pub fn safe_area_top() -> f64 {
     use objc2::MainThreadMarker;
     use objc2_ui_kit::UIApplication;
     if let Some(mtm) = MainThreadMarker::new() {
@@ -45,44 +45,44 @@ pub fn navbar_bottom_top() -> f64 {
         if let Some(window) = UIApplication::sharedApplication(mtm).keyWindow() {
             let top = window.safeAreaInsets().top as f64;
             if top > 0.0 {
-                return top + 44.0 + 6.0;
+                return top + 4.0;
             }
         }
     }
-    104.0
+    54.0
 }
 
 #[cfg(not(target_os = "ios"))]
-pub fn navbar_bottom_top() -> f64 {
-    54.0
+pub fn safe_area_top() -> f64 {
+    16.0
 }
 
 /// The sticky top-left capsule as a page sibling: tagged `ANNOTATION_TAG` so
 /// ios-uikit's bleed walk skips it — the page keeps its single-scroll chain and
 /// full-bleed frame under the bars while this stays pinned outside the scroll.
 pub fn page_overlay() -> impl Piece {
-    let top_pad = navbar_bottom_top();
-    let piece = render();
+    let top_pad = safe_area_top();
+    let piece = render().padding(Insets {
+        top: top_pad,
+        leading: 16.0,
+        bottom: 0.0,
+        trailing: 0.0,
+    });
     #[cfg(target_os = "ios")]
     let piece = {
         use day_uikit::UiKitExt;
         piece.uikit(|view, _class, _mtm| {
             view.setTag(day_uikit::ANNOTATION_TAG);
-            if let Some(parent) = view.superview() {
-                parent.setTag(day_uikit::ANNOTATION_TAG);
+            let mut curr = view.superview();
+            while let Some(parent) = curr {
+                if parent.tag() == 0 {
+                    parent.setTag(day_uikit::ANNOTATION_TAG);
+                }
+                curr = parent.superview();
             }
         })
     };
-    #[cfg(not(target_os = "ios"))]
-    let piece = {
-        piece
-    };
-    piece.padding(Insets {
-        top: top_pad,
-        leading: 16.0,
-        bottom: 0.0,
-        trailing: 0.0,
-    })
+    piece
 }
 
 
@@ -197,32 +197,21 @@ pub fn render() -> impl Piece {
         };
         let icon_fn = move || match state.island_state.get() {
             ConnStatus::Connecting => "spinner".to_string(),
-            ConnStatus::Connected | ConnStatus::Idle => "checkmark".to_string(),
+            ConnStatus::Connected | ConnStatus::Idle => "wifi".to_string(),
             ConnStatus::Offline => "wifi.slash".to_string(),
-            ConnStatus::Error => "exclamationmark.triangle".to_string(),
+            ConnStatus::Error => "wifi.exclamationmark".to_string(),
         };
 
-        return when(
-            move || expanded.get(),
-            move || {
-                crate::swiftui::GlassStatusCapsuleView(title_fn, icon_fn)
-                    .frame(116.0, 28.0)
-                    .any()
-            },
-        )
-        .otherwise(move || {
-            crate::swiftui::GlassStatusCapsuleView(String::new(), icon_fn)
-                .frame(28.0, 28.0)
-                .any()
-        })
-        .on_tap(move || {
-            crate::shared::haptics::tick();
-            crate::shared::nslog::nslog("[cover] status capsule tap: open");
-            state
-                .show_network_modal
-                .set(Some(String::from("net")));
-        })
-        .any();
+        return crate::swiftui::GlassStatusCapsuleView(title_fn, icon_fn)
+            .frame(130.0, 32.0)
+            .on_tap(move || {
+                crate::shared::haptics::tick();
+                crate::shared::nslog::nslog("[cover] status capsule tap: open");
+                state
+                    .show_network_modal
+                    .set(Some(String::from("net")));
+            })
+            .any();
     }
 
     let status_icon = when(

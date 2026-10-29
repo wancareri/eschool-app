@@ -136,49 +136,62 @@ public struct GlassStatusCapsuleView: View {
         self.icon = icon
     }
 
+    private var iconColor: Color {
+        switch icon {
+        case "wifi":
+            return .accentColor
+        case "wifi.slash":
+            return .secondary
+        case "wifi.exclamationmark":
+            return .red
+        default:
+            return .primary
+        }
+    }
+
+    @ViewBuilder
+    private var capsuleMaterial: some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            Capsule()
+                .glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            Capsule()
+                .fill(.ultraThinMaterial)
+        }
+    }
+
     @ViewBuilder
     public var body: some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            HStack(spacing: 5) {
-                if icon == "spinner" {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle())
-                        .scaleEffect(0.65)
-                        .frame(width: 14, height: 14)
-                } else if !icon.isEmpty {
-                    Image(systemName: icon)
-                        .font(.system(size: 11, weight: .semibold))
-                }
-                if !title.isEmpty {
-                    Text(title)
-                        .font(.system(size: 12, weight: .medium))
-                }
+        let isExpanded = !title.isEmpty
+        HStack(spacing: 6) {
+            if icon == "spinner" {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle())
+                    .tint(.accentColor)
+                    .scaleEffect(0.65)
+                    .frame(width: 14, height: 14)
+            } else if !icon.isEmpty {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(iconColor)
             }
-            .padding(.horizontal, title.isEmpty ? 7 : 10)
-            .padding(.vertical, 5)
-            .glassEffect(.regular.interactive(), in: .capsule)
-        } else {
-            HStack(spacing: 5) {
-                if icon == "spinner" {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle())
-                        .scaleEffect(0.65)
-                        .frame(width: 14, height: 14)
-                } else if !icon.isEmpty {
-                    Image(systemName: icon)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.primary)
-                }
-                if !title.isEmpty {
-                    Text(title)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.primary)
-                }
+            if isExpanded {
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: .leading)),
+                        removal: .opacity
+                    ))
             }
-            .padding(.horizontal, title.isEmpty ? 7 : 10)
-            .padding(.vertical, 5)
-            .background(.ultraThinMaterial, in: Capsule())
         }
+        .padding(.horizontal, isExpanded ? 10 : 7)
+        .frame(height: 28)
+        .background(capsuleMaterial)
+        .animation(.spring(response: 0.35, dampingFraction: 0.78), value: isExpanded)
+        .animation(.easeInOut(duration: 0.2), value: icon)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
