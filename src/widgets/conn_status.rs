@@ -300,42 +300,12 @@ pub fn render() -> impl Piece {
                     Some(&blur),
                 );
                 ev.setTag(tag);
-                let bounds = view.bounds();
-                let initial_rect = if bounds.size.width > 1.0 && bounds.size.height > 1.0 {
-                    bounds
-                } else {
-                    objc2_core_foundation::CGRect::new(
-                        objc2_core_foundation::CGPoint::new(0.0, 0.0),
-                        objc2_core_foundation::CGSize::new(120.0, 25.0),
-                    )
-                };
-                ev.setFrame(initial_rect);
+                ev.setFrame(view.bounds());
+                ev.setAutoresizingMask(objc2_ui_kit::UIViewAutoresizing(
+                    objc2_ui_kit::UIViewAutoresizing::FlexibleWidth.0
+                        | objc2_ui_kit::UIViewAutoresizing::FlexibleHeight.0,
+                ));
                 ev.setUserInteractionEnabled(false);
-
-                // AutoLayout constraints ensure ev ALWAYS matches view bounds exactly,
-                // even when view is laid out after mount or resizes dynamically.
-                let _: () = unsafe { objc2::msg_send![&*ev, setTranslatesAutoresizingMaskIntoConstraints: false] };
-                unsafe {
-                    let leading: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, leadingAnchor];
-                    let v_leading: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, leadingAnchor];
-                    let c1: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*leading, constraintEqualToAnchor: &*v_leading];
-                    let _: () = objc2::msg_send![&*c1, setActive: true];
-
-                    let trailing: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, trailingAnchor];
-                    let v_trailing: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, trailingAnchor];
-                    let c2: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*trailing, constraintEqualToAnchor: &*v_trailing];
-                    let _: () = objc2::msg_send![&*c2, setActive: true];
-
-                    let top: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, topAnchor];
-                    let v_top: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, topAnchor];
-                    let c3: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*top, constraintEqualToAnchor: &*v_top];
-                    let _: () = objc2::msg_send![&*c3, setActive: true];
-
-                    let bottom: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, bottomAnchor];
-                    let v_bottom: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, bottomAnchor];
-                    let c4: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*bottom, constraintEqualToAnchor: &*v_bottom];
-                    let _: () = objc2::msg_send![&*c4, setActive: true];
-                }
 
                 let ev_layer = ev.layer();
                 ev_layer.setCornerRadius(12.5);
