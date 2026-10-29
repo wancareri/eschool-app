@@ -233,14 +233,13 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
     .grow()
 }
 
-fn render_nav_content(state: AppState, _primary: bool) -> impl Piece {
+fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
     let section = state.current_section;
     #[cfg(target_os = "ios")]
     crate::shared::colors::apply_ios_tint(state.accent_color.get());
 
     let sel = nav(section)
         .style(day::prelude::NavStyle::Tabs)
-        .background(Color::rgba(0.0, 0.0, 0.0, 0.0))
         .title(move || {
             if state.loading.get() {
                 format!("{}  ⏳", res::str::app_title().format())
@@ -272,5 +271,10 @@ fn render_nav_content(state: AppState, _primary: bool) -> impl Piece {
             res::vectors::tab_settings,
             pages::settings::render,
         );
-    sel.id("nav").any()
+
+    if primary {
+        sel.id("nav").any()
+    } else {
+        sel.id("nav").local().any()
+    }
 }

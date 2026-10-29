@@ -57,6 +57,7 @@ pub fn render() -> impl Piece {
                         move || state.is_authenticated.get() && !state.schedule_loading.get(),
                         move || schedule_content(state),
                     ),
+                    spacer().frame(0.0, 90.0),
                 ))
                 .spacing(0.0)
                 .grow()))
