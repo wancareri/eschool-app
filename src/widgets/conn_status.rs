@@ -36,10 +36,32 @@ fn schedule_collapse(state: AppState) {
     });
 }
 
+#[cfg(target_os = "ios")]
+pub fn navbar_bottom_top() -> f64 {
+    use objc2::MainThreadMarker;
+    use objc2_ui_kit::UIApplication;
+    if let Some(mtm) = MainThreadMarker::new() {
+        #[allow(deprecated)]
+        if let Some(window) = UIApplication::sharedApplication(mtm).keyWindow() {
+            let top = window.safeAreaInsets().top as f64;
+            if top > 0.0 {
+                return top + 44.0 + 6.0;
+            }
+        }
+    }
+    104.0
+}
+
+#[cfg(not(target_os = "ios"))]
+pub fn navbar_bottom_top() -> f64 {
+    54.0
+}
+
 /// The sticky top-left capsule as a page sibling: tagged `ANNOTATION_TAG` so
 /// ios-uikit's bleed walk skips it — the page keeps its single-scroll chain and
 /// full-bleed frame under the bars while this stays pinned outside the scroll.
 pub fn page_overlay() -> impl Piece {
+    let top_pad = navbar_bottom_top();
     let piece = render();
     #[cfg(target_os = "ios")]
     let piece = {
@@ -56,7 +78,7 @@ pub fn page_overlay() -> impl Piece {
         piece
     };
     piece.padding(Insets {
-        top: 16.0,
+        top: top_pad,
         leading: 16.0,
         bottom: 0.0,
         trailing: 0.0,
@@ -65,6 +87,7 @@ pub fn page_overlay() -> impl Piece {
 
 
 
+#[cfg(not(target_os = "ios"))]
 fn accent_dark_bg(hex: u32, alpha: f64) -> Color {
     let r = (((hex >> 16) & 0xFF) as f64 / 255.0) * 0.70;
     let g = (((hex >> 8) & 0xFF) as f64 / 255.0) * 0.70;
@@ -221,8 +244,110 @@ pub fn render() -> impl Piece {
         ),
     ))
     .align(VAlign::Center)
-    .padding(Insets { top: 6.0, leading: 6.0, bottom: 6.0, trailing: 6.0 })
-    .background(move || {
+    .padding(Insets { top: 6.0, leading: 6.0, bottom: 6.0, trailing: 6.0 });
+
+    #[cfg(target_os = "ios")]
+    let content = {
+        use day_uikit::UiKitExt;
+        use objc2::MainThreadOnly;
+        content.uikit(move |view, _class, mtm| {
+            let tag: objc2::ffi::NSInteger = 9993;
+            let ev = if let Some(sub) = view.viewWithTag(tag) {
+                sub.downcast::<objc2_ui_kit::UIVisualEffectView>().ok()
+            } else {
+                let blur = objc2_ui_kit::UIBlurEffect::effectWithStyle(
+                    objc2_ui_kit::UIBlurEffectStyle::SystemUltraThinMaterial,
+                    mtm,
+                );
+                let ev = objc2_ui_kit::UIVisualEffectView::initWithEffect(
+                    objc2_ui_kit::UIVisualEffectView::alloc(mtm),
+                    Some(&blur),
+                );
+                ev.setTag(tag);
+                ev.setFrame(view.bounds());
+                ev.setAutoresizingMask(objc2_ui_kit::UIViewAutoresizing(
+                    objc2_ui_kit::UIViewAutoresizing::FlexibleWidth.0
+                        | objc2_ui_kit::UIViewAutoresizing::FlexibleHeight.0,
+                ));
+                ev.setUserInteractionEnabled(false);
+
+                let ev_layer = ev.layer();
+                ev_layer.setCornerRadius(12.5);
+                ev_layer.setMasksToBounds(true);
+                ev.setClipsToBounds(true);
+
+                // Specular liquid glass highlight border (bubble rim)
+                let rim_color = objc2_ui_kit::UIColor::colorWithWhite_alpha(1.0, 0.22);
+                let cg_rim = unsafe { rim_color.CGColor() };
+                ev_layer.setBorderColor(Some(&*cg_rim));
+                ev_layer.setBorderWidth(0.5);
+
+                let view_layer = view.layer();
+                view_layer.setCornerRadius(12.5);
+                view_layer.setMasksToBounds(true);
+                view.setClipsToBounds(true);
+
+                let clear = objc2_ui_kit::UIColor::clearColor();
+                view.setBackgroundColor(Some(&clear));
+
+                view.insertSubview_atIndex(&ev, 0);
+
+                let cv = ev.contentView();
+                let weak_cv = objc2::rc::Weak::new(&*cv);
+                day::prelude::watch(
+                    move || (state.island_state.get(), state.accent_color.get()),
+                    move |&(st, accent), _| {
+                        if let Some(target_cv) = weak_cv.load() {
+                            let tint = match st {
+                                ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
+                                    let r = ((accent >> 16) & 0xFF) as f64 / 255.0;
+                                    let g = ((accent >> 8) & 0xFF) as f64 / 255.0;
+                                    let b = (accent & 0xFF) as f64 / 255.0;
+                                    objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(r, g, b, 0.15)
+                                }
+                                ConnStatus::Offline => {
+                                    objc2_ui_kit::UIColor::colorWithWhite_alpha(0.5, 0.18)
+                                }
+                                ConnStatus::Error => {
+                                    objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(0.94, 0.27, 0.27, 0.20)
+                                }
+                            };
+                            target_cv.setBackgroundColor(Some(&tint));
+                        }
+                    },
+                );
+
+                Some(ev)
+            };
+
+            // Set initial tint
+            if let Some(ev) = ev {
+                let st = state.island_state.get();
+                let accent = state.accent_color.get();
+                let tint = match st {
+                    ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
+                        let r = ((accent >> 16) & 0xFF) as f64 / 255.0;
+                        let g = ((accent >> 8) & 0xFF) as f64 / 255.0;
+                        let b = (accent & 0xFF) as f64 / 255.0;
+                        objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(r, g, b, 0.15)
+                    }
+                    ConnStatus::Offline => {
+                        objc2_ui_kit::UIColor::colorWithWhite_alpha(0.5, 0.18)
+                    }
+                    ConnStatus::Error => {
+                        objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(0.94, 0.27, 0.27, 0.20)
+                    }
+                };
+                ev.contentView().setBackgroundColor(Some(&tint));
+            }
+        })
+    };
+
+    #[cfg(target_os = "ios")]
+    let content = content.background(Color::rgba(0.0, 0.0, 0.0, 0.0));
+
+    #[cfg(not(target_os = "ios"))]
+    let content = content.background(move || {
         let dark = day::dark_mode();
         match state.island_state.get() {
             ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
@@ -248,22 +373,21 @@ pub fn render() -> impl Piece {
                 }
             }
         }
-    })
-    // Half of the 25 pt box: CALayer does not clamp a larger radius, and 14 on
-    // 25 overshoots into a self-intersecting lens (the "eye").
-        .corner_radius(12.5)
-    // Node-scoped fallback so the capsule's RESIZE animates even when the collapse's
-    // with_animation ambient doesn't reach the turn-end layout (the snap-to-circle).
-    // Mounts stay instant: day places a never-placed node without animation (day
-    // 1f440116), so this no longer grows the capsule out of its corner the way
-    // 0761b13 removed it for.
-    .animation(Animation::ease_out(220))
-    .on_tap(move || {
-        crate::shared::nslog::nslog("[cover] status capsule tap: open");
-        state
-            .show_network_modal
-            .set(Some(String::from("net")));
     });
+
+    let content = content
+        // Half of the 25 pt box: CALayer does not clamp a larger radius, and 14 on
+        // 25 overshoots into a self-intersecting lens (the "eye").
+        .corner_radius(12.5)
+        // Node-scoped fallback so the capsule's RESIZE animates even when the collapse's
+        // with_animation ambient doesn't reach the turn-end layout (the snap-to-circle).
+        .animation(Animation::ease_out(220))
+        .on_tap(move || {
+            crate::shared::nslog::nslog("[cover] status capsule tap: open");
+            state
+                .show_network_modal
+                .set(Some(String::from("net")));
+        });
 
     content
 }
