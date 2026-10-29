@@ -108,7 +108,12 @@ pub fn render_unlock(state: AppState) -> impl Piece {
             when(
                 move || state.pin_error.get(),
                 move || {
-                    label("Неверный PIN-код")
+                    let msg = if let Some(secs) = pin::remaining_lockout_secs() {
+                        format!("Блокировка ввода ({secs} с)")
+                    } else {
+                        "Неверный PIN-код".to_string()
+                    };
+                    label(move || msg.clone())
                         .font(Font::Subheadline)
                         .color(colors::ERROR)
                         .align(TextAlign::Center)
@@ -510,6 +515,11 @@ fn numpad_key(state: AppState, shake: Signal<f64>, clock: Signal<f64>, key: &str
         button(move || key_clone2.clone())
             .action(move || {
                 crate::shared::haptics::tick();
+                if pin::remaining_lockout_secs().is_some() {
+                    s.pin_error.set(true);
+                    run_shake(shake, &UNLOCK_SHAKE_GEN);
+                    return;
+                }
                 let mut input = s.pin_input.get();
                 if input.len() >= PIN_LENGTH {
                     return;
@@ -520,7 +530,6 @@ fn numpad_key(state: AppState, shake: Signal<f64>, clock: Signal<f64>, key: &str
 
                 if input.len() == PIN_LENGTH {
                     if pin::verify(&input) {
-                        nslog::nslog("[PIN] Correct, unlocking");
                         crate::shared::haptics::pop();
                         run_success_pulse(clock, &UNLOCK_SUCCESS_GEN);
                         let unlock = s.pin_lock_active.setter();
@@ -532,7 +541,6 @@ fn numpad_key(state: AppState, shake: Signal<f64>, clock: Signal<f64>, key: &str
                             clear.set(String::new());
                         });
                     } else {
-                        nslog::nslog("[PIN] Wrong");
                         s.pin_error.set(true);
                         run_shake(shake, &UNLOCK_SHAKE_GEN);
                         let clear = s.pin_input.setter();

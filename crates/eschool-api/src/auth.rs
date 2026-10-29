@@ -48,7 +48,6 @@ impl Auth {
             .redirect(reqwest::redirect::Policy::none())
             .user_agent(UA)
             .timeout(std::time::Duration::from_secs(15))
-            .danger_accept_invalid_certs(true)
             .build()
             .map_err(|e| format!("Client build: {e}"))?;
 
@@ -223,7 +222,6 @@ impl Auth {
     pub fn login_parent_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(15))
-            .danger_accept_invalid_certs(true)
             .user_agent(UA)
             .build()
             .map_err(|e| format!("Client build: {e}"))?;
@@ -343,7 +341,6 @@ impl Auth {
 pub fn refresh_access_token(refresh_token: &str) -> Result<(String, String), String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .danger_accept_invalid_certs(true)
         .build()
         .map_err(|e| format!("Failed to create client: {e}"))?;
 

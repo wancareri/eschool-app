@@ -59,18 +59,23 @@ fn sanitize_filename(name: &str) -> String {
     let clean: String = name
         .chars()
         .map(|c| {
-            if c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|' {
+            if c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|' || c == '\0' {
                 '_'
             } else {
                 c
             }
         })
         .collect();
-    let trimmed = clean.trim();
-    if trimmed.is_empty() {
+    let trimmed = clean.trim().trim_start_matches('.').trim();
+    let sanitized = if trimmed.is_empty() || trimmed == ".." {
         "file".to_string()
     } else {
-        trimmed.to_string()
+        trimmed.replace("..", "_")
+    };
+    if sanitized.len() > 200 {
+        sanitized.chars().take(200).collect()
+    } else {
+        sanitized
     }
 }
 
@@ -191,12 +196,16 @@ pub fn parse_attachments(raw_json: &str) -> Vec<LessonAttachment> {
 }
 
 pub fn download_to_path(token: &str, file_url: &str, dest_path: &Path) -> Result<String, String> {
+    if !file_url.starts_with("https://diary.e-schools.by/") && !file_url.starts_with('/') {
+        return Err(format!("Disallowed external URL: {file_url}"));
+    }
+
     if let Some(parent) = dest_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
 
     let client = eschool_api::client::blocking::build_client(token);
-    let mut resp = client
+    let resp = client
         .get(file_url)
         .send()
         .map_err(|e| format!("HTTP send error: {e}"))?;
@@ -205,8 +214,11 @@ pub fn download_to_path(token: &str, file_url: &str, dest_path: &Path) -> Result
         return Err(format!("Download returned HTTP {}", resp.status()));
     }
 
+    // Limit download size to max 100 MB to prevent disk exhaustion
+    use std::io::Read;
     let mut file = std::fs::File::create(dest_path).map_err(|e| format!("File create error: {e}"))?;
-    resp.copy_to(&mut file).map_err(|e| format!("File write error: {e}"))?;
+    let mut limited_reader = resp.take(100 * 1024 * 1024);
+    std::io::copy(&mut limited_reader, &mut file).map_err(|e| format!("File write error: {e}"))?;
 
     dest_path
         .to_str()
@@ -345,9 +357,8 @@ pub fn fetch_attachments_async(state: AppState, lesson_uuid: &str) {
         match eschool_api::client::blocking::api_get_raw(&client, &path) {
             Ok(raw) => {
                 crate::shared::nslog::nslog(&format!(
-                    "[Attachments] Response for {uuid} ({} bytes): {}",
-                    raw.len(),
-                    &raw[..raw.len().min(400)]
+                    "[Attachments] Response for {uuid} ({} bytes)",
+                    raw.len()
                 ));
                 let parsed = parse_attachments(&raw);
                 crate::shared::nslog::nslog(&format!("[Attachments] Parsed {} items for {uuid}", parsed.len()));

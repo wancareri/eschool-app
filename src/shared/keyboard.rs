@@ -128,9 +128,7 @@ mod ios {
             let sel = objc2::sel!(setBorderStyle:);
             if let Some(method) = cls.instance_method(sel) {
                 let orig: Imp = method.implementation();
-                unsafe {
-                    ORIG_SET_BORDER_STYLE = Some(std::mem::transmute(orig));
-                }
+                ORIG_SET_BORDER_STYLE.store(orig as *mut (), std::sync::atomic::Ordering::Release);
                 let imp: Imp = unsafe { std::mem::transmute(swizzled_set_border_style as *const ()) };
                 unsafe {
                     method.set_implementation(imp);
@@ -140,7 +138,8 @@ mod ios {
         }
     }
 
-    static mut ORIG_SET_BORDER_STYLE: Option<unsafe extern "C-unwind" fn(*mut AnyObject, Sel, isize)> = None;
+    static ORIG_SET_BORDER_STYLE: std::sync::atomic::AtomicPtr<()> =
+        std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
 
     unsafe extern "C-unwind" fn swizzled_set_border_style(
         this: *mut AnyObject,
@@ -148,8 +147,11 @@ mod ios {
         _style: isize,
     ) {
         // Force borderStyle to UITextBorderStyleNone (0) so text fields have no native outline/border
-        unsafe {
-            if let Some(orig) = ORIG_SET_BORDER_STYLE {
+        let orig_ptr = ORIG_SET_BORDER_STYLE.load(std::sync::atomic::Ordering::Acquire);
+        if !orig_ptr.is_null() {
+            let orig: unsafe extern "C-unwind" fn(*mut AnyObject, Sel, isize) =
+                unsafe { std::mem::transmute(orig_ptr) };
+            unsafe {
                 orig(this, cmd, 0);
             }
         }

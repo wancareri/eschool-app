@@ -33,8 +33,13 @@ pub fn check_new_grades(state: AppState) {
     }
 }
 
+static CHECKER_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Start background grade checking (runs every 15 minutes).
 pub fn start_grade_checker() {
+    if CHECKER_STARTED.swap(true, std::sync::atomic::Ordering::AcqRel) {
+        return;
+    }
     nslog::nslog("[GradeCheck] Starting background checker (every 15 min)");
 
     std::thread::spawn(|| {

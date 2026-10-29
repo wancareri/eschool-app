@@ -30,5 +30,8 @@ static BRIDGE: Bridge = Bridge;
 
 pub fn install() {
     let _ = log::set_logger(&BRIDGE);
+    #[cfg(debug_assertions)]
     log::set_max_level(log::LevelFilter::Debug);
+    #[cfg(not(debug_assertions))]
+    log::set_max_level(log::LevelFilter::Info);
 }

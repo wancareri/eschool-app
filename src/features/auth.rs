@@ -54,13 +54,12 @@ pub fn login(state: AppState, username: &str, password: &str, remember: bool) {
                         secure::save(REFRESH_KEY, &token.refresh_token);
                         if r {
                             secure::save(USERNAME_KEY, &u);
-                            secure::save(PASSWORD_KEY, &p);
                             secure::save(REMEMBER_KEY, "true");
                         } else {
                             secure::delete(USERNAME_KEY);
-                            secure::delete(PASSWORD_KEY);
                             secure::save(REMEMBER_KEY, "false");
                         }
+                        secure::delete(PASSWORD_KEY);
                         day::reactive::on_main(move || {
                             crate::shared::keyboard::dismiss();
                             set_loading.set(false);
@@ -79,13 +78,12 @@ pub fn login(state: AppState, username: &str, password: &str, remember: bool) {
                 secure::save(REFRESH_KEY, &token.refresh_token);
                 if r {
                     secure::save(USERNAME_KEY, &u);
-                    secure::save(PASSWORD_KEY, &p);
                     secure::save(REMEMBER_KEY, "true");
                 } else {
                     secure::delete(USERNAME_KEY);
-                    secure::delete(PASSWORD_KEY);
                     secure::save(REMEMBER_KEY, "false");
                 }
+                secure::delete(PASSWORD_KEY);
                 day::reactive::on_main(move || {
                     crate::shared::keyboard::dismiss();
                     set_loading.set(false);
@@ -155,9 +153,9 @@ pub fn complete_parent_new_password(
                         secure::save(REFRESH_KEY, &new_token.refresh_token);
                         if r {
                             secure::save(USERNAME_KEY, &u);
-                            secure::save(PASSWORD_KEY, &new_p);
                             secure::save(REMEMBER_KEY, "true");
                         }
+                        secure::delete(PASSWORD_KEY);
                         day::reactive::on_main(move || {
                             crate::shared::keyboard::dismiss();
                             set_setup_active.set(false);
@@ -235,9 +233,9 @@ pub fn change_logged_in_parent_password(
                     if let Ok(new_token) = auth.login_parent_blocking(&u, &new_p) {
                         secure::save(TOKEN_KEY, &new_token.access_token);
                         secure::save(REFRESH_KEY, &new_token.refresh_token);
-                        secure::save(PASSWORD_KEY, &new_p);
                     }
                 }
+                secure::delete(PASSWORD_KEY);
                 day::reactive::on_main(move || {
                     set_loading.set(false);
                     on_success();
@@ -255,6 +253,7 @@ pub fn change_logged_in_parent_password(
 
 pub fn logout(state: AppState) {
     logout_keys();
+    crate::shared::cache::clear();
     state.is_authenticated.set(false);
     state.remember_me.set(false);
     state.full_name.set(String::new());
@@ -273,17 +272,15 @@ pub fn logout(state: AppState) {
 }
 
 pub fn logout_keys() {
-    // If biometric is enabled, preserve username/password for biometric re-login
     let keep_creds = crate::shared::biometric::is_enabled();
     for key in [
         TOKEN_KEY, REFRESH_KEY, SCHOOL_ID_KEY, PROFILE_ID_KEY, CLASS_ID_KEY, FULL_NAME_KEY,
-        SCHOOL_NAME_KEY, REMEMBER_KEY,
+        SCHOOL_NAME_KEY, REMEMBER_KEY, PASSWORD_KEY,
     ] {
         secure::delete(key);
     }
     if !keep_creds {
         secure::delete(USERNAME_KEY);
-        secure::delete(PASSWORD_KEY);
     }
 }
 
@@ -294,7 +291,7 @@ pub fn save_token(state: AppState, access: &str, refresh: &str) {
     super::diary::load_all(state);
 }
 
-/// Try to refresh the token.
+/// Try to refresh the token via OAuth refresh flow.
 pub fn try_refresh_token() -> Option<String> {
     nslog::nslog("[Auth] Attempting token refresh...");
 
@@ -312,26 +309,6 @@ pub fn try_refresh_token() -> Option<String> {
         }
     }
 
-    // Try re-login with stored credentials
-    let has_credentials = secure::load(REMEMBER_KEY).map(|v| v == "true").unwrap_or(false);
-    if has_credentials {
-        if let (Some(username), Some(password)) = (secure::load(USERNAME_KEY), secure::load(PASSWORD_KEY)) {
-            nslog::nslog("[Auth] Trying re-login with stored credentials...");
-            let auth = eschool_api::auth::Auth::new();
-            match auth.login_blocking(&username, &password) {
-                Ok(token) => {
-                    nslog::nslog("[Auth] Re-login OK");
-                    secure::save(TOKEN_KEY, &token.access_token);
-                    secure::save(REFRESH_KEY, &token.refresh_token);
-                    return Some(token.access_token);
-                }
-                Err(e) => {
-                    nslog::nslog(&format!("[Auth] Re-login failed: {e}"));
-                }
-            }
-        }
-    }
-
     nslog::nslog("[Auth] All auth methods failed, need manual login");
     None
 }
@@ -341,7 +318,7 @@ pub fn get_token() -> Option<String> {
 }
 
 pub fn has_stored_credentials() -> bool {
-    secure::load(USERNAME_KEY).is_some() && secure::load(PASSWORD_KEY).is_some()
+    secure::load(USERNAME_KEY).is_some() && secure::load(REFRESH_KEY).is_some()
 }
 
 pub fn get_stored_ids() -> (String, String, String) {
@@ -366,8 +343,13 @@ pub fn store_ids(
     secure::save(SCHOOL_NAME_KEY, school_name);
 }
 
+static BG_REFRESH_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Start background token refresh — every 55 minutes.
 pub fn start_background_refresh() {
+    if BG_REFRESH_STARTED.swap(true, std::sync::atomic::Ordering::AcqRel) {
+        return;
+    }
     std::thread::spawn(|| {
         nslog::nslog("[Auth] Background refresh started (55 min interval)");
         loop {
@@ -375,6 +357,7 @@ pub fn start_background_refresh() {
 
             if secure::load(TOKEN_KEY).is_none() {
                 nslog::nslog("[Auth] Background refresh: no token, stopping");
+                BG_REFRESH_STARTED.store(false, std::sync::atomic::Ordering::Release);
                 break;
             }
 
@@ -383,6 +366,7 @@ pub fn start_background_refresh() {
                 Some(_) => nslog::nslog("[Auth] Background refresh: OK"),
                 None => {
                     nslog::nslog("[Auth] Background refresh: FAILED, need manual login");
+                    BG_REFRESH_STARTED.store(false, std::sync::atomic::Ordering::Release);
                     break;
                 }
             }

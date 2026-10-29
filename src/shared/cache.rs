@@ -43,6 +43,28 @@ pub fn has(key: &str) -> bool {
     day::prefs::get(&prefixed).is_some()
 }
 
+const KNOWN_KEYS: &[&str] = &[
+    "all_weeks",
+    "week_cache",
+    "lessons",
+    "bell_times",
+    "timetable_days",
+    "subjects_teachers",
+    "quarter_all_marks",
+    "final_marks",
+    "user_full_name",
+    "user_school_name",
+    "lesson_notes_map",
+];
+
+pub fn delete(key: &str) {
+    let prefixed = format!("cache.{key}");
+    day::prefs::set(&prefixed, "");
+}
+
 pub fn clear() {
     nslog::nslog("[Cache] Clearing all cache keys");
+    for &key in KNOWN_KEYS {
+        delete(key);
+    }
 }

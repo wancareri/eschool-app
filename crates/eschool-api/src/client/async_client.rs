@@ -1,6 +1,6 @@
 //! Async HTTP helpers for the e-schools.by API.
 
-use crate::client::blocking::BASE_URL;
+use crate::client::blocking::{validate_and_build_url, BASE_URL};
 
 pub fn build_client(token: &str) -> reqwest::Client {
     use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
@@ -12,7 +12,6 @@ pub fn build_client(token: &str) -> reqwest::Client {
     reqwest::Client::builder()
         .default_headers(headers)
         .timeout(std::time::Duration::from_secs(15))
-        .danger_accept_invalid_certs(true)
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
 }
@@ -21,11 +20,7 @@ pub async fn api_get<T: serde::de::DeserializeOwned>(
     client: &reqwest::Client,
     path: &str,
 ) -> Result<T, String> {
-    let url = if path.starts_with("http") {
-        path.to_string()
-    } else {
-        format!("{BASE_URL}{path}")
-    };
+    let url = validate_and_build_url(path)?;
     let resp = client
         .get(&url)
         .send()
@@ -44,11 +39,7 @@ pub async fn api_get<T: serde::de::DeserializeOwned>(
 }
 
 pub async fn api_get_raw(client: &reqwest::Client, path: &str) -> Result<String, String> {
-    let url = if path.starts_with("http") {
-        path.to_string()
-    } else {
-        format!("{BASE_URL}{path}")
-    };
+    let url = validate_and_build_url(path)?;
     let resp = client
         .get(&url)
         .send()
@@ -71,11 +62,7 @@ pub async fn api_post<T: serde::de::DeserializeOwned>(
     path: &str,
     body: &serde_json::Value,
 ) -> Result<T, String> {
-    let url = if path.starts_with("http") {
-        path.to_string()
-    } else {
-        format!("{BASE_URL}{path}")
-    };
+    let url = validate_and_build_url(path)?;
     let resp = client
         .post(&url)
         .json(body)

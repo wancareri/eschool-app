@@ -15,8 +15,8 @@ pub fn save(key: &str, value: &str) {
         match keyring::Entry::new(SERVICE, key)
             .and_then(|e| e.set_password(value))
         {
-            Ok(()) => nslog::nslog(&format!("[Keychain] Saved: {key}")),
-            Err(e) => nslog::nslog(&format!("[Keychain] Save failed: {e}")),
+            Ok(()) => {}
+            Err(e) => nslog::nslog(&format!("[Keychain] Save error: {e}")),
         }
     }
     #[cfg(not(target_os = "ios"))]
@@ -49,8 +49,8 @@ pub fn delete(key: &str) {
         match keyring::Entry::new(SERVICE, key)
             .and_then(|e| e.delete_credential())
         {
-            Ok(()) => nslog::nslog(&format!("[Keychain] Deleted: {key}")),
-            Err(e) => nslog::nslog(&format!("[Keychain] Delete failed: {e}")),
+            Ok(()) => {}
+            Err(e) => nslog::nslog(&format!("[Keychain] Delete error: {e}")),
         }
     }
     #[cfg(not(target_os = "ios"))]

@@ -463,6 +463,7 @@ pub fn settings_body() -> impl Piece {
     ),))
 }
 
+#[cfg(debug_assertions)]
 fn dev_settings(state: AppState) -> impl Piece {
     let copy_msg = Signal::new(String::new());
     let log_count = Signal::new(nslog::get_logs().lines().count());
@@ -472,19 +473,7 @@ fn dev_settings(state: AppState) -> impl Piece {
             (
                 label("Инструменты разработчика").font(Font::Headline).color(colors::WARNING),
 
-                label("Версия: v0.1.0"),
-                button("Показать токен")
-                    .action(move || {
-                        let msg = if let Some(t) = features::auth::get_token() {
-                            let preview = if t.len() > 40 { &t[..40] } else { &t };
-                            format!("Token: {preview}...")
-                        } else {
-                            "Нет токена".into()
-                        };
-                        nslog::nslog(&format!("[Dev] {msg}"));
-                        log_count.set(nslog::get_logs().lines().count());
-                    }),
-
+                label("Версия: v0.1.0 (debug)"),
                 button("Обновить токен")
                     .action(move || {
                         nslog::nslog("[Dev] Manual token refresh...");
@@ -501,7 +490,7 @@ fn dev_settings(state: AppState) -> impl Piece {
 
                 button("Очистить кэш")
                     .action(move || {
-                        day::prefs::set("diary.cache", "");
+                        crate::shared::cache::clear();
                         nslog::nslog("[Dev] Cache cleared");
                         log_count.set(nslog::get_logs().lines().count());
                     }),
@@ -510,13 +499,6 @@ fn dev_settings(state: AppState) -> impl Piece {
                     .action(move || {
                         nslog::nslog("[Dev] Reloading data...");
                         features::diary::load_all(state);
-                        log_count.set(nslog::get_logs().lines().count());
-                    }),
-
-                button("Показать ID")
-                    .action(move || {
-                        let (sid, cid, pid) = features::auth::get_stored_ids();
-                        nslog::nslog(&format!("[Dev] school={sid} class={cid} profile={pid}"));
                         log_count.set(nslog::get_logs().lines().count());
                     }),
             )
@@ -553,6 +535,19 @@ fn dev_settings(state: AppState) -> impl Piece {
                     .color(colors::SECONDARY),
             )
         ).title("Логи"),
+    ))
+    .padding(Insets { top: 16.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
+}
+
+#[cfg(not(debug_assertions))]
+fn dev_settings(_state: AppState) -> impl Piece {
+    form((
+        section(
+            (
+                label("О приложении").font(Font::Headline),
+                label("Версия: v0.1.0"),
+            )
+        ).title("Информация"),
     ))
     .padding(Insets { top: 16.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }

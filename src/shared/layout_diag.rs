@@ -3,7 +3,7 @@
 use day::prelude::*;
 
 pub fn init() {
-    #[cfg(target_os = "ios")]
+    #[cfg(all(target_os = "ios", debug_assertions))]
     ios::install();
 }
 
@@ -102,16 +102,21 @@ mod ios {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     static INSTALLED: AtomicBool = AtomicBool::new(false);
-    static mut ORIG_VIEW_SET_FRAME: Option<unsafe extern "C-unwind" fn(*mut AnyObject, Sel, CGRect)> = None;
-    static mut ORIG_SCROLL_SET_OFFSET: Option<unsafe extern "C-unwind" fn(*mut AnyObject, Sel, CGPoint)> = None;
+    static ORIG_VIEW_SET_FRAME: std::sync::atomic::AtomicPtr<()> =
+        std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
+    static ORIG_SCROLL_SET_OFFSET: std::sync::atomic::AtomicPtr<()> =
+        std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
 
     unsafe extern "C-unwind" fn swizzled_view_set_frame(
         this: *mut AnyObject,
         cmd: Sel,
         frame: CGRect,
     ) {
-        unsafe {
-            if let Some(orig) = ORIG_VIEW_SET_FRAME {
+        let orig_ptr = ORIG_VIEW_SET_FRAME.load(Ordering::Acquire);
+        if !orig_ptr.is_null() {
+            let orig: unsafe extern "C-unwind" fn(*mut AnyObject, Sel, CGRect) =
+                unsafe { std::mem::transmute(orig_ptr) };
+            unsafe {
                 orig(this, cmd, frame);
             }
         }
@@ -151,8 +156,11 @@ mod ios {
         cmd: Sel,
         offset: CGPoint,
     ) {
-        unsafe {
-            if let Some(orig) = ORIG_SCROLL_SET_OFFSET {
+        let orig_ptr = ORIG_SCROLL_SET_OFFSET.load(Ordering::Acquire);
+        if !orig_ptr.is_null() {
+            let orig: unsafe extern "C-unwind" fn(*mut AnyObject, Sel, CGPoint) =
+                unsafe { std::mem::transmute(orig_ptr) };
+            unsafe {
                 orig(this, cmd, offset);
             }
         }
@@ -176,9 +184,9 @@ mod ios {
             let sel = objc2::sel!(setFrame:);
             if let Some(method) = cls.instance_method(sel) {
                 let orig: Imp = method.implementation();
+                ORIG_VIEW_SET_FRAME.store(orig as *mut (), Ordering::Release);
+                let imp: Imp = unsafe { std::mem::transmute(swizzled_view_set_frame as *const ()) };
                 unsafe {
-                    ORIG_VIEW_SET_FRAME = Some(std::mem::transmute(orig));
-                    let imp: Imp = std::mem::transmute(swizzled_view_set_frame as *const ());
                     method.set_implementation(imp);
                 }
                 crate::shared::nslog::nslog("[LayoutDiag] Swizzled UIView setFrame:");
@@ -190,9 +198,9 @@ mod ios {
             let sel = objc2::sel!(setContentOffset:);
             if let Some(method) = cls.instance_method(sel) {
                 let orig: Imp = method.implementation();
+                ORIG_SCROLL_SET_OFFSET.store(orig as *mut (), Ordering::Release);
+                let imp: Imp = unsafe { std::mem::transmute(swizzled_scroll_set_offset as *const ()) };
                 unsafe {
-                    ORIG_SCROLL_SET_OFFSET = Some(std::mem::transmute(orig));
-                    let imp: Imp = std::mem::transmute(swizzled_scroll_set_offset as *const ());
                     method.set_implementation(imp);
                 }
                 crate::shared::nslog::nslog("[LayoutDiag] Swizzled UIScrollView setContentOffset:");

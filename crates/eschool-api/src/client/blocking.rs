@@ -2,6 +2,22 @@
 
 pub const BASE_URL: &str = "https://diary.e-schools.by";
 
+pub fn validate_and_build_url(path: &str) -> Result<String, String> {
+    if path.starts_with("http://") || path.starts_with("https://") {
+        if path.starts_with("https://diary.e-schools.by/")
+            || path.starts_with("https://oauth.rios.unibel.by/")
+            || path == "https://diary.e-schools.by"
+            || path == "https://oauth.rios.unibel.by"
+        {
+            Ok(path.to_string())
+        } else {
+            Err(format!("Disallowed external host in request: {path}"))
+        }
+    } else {
+        Ok(format!("{BASE_URL}{path}"))
+    }
+}
+
 pub fn build_client(token: &str) -> reqwest::blocking::Client {
     use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
     let mut headers = HeaderMap::new();
@@ -12,7 +28,6 @@ pub fn build_client(token: &str) -> reqwest::blocking::Client {
     reqwest::blocking::Client::builder()
         .default_headers(headers)
         .timeout(std::time::Duration::from_secs(15))
-        .danger_accept_invalid_certs(true)
         .build()
         .unwrap_or_else(|_| reqwest::blocking::Client::new())
 }
@@ -21,11 +36,7 @@ pub fn api_get<T: serde::de::DeserializeOwned>(
     client: &reqwest::blocking::Client,
     path: &str,
 ) -> Result<T, String> {
-    let url = if path.starts_with("http") {
-        path.to_string()
-    } else {
-        format!("{BASE_URL}{path}")
-    };
+    let url = validate_and_build_url(path)?;
     let resp = client
         .get(&url)
         .send()
@@ -42,11 +53,7 @@ pub fn api_get<T: serde::de::DeserializeOwned>(
 }
 
 pub fn api_get_raw(client: &reqwest::blocking::Client, path: &str) -> Result<String, String> {
-    let url = if path.starts_with("http") {
-        path.to_string()
-    } else {
-        format!("{BASE_URL}{path}")
-    };
+    let url = validate_and_build_url(path)?;
     let resp = client
         .get(&url)
         .send()
@@ -67,11 +74,7 @@ pub fn api_post<T: serde::de::DeserializeOwned>(
     path: &str,
     body: &serde_json::Value,
 ) -> Result<T, String> {
-    let url = if path.starts_with("http") {
-        path.to_string()
-    } else {
-        format!("{BASE_URL}{path}")
-    };
+    let url = validate_and_build_url(path)?;
     let resp = client
         .post(&url)
         .json(body)
