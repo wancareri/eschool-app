@@ -63,7 +63,7 @@ pub fn page_overlay() -> impl Piece {
             let tag: objc2::ffi::NSInteger = 9992;
             if view.viewWithTag(tag).is_none() {
                 let blur = objc2_ui_kit::UIBlurEffect::effectWithStyle(
-                    objc2_ui_kit::UIBlurEffectStyle::SystemUltraThinMaterial,
+                    objc2_ui_kit::UIBlurEffectStyle::SystemThinMaterial,
                     mtm,
                 );
                 let effect_view = objc2_ui_kit::UIVisualEffectView::initWithEffect(
@@ -81,6 +81,10 @@ pub fn page_overlay() -> impl Piece {
                 let view_layer: objc2::rc::Retained<objc2_quartz_core::CALayer> = view.layer();
                 view_layer.setCornerRadius(19.0);
                 view_layer.setMasksToBounds(true);
+
+                unsafe {
+                    view.setBackgroundColor(None);
+                }
 
                 view.insertSubview_atIndex(&effect_view, 0);
                 view.setClipsToBounds(true);
@@ -114,8 +118,6 @@ pub fn page_overlay() -> impl Piece {
 /// The circular liquid glass button with status icon inside.
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
-    let pressed = Signal::new(false);
-    let p_set = pressed.setter();
 
     let icon_piece = when(
         move || state.conn_status.get() == ConnStatus::Connecting,
@@ -155,36 +157,41 @@ pub fn render() -> impl Piece {
             .stroke(
                 move || {
                     if day::dark_mode() {
-                        Color::rgba(1.0, 1.0, 1.0, 0.18)
+                        Color::rgba(1.0, 1.0, 1.0, 0.22)
                     } else {
-                        Color::rgba(0.0, 0.0, 0.0, 0.08)
+                        Color::rgba(0.0, 0.0, 0.0, 0.10)
                     }
                 },
                 0.5,
             )
             .frame(38.0, 38.0),
         icon_piece,
+        // Native system UIButton overlay for authentic touch response and accessibility
+        button("")
+            .action(move || {
+                crate::shared::haptics::tick();
+                state
+                    .show_network_modal
+                    .set(Some(String::from("net")));
+            })
+            .frame(38.0, 38.0)
+            .id("conn-status-native-button"),
     ))
     .align(Alignment::Center)
     .frame(38.0, 38.0)
     .background(move || {
-        if day::dark_mode() {
-            Color::rgba(0.25, 0.25, 0.28, 0.45)
-        } else {
-            Color::rgba(1.0, 1.0, 1.0, 0.65)
+        #[cfg(target_os = "ios")]
+        {
+            Color::TRANSPARENT
+        }
+        #[cfg(not(target_os = "ios"))]
+        {
+            if day::dark_mode() {
+                Color::rgba(0.25, 0.25, 0.28, 0.55)
+            } else {
+                Color::rgba(1.0, 1.0, 1.0, 0.75)
+            }
         }
     })
     .corner_radius(19.0)
-    .scale(move || if pressed.get() { 0.90 } else { 1.0 })
-    .animation(Animation::ease_out(120))
-    .on_tap(move || {
-        crate::shared::haptics::tick();
-        p_set.set(true);
-        day::reactive::on_main_delayed(120, move || {
-            p_set.set(false);
-        });
-        state
-            .show_network_modal
-            .set(Some(String::from("net")));
-    })
 }
