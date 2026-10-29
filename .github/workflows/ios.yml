@@ -41,7 +41,7 @@ jobs:
           targets: aarch64-apple-ios
 
       - name: Build and Pack iOS App
-        run: day pack -p ios-uikit --profile release --no-sign --verbose
+        run: day pack --target ios-uikit --profile release --no-sign --verbose
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
