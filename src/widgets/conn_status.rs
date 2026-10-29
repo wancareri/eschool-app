@@ -59,11 +59,11 @@ pub fn page_overlay() -> impl Piece {
                 }
             }
 
-            // Native iOS liquid glass blur effect
+            // Native iOS liquid glass blur effect — exact match to UITabBar liquid glass
             let tag: objc2::ffi::NSInteger = 9992;
             if view.viewWithTag(tag).is_none() {
                 let blur = objc2_ui_kit::UIBlurEffect::effectWithStyle(
-                    objc2_ui_kit::UIBlurEffectStyle::SystemThinMaterial,
+                    objc2_ui_kit::UIBlurEffectStyle::SystemUltraThinMaterial,
                     mtm,
                 );
                 let effect_view = objc2_ui_kit::UIVisualEffectView::initWithEffect(
@@ -71,18 +71,27 @@ pub fn page_overlay() -> impl Piece {
                     Some(&blur),
                 );
                 effect_view.setTag(tag);
-                effect_view.setFrame(view.bounds());
+                effect_view.setFrame(objc2_core_foundation::CGRect::new(
+                    objc2_core_foundation::CGPoint::new(0.0, 0.0),
+                    objc2_core_foundation::CGSize::new(38.0, 38.0),
+                ));
                 effect_view.setAutoresizingMask(objc2_ui_kit::UIViewAutoresizing(
                     objc2_ui_kit::UIViewAutoresizing::FlexibleWidth.0
                         | objc2_ui_kit::UIViewAutoresizing::FlexibleHeight.0,
                 ));
                 effect_view.setUserInteractionEnabled(false);
 
+                let effect_layer: objc2::rc::Retained<objc2_quartz_core::CALayer> = effect_view.layer();
+                effect_layer.setCornerRadius(19.0);
+                effect_layer.setMasksToBounds(true);
+                effect_view.setClipsToBounds(true);
+
                 let view_layer: objc2::rc::Retained<objc2_quartz_core::CALayer> = view.layer();
                 view_layer.setCornerRadius(19.0);
                 view_layer.setMasksToBounds(true);
 
-                view.setBackgroundColor(None);
+                let clear = objc2_ui_kit::UIColor::clearColor();
+                view.setBackgroundColor(Some(&clear));
 
                 view.insertSubview_atIndex(&effect_view, 0);
                 view.setClipsToBounds(true);
@@ -151,18 +160,6 @@ pub fn render() -> impl Piece {
     });
 
     zstack((
-        circle()
-            .stroke(
-                move || {
-                    if day::dark_mode() {
-                        Color::rgba(1.0, 1.0, 1.0, 0.22)
-                    } else {
-                        Color::rgba(0.0, 0.0, 0.0, 0.10)
-                    }
-                },
-                0.5,
-            )
-            .frame(38.0, 38.0),
         icon_piece,
         // Native system UIButton overlay for authentic touch response and accessibility
         button("")
