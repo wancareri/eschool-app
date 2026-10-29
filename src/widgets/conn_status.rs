@@ -181,6 +181,50 @@ pub fn render() -> impl Piece {
         },
     );
 
+    #[cfg(any(feature = "appkit", feature = "uikit"))]
+    if day_piece_swiftui::support() == Support::Native {
+        let title_fn = move || {
+            if expanded.get() {
+                match state.island_label.get() {
+                    ConnStatus::Connecting => "Обновление…".to_string(),
+                    ConnStatus::Connected | ConnStatus::Idle => "Обновлено".to_string(),
+                    ConnStatus::Offline => "Оффлайн".to_string(),
+                    ConnStatus::Error => "Ошибка сети".to_string(),
+                }
+            } else {
+                String::new()
+            }
+        };
+        let icon_fn = move || match state.island_state.get() {
+            ConnStatus::Connecting => "spinner".to_string(),
+            ConnStatus::Connected | ConnStatus::Idle => "checkmark".to_string(),
+            ConnStatus::Offline => "wifi.slash".to_string(),
+            ConnStatus::Error => "exclamationmark.triangle".to_string(),
+        };
+
+        return when(
+            move || expanded.get(),
+            move || {
+                crate::swiftui::GlassStatusCapsuleView(title_fn, icon_fn)
+                    .frame(116.0, 28.0)
+                    .any()
+            },
+        )
+        .otherwise(move || {
+            crate::swiftui::GlassStatusCapsuleView(String::new(), icon_fn)
+                .frame(28.0, 28.0)
+                .any()
+        })
+        .on_tap(move || {
+            crate::shared::haptics::tick();
+            crate::shared::nslog::nslog("[cover] status capsule tap: open");
+            state
+                .show_network_modal
+                .set(Some(String::from("net")));
+        })
+        .any();
+    }
+
     let status_icon = when(
         move || state.island_state.get() == ConnStatus::Offline,
         || vector(res::vectors::status_offline).frame(13.0, 13.0).tint(Color::hex(0x8E8E93)).any(),
@@ -281,76 +325,5 @@ pub fn render() -> impl Piece {
             .set(Some(String::from("net")));
     });
 
-    #[cfg(target_os = "ios")]
-    let content = {
-        use day_uikit::UiKitExt;
-        use objc2::MainThreadOnly;
-        content.uikit(move |view, _class, mtm| {
-            let tag: objc2::ffi::NSInteger = 9993;
-            if view.viewWithTag(tag).is_none() {
-                let blur = objc2_ui_kit::UIBlurEffect::effectWithStyle(
-                    objc2_ui_kit::UIBlurEffectStyle::SystemUltraThinMaterial,
-                    mtm,
-                );
-                let ev = objc2_ui_kit::UIVisualEffectView::initWithEffect(
-                    objc2_ui_kit::UIVisualEffectView::alloc(mtm),
-                    Some(&blur),
-                );
-                ev.setTag(tag);
-                ev.setFrame(view.bounds());
-                ev.setUserInteractionEnabled(false);
-
-                // Insert into hierarchy FIRST so constraints have common ancestor
-                view.insertSubview_atIndex(&ev, 0);
-
-                let _: () = unsafe { objc2::msg_send![&*ev, setTranslatesAutoresizingMaskIntoConstraints: false] };
-                unsafe {
-                    let leading: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, leadingAnchor];
-                    let v_leading: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, leadingAnchor];
-                    let c1: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*leading, constraintEqualToAnchor: &*v_leading];
-                    let _: () = objc2::msg_send![&*c1, setActive: true];
-
-                    let trailing: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, trailingAnchor];
-                    let v_trailing: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, trailingAnchor];
-                    let c2: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*trailing, constraintEqualToAnchor: &*v_trailing];
-                    let _: () = objc2::msg_send![&*c2, setActive: true];
-
-                    let top: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, topAnchor];
-                    let v_top: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, topAnchor];
-                    let c3: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*top, constraintEqualToAnchor: &*v_top];
-                    let _: () = objc2::msg_send![&*c3, setActive: true];
-
-                    let bottom: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, bottomAnchor];
-                    let v_bottom: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, bottomAnchor];
-                    let c4: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*bottom, constraintEqualToAnchor: &*v_bottom];
-                    let _: () = objc2::msg_send![&*c4, setActive: true];
-                }
-
-                let ev_layer = ev.layer();
-                ev_layer.setCornerRadius(12.5);
-                ev_layer.setMasksToBounds(true);
-                ev.setClipsToBounds(true);
-
-                // Specular liquid glass highlight border (bubble rim)
-                let rim_color = if day::dark_mode() {
-                    objc2_ui_kit::UIColor::colorWithWhite_alpha(1.0, 0.18)
-                } else {
-                    objc2_ui_kit::UIColor::colorWithWhite_alpha(0.0, 0.10)
-                };
-                let cg_rim = unsafe { rim_color.CGColor() };
-                ev_layer.setBorderColor(Some(&*cg_rim));
-                ev_layer.setBorderWidth(0.5);
-
-                let view_layer = view.layer();
-                view_layer.setCornerRadius(12.5);
-                view_layer.setShadowColor(Some(&*unsafe { objc2_ui_kit::UIColor::blackColor().CGColor() }));
-                view_layer.setShadowOpacity(0.12);
-                view_layer.setShadowOffset(objc2_core_foundation::CGSize::new(0.0, 2.0));
-                view_layer.setShadowRadius(4.0);
-                view_layer.setMasksToBounds(false);
-            }
-        })
-    };
-
-    content
+    content.any()
 }

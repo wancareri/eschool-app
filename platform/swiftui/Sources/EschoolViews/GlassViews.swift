@@ -120,7 +120,64 @@ public struct GlassButtonView: View {
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(.regularMaterial, in: Capsule())
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+    }
+}
+
+// MARK: - Liquid Glass Status Capsule
+
+public struct GlassStatusCapsuleView: View {
+    let title: String
+    let icon: String
+
+    public init(title: String, icon: String) {
+        self.title = title
+        self.icon = icon
+    }
+
+    @ViewBuilder
+    public var body: some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            HStack(spacing: 5) {
+                if icon == "spinner" {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                        .scaleEffect(0.65)
+                        .frame(width: 14, height: 14)
+                } else if !icon.isEmpty {
+                    Image(systemName: icon)
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                if !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: 12, weight: .medium))
+                }
+            }
+            .padding(.horizontal, title.isEmpty ? 7 : 10)
+            .padding(.vertical, 5)
+            .glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            HStack(spacing: 5) {
+                if icon == "spinner" {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                        .scaleEffect(0.65)
+                        .frame(width: 14, height: 14)
+                } else if !icon.isEmpty {
+                    Image(systemName: icon)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+                if !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.primary)
+                }
+            }
+            .padding(.horizontal, title.isEmpty ? 7 : 10)
+            .padding(.vertical, 5)
+            .background(.ultraThinMaterial, in: Capsule())
         }
     }
 }
