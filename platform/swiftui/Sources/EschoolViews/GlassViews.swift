@@ -127,14 +127,6 @@ public struct GlassButtonView: View {
 
 // MARK: - Liquid Glass Status Capsule
 
-struct CapsulePressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.90 : 1.0)
-            .animation(.spring(response: 0.22, dampingFraction: 0.65), value: configuration.isPressed)
-    }
-}
-
 public struct GlassStatusCapsuleView: View {
     let title: String
     let icon: String
@@ -160,41 +152,44 @@ public struct GlassStatusCapsuleView: View {
     @ViewBuilder
     public var body: some View {
         let isExpanded = !title.isEmpty
-        Button(action: {}) {
-            HStack(spacing: 4) {
-                if icon == "spinner" {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle())
-                        .tint(.accentColor)
-                        .scaleEffect(0.55)
-                        .frame(width: 11, height: 11)
-                } else if !icon.isEmpty {
-                    Image(systemName: icon)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(iconColor)
-                        .frame(width: 11, height: 11)
-                }
-                if isExpanded {
-                    Text(title)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: .leading)),
-                            removal: .opacity
-                        ))
-                }
+        HStack(spacing: 5) {
+            if icon == "spinner" {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle())
+                    .tint(.accentColor)
+                    .scaleEffect(0.65)
+                    .frame(width: 13, height: 13)
+            } else if !icon.isEmpty {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 14, height: 14)
             }
-            .padding(.horizontal, isExpanded ? 8 : 6)
-            .frame(height: 24)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
-            )
+            if isExpanded {
+                Text(title)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity
+                                .combined(with: .scale(scale: 0.75, anchor: .leading))
+                                .combined(with: .offset(x: -3)),
+                            removal: .opacity
+                                .combined(with: .scale(scale: 0.75, anchor: .leading))
+                        )
+                    )
+            }
         }
-        .buttonStyle(CapsulePressStyle())
-        .animation(.spring(response: 0.35, dampingFraction: 0.72), value: isExpanded)
+        .padding(.horizontal, isExpanded ? 11 : 8.5)
+        .frame(height: 30)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(
+            Capsule()
+                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+        )
+        .contentShape(Capsule())
+        .animation(.spring(response: 0.38, dampingFraction: 0.72), value: isExpanded)
         .animation(.easeInOut(duration: 0.2), value: icon)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }

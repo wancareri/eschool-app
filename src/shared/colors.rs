@@ -171,10 +171,10 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
         sw.setOnTintColor(Some(color));
     }
 
-    // Clear background for DayNavPageView so the area beneath the tab bar
+    // Clear background for container views so the area beneath the tab bar
     // and status bar isn't a solid opaque rectangle.
     let class_name = view.class().name().to_str().unwrap_or("");
-    if class_name == "DayNavPageView" {
+    if class_name == "DayNavPageView" || class_name == "DayHolderView" || class_name == "UINavigationTransitionView" {
         view.setBackgroundColor(Some(&clear));
     }
 

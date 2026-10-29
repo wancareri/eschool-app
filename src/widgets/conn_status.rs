@@ -40,7 +40,23 @@ fn schedule_collapse(state: AppState) {
 /// ios-uikit's bleed walk skips it — the page keeps its single-scroll chain and
 /// full-bleed frame under the bars while this stays pinned outside the scroll.
 pub fn page_overlay() -> impl Piece {
-    let piece = render().padding(Insets {
+    let piece = render();
+    #[cfg(target_os = "ios")]
+    let piece = {
+        use day_uikit::UiKitExt;
+        piece.uikit(|view, _class, _mtm| {
+            view.setTag(day_uikit::ANNOTATION_TAG);
+            let mut cur = view.superview();
+            if let Some(ref p) = cur {
+                p.setTag(day_uikit::ANNOTATION_TAG);
+            }
+            while let Some(p) = cur {
+                p.setNeedsLayout();
+                cur = p.superview();
+            }
+        })
+    };
+    piece.padding(Insets {
         #[cfg(target_os = "ios")]
         top: 4.0,
         #[cfg(not(target_os = "ios"))]
@@ -48,15 +64,7 @@ pub fn page_overlay() -> impl Piece {
         leading: 16.0,
         bottom: 0.0,
         trailing: 0.0,
-    });
-    #[cfg(target_os = "ios")]
-    let piece = {
-        use day_uikit::UiKitExt;
-        piece.uikit(|view, _class, _mtm| {
-            view.setTag(day_uikit::ANNOTATION_TAG);
-        })
-    };
-    piece
+    })
 }
 
 
@@ -177,7 +185,7 @@ pub fn render() -> impl Piece {
         };
 
         return crate::swiftui::GlassStatusCapsuleView(title_fn, icon_fn)
-            .frame(120.0, 26.0)
+            .frame(180.0, 32.0)
             .on_tap(move || {
                 crate::shared::haptics::tick();
                 crate::shared::nslog::nslog("[cover] status capsule tap: open");
