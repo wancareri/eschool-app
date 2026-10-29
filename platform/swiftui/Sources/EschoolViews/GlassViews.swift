@@ -127,6 +127,14 @@ public struct GlassButtonView: View {
 
 // MARK: - Liquid Glass Status Capsule
 
+struct CapsulePressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.90 : 1.0)
+            .animation(.spring(response: 0.22, dampingFraction: 0.65), value: configuration.isPressed)
+    }
+}
+
 public struct GlassStatusCapsuleView: View {
     let title: String
     let icon: String
@@ -150,46 +158,43 @@ public struct GlassStatusCapsuleView: View {
     }
 
     @ViewBuilder
-    private var capsuleMaterial: some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            Capsule()
-                .glassEffect(.regular.interactive(), in: .capsule)
-        } else {
-            Capsule()
-                .fill(.ultraThinMaterial)
-        }
-    }
-
-    @ViewBuilder
     public var body: some View {
         let isExpanded = !title.isEmpty
-        HStack(spacing: 6) {
-            if icon == "spinner" {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle())
-                    .tint(.accentColor)
-                    .scaleEffect(0.65)
-                    .frame(width: 14, height: 14)
-            } else if !icon.isEmpty {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(iconColor)
+        Button(action: {}) {
+            HStack(spacing: 4) {
+                if icon == "spinner" {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                        .tint(.accentColor)
+                        .scaleEffect(0.55)
+                        .frame(width: 11, height: 11)
+                } else if !icon.isEmpty {
+                    Image(systemName: icon)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(iconColor)
+                        .frame(width: 11, height: 11)
+                }
+                if isExpanded {
+                    Text(title)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: .leading)),
+                            removal: .opacity
+                        ))
+                }
             }
-            if isExpanded {
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: .leading)),
-                        removal: .opacity
-                    ))
-            }
+            .padding(.horizontal, isExpanded ? 8 : 6)
+            .frame(height: 24)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+            )
         }
-        .padding(.horizontal, isExpanded ? 10 : 7)
-        .frame(height: 28)
-        .background(capsuleMaterial)
-        .animation(.spring(response: 0.35, dampingFraction: 0.78), value: isExpanded)
+        .buttonStyle(CapsulePressStyle())
+        .animation(.spring(response: 0.35, dampingFraction: 0.72), value: isExpanded)
         .animation(.easeInOut(duration: 0.2), value: icon)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }

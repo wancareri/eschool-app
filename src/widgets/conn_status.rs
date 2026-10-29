@@ -36,34 +36,15 @@ fn schedule_collapse(state: AppState) {
     });
 }
 
-#[cfg(target_os = "ios")]
-pub fn safe_area_top() -> f64 {
-    use objc2::MainThreadMarker;
-    use objc2_ui_kit::UIApplication;
-    if let Some(mtm) = MainThreadMarker::new() {
-        #[allow(deprecated)]
-        if let Some(window) = UIApplication::sharedApplication(mtm).keyWindow() {
-            let top = window.safeAreaInsets().top as f64;
-            if top > 0.0 {
-                return top + 4.0;
-            }
-        }
-    }
-    54.0
-}
-
-#[cfg(not(target_os = "ios"))]
-pub fn safe_area_top() -> f64 {
-    16.0
-}
-
 /// The sticky top-left capsule as a page sibling: tagged `ANNOTATION_TAG` so
 /// ios-uikit's bleed walk skips it — the page keeps its single-scroll chain and
 /// full-bleed frame under the bars while this stays pinned outside the scroll.
 pub fn page_overlay() -> impl Piece {
-    let top_pad = safe_area_top();
     let piece = render().padding(Insets {
-        top: top_pad,
+        #[cfg(target_os = "ios")]
+        top: 4.0,
+        #[cfg(not(target_os = "ios"))]
+        top: 16.0,
         leading: 16.0,
         bottom: 0.0,
         trailing: 0.0,
@@ -73,13 +54,6 @@ pub fn page_overlay() -> impl Piece {
         use day_uikit::UiKitExt;
         piece.uikit(|view, _class, _mtm| {
             view.setTag(day_uikit::ANNOTATION_TAG);
-            let mut curr = view.superview();
-            while let Some(parent) = curr {
-                if parent.tag() == 0 {
-                    parent.setTag(day_uikit::ANNOTATION_TAG);
-                }
-                curr = parent.superview();
-            }
         })
     };
     piece
@@ -203,7 +177,7 @@ pub fn render() -> impl Piece {
         };
 
         return crate::swiftui::GlassStatusCapsuleView(title_fn, icon_fn)
-            .frame(130.0, 32.0)
+            .frame(120.0, 26.0)
             .on_tap(move || {
                 crate::shared::haptics::tick();
                 crate::shared::nslog::nslog("[cover] status capsule tap: open");

@@ -69,6 +69,7 @@ pub fn apply_ios_tint(hex: u32) {
         let _: () = objc2::msg_send![&*nav_appearance, setStandardAppearance: &*nav_app];
         let _: () = objc2::msg_send![&*nav_appearance, setScrollEdgeAppearance: &*nav_app];
         let _: () = objc2::msg_send![&*nav_appearance, setCompactAppearance: &*nav_app];
+        let _: () = objc2::msg_send![&*nav_appearance, setCompactScrollEdgeAppearance: &*nav_app];
 
         // UISwitch.appearance().onTintColor — switch accent color
         let switch_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
@@ -79,9 +80,26 @@ pub fn apply_ios_tint(hex: u32) {
             objc2::msg_send![objc2::class!(UIBarButtonItem), appearance];
         let _: () = objc2::msg_send![&*bar_btn_appearance, setTintColor: &*color];
 
-        // Apply tintColor and transparent bar styling to all active windows
+        // Apply tintColor and transparent bar styling to all active windows (scenes + legacy windows)
         let app: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UIApplication), sharedApplication];
+        let scenes: Option<objc2::rc::Retained<objc2_foundation::NSArray<objc2::runtime::AnyObject>>> =
+            objc2::msg_send![&*app, connectedScenes];
+        if let Some(scene_arr) = scenes {
+            for sc in scene_arr.iter() {
+                let windows: Option<objc2::rc::Retained<objc2_foundation::NSArray<objc2::runtime::AnyObject>>> =
+                    objc2::msg_send![&*sc, windows];
+                if let Some(win_arr) = windows {
+                    for win in win_arr.iter() {
+                        let _: () = objc2::msg_send![&*win, setTintColor: &*color];
+                        if let Some(view) = win.downcast_ref::<objc2_ui_kit::UIView>() {
+                            retint_existing(view, &color);
+                        }
+                    }
+                }
+            }
+        }
+        #[allow(deprecated)]
         let windows: Option<objc2::rc::Retained<objc2_foundation::NSArray<objc2::runtime::AnyObject>>> =
             objc2::msg_send![&*app, windows];
         if let Some(win_arr) = windows {
@@ -90,6 +108,12 @@ pub fn apply_ios_tint(hex: u32) {
                 if let Some(view) = win.downcast_ref::<objc2_ui_kit::UIView>() {
                     retint_existing(view, &color);
                 }
+            }
+        }
+        if let Some(mtm) = objc2::MainThreadMarker::new() {
+            #[allow(deprecated)]
+            if let Some(win) = objc2_ui_kit::UIApplication::sharedApplication(mtm).keyWindow() {
+                retint_existing(&win, &color);
             }
         }
     }
@@ -141,6 +165,7 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
             let _: () = objc2::msg_send![bar, setStandardAppearance: &*nav_app];
             let _: () = objc2::msg_send![bar, setScrollEdgeAppearance: &*nav_app];
             let _: () = objc2::msg_send![bar, setCompactAppearance: &*nav_app];
+            let _: () = objc2::msg_send![bar, setCompactScrollEdgeAppearance: &*nav_app];
         };
     } else if let Some(sw) = obj.downcast_ref::<objc2_ui_kit::UISwitch>() {
         sw.setOnTintColor(Some(color));
