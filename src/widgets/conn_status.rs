@@ -1,10 +1,12 @@
 //! Native liquid glass circular connection status button for iOS.
-//! Fully native UIKit UIButton component with UIBackgroundConfiguration (SystemUltraThinMaterial)
-//! and SF Symbols ("wifi", "wifi.slash", "wifi.exclamationmark") / native UIActivityIndicatorView.
+//! Floating frosted glass circle with dynamic status icon (spinner / wifi / wifi-off / error).
 //! Tapping it opens the detailed network status sheet.
 
 use crate::app::{AppState, ConnStatus};
+use crate::res;
 use day::prelude::*;
+#[cfg(target_os = "ios")]
+use objc2::MainThreadOnly;
 
 #[cfg(target_os = "ios")]
 pub fn safe_area_top() -> f64 {
@@ -28,8 +30,9 @@ pub fn safe_area_top() -> f64 {
 }
 
 /// The floating liquid glass status button overlay on the page:
-/// tagged `ANNOTATION_TAG` so ios-uikit's bleed walk skips it — the page keeps its
-/// single-scroll chain and full-bleed frame under the bars.
+/// tagged `ANNOTATION_TAG` on the outermost view and its subtree so ios-uikit's
+/// `scroll_leaf` skips it — ensuring the page keeps its full-bleed frame and
+/// liquid glass transparency under both the top navigation bar and the bottom tab bar.
 pub fn page_overlay() -> impl Piece {
     let initial_top = safe_area_top() + 6.0;
     let top_sig = Signal::new(initial_top);
@@ -38,13 +41,27 @@ pub fn page_overlay() -> impl Piece {
     #[cfg(target_os = "ios")]
     let top_setter_delayed = top_sig.setter();
 
-    let btn = render();
+    let overlay = render()
+        .translation(0.0, move || top_sig.get())
+        .padding(Insets {
+            top: 0.0,
+            leading: 16.0,
+            bottom: 0.0,
+            trailing: 0.0,
+        });
+
     #[cfg(target_os = "ios")]
-    let btn = {
+    let overlay = {
         use day_uikit::UiKitExt;
-        btn.uikit(move |view, _class, _mtm| {
-            // Keep full bleed layout
+        overlay.uikit(move |view, _class, _mtm| {
+            // CRITICAL: tag the outermost overlay view and its hierarchy with ANNOTATION_TAG.
+            // day-uikit's `scroll_leaf` checks `v.tag() == ANNOTATION_TAG` on children of the page
+            // to preserve the full-bleed scroll chain and transparent liquid glass bars.
             view.setTag(day_uikit::ANNOTATION_TAG);
+            let subs = view.subviews();
+            for i in 0..subs.count() {
+                subs.objectAtIndex(i).setTag(day_uikit::ANNOTATION_TAG);
+            }
             if let Some(parent) = view.superview() {
                 parent.setTag(day_uikit::ANNOTATION_TAG);
             }
@@ -59,8 +76,8 @@ pub fn page_overlay() -> impl Piece {
         })
     };
     #[cfg(not(target_os = "ios"))]
-    let btn = {
-        btn
+    let overlay = {
+        overlay
     };
 
     // Delayed fallback check in case window insets weren't populated on initial pass
@@ -72,128 +89,12 @@ pub fn page_overlay() -> impl Piece {
         }
     });
 
-    btn
-        .translation(0.0, move || top_sig.get())
-        .padding(Insets {
-            top: 0.0,
-            leading: 16.0,
-            bottom: 0.0,
-            trailing: 0.0,
-        })
+    overlay
 }
 
-#[cfg(target_os = "ios")]
-fn setup_native_liquid_glass_button(
-    btn: &objc2_ui_kit::UIButton,
-    state: AppState,
-    mtm: objc2::MainThreadMarker,
-) {
-    use objc2::Message;
-    use objc2_foundation::NSString;
-    use objc2_ui_kit::{
-        UIBackgroundConfiguration, UIBlurEffect, UIBlurEffectStyle, UIButtonConfiguration,
-        UIButtonConfigurationCornerStyle, UIColor, UIImage,
-    };
-
-    fn apply_status(
-        btn: &objc2_ui_kit::UIButton,
-        status: ConnStatus,
-        accent_hex: u32,
-        mtm: objc2::MainThreadMarker,
-    ) {
-        let config = UIButtonConfiguration::plainButtonConfiguration(mtm);
-
-        let bg = UIBackgroundConfiguration::clearConfiguration(mtm);
-        let blur = UIBlurEffect::effectWithStyle(
-            UIBlurEffectStyle::SystemUltraThinMaterial,
-            mtm,
-        );
-        bg.setVisualEffect(Some(&blur));
-        bg.setCornerRadius(19.0);
-        bg.setBackgroundColor(Some(&UIColor::clearColor()));
-
-        config.setBackground(&bg);
-        config.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
-
-        let r = ((accent_hex >> 16) & 0xFF) as f64 / 255.0;
-        let g = ((accent_hex >> 8) & 0xFF) as f64 / 255.0;
-        let b = (accent_hex & 0xFF) as f64 / 255.0;
-
-        match status {
-            ConnStatus::Connecting => {
-                config.setShowsActivityIndicator(true);
-                let accent = UIColor::colorWithRed_green_blue_alpha(
-                    r as _, g as _, b as _, 1.0,
-                );
-                config.setBaseForegroundColor(Some(&accent));
-            }
-            ConnStatus::Offline => {
-                config.setShowsActivityIndicator(false);
-                let img = UIImage::systemImageNamed(&NSString::from_str("wifi.slash"));
-                config.setImage(img.as_deref());
-                let gray = UIColor::colorWithWhite_alpha(0.55, 1.0);
-                config.setBaseForegroundColor(Some(&gray));
-            }
-            ConnStatus::Error => {
-                config.setShowsActivityIndicator(false);
-                let img = UIImage::systemImageNamed(&NSString::from_str("wifi.exclamationmark"));
-                config.setImage(img.as_deref());
-                let red = UIColor::colorWithRed_green_blue_alpha(0.94, 0.27, 0.27, 1.0);
-                config.setBaseForegroundColor(Some(&red));
-            }
-            ConnStatus::Connected | ConnStatus::Idle => {
-                config.setShowsActivityIndicator(false);
-                let img = UIImage::systemImageNamed(&NSString::from_str("wifi"));
-                config.setImage(img.as_deref());
-                let accent = UIColor::colorWithRed_green_blue_alpha(
-                    r as _, g as _, b as _, 1.0,
-                );
-                config.setBaseForegroundColor(Some(&accent));
-            }
-        }
-
-        btn.setConfiguration(Some(&config));
-    }
-
-    apply_status(btn, state.conn_status.get(), state.accent_color.get(), mtm);
-
-    let btn_retained = btn.retain();
-    day::reactive::watch(
-        move || (state.conn_status.get(), state.accent_color.get()),
-        move |&(status, accent), _| {
-            if let Some(mtm) = objc2::MainThreadMarker::new() {
-                apply_status(&btn_retained, status, accent, mtm);
-            }
-        },
-    );
-}
-
-/// The circular liquid glass native UIButton with status icon inside.
-#[cfg(target_os = "ios")]
+/// The circular liquid glass button with status icon inside.
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
-    use day_uikit::UiKitExt;
-
-    button("")
-        .action(move || {
-            crate::shared::haptics::tick();
-            state
-                .show_network_modal
-                .set(Some(String::from("net")));
-        })
-        .frame(38.0, 38.0)
-        .id("conn-status-native-button")
-        .uikit(move |view, _class, mtm| {
-            if let Some(btn) = view.downcast_ref::<objc2_ui_kit::UIButton>() {
-                setup_native_liquid_glass_button(btn, state, mtm);
-            }
-        })
-}
-
-#[cfg(not(target_os = "ios"))]
-pub fn render() -> impl Piece {
-    let state = AppState::ambient();
-    use crate::res;
 
     let icon_piece = when(
         move || state.conn_status.get() == ConnStatus::Connecting,
@@ -228,7 +129,7 @@ pub fn render() -> impl Piece {
         })
     });
 
-    zstack((
+    let btn = zstack((
         icon_piece,
         button("")
             .action(move || {
@@ -242,12 +143,60 @@ pub fn render() -> impl Piece {
     ))
     .align(Alignment::Center)
     .frame(38.0, 38.0)
-    .background(move || {
+    .corner_radius(19.0);
+
+    #[cfg(target_os = "ios")]
+    let btn = {
+        use day_uikit::UiKitExt;
+        btn.uikit(move |view, _class, mtm| {
+            // Native iOS liquid glass blur effect — exact match to UITabBar liquid glass
+            let tag: objc2::ffi::NSInteger = 9992;
+            if view.viewWithTag(tag).is_none() {
+                let blur = objc2_ui_kit::UIBlurEffect::effectWithStyle(
+                    objc2_ui_kit::UIBlurEffectStyle::SystemUltraThinMaterial,
+                    mtm,
+                );
+                let effect_view = objc2_ui_kit::UIVisualEffectView::initWithEffect(
+                    objc2_ui_kit::UIVisualEffectView::alloc(mtm),
+                    Some(&blur),
+                );
+                effect_view.setTag(tag);
+                effect_view.setFrame(objc2_core_foundation::CGRect::new(
+                    objc2_core_foundation::CGPoint::new(0.0, 0.0),
+                    objc2_core_foundation::CGSize::new(38.0, 38.0),
+                ));
+                effect_view.setAutoresizingMask(objc2_ui_kit::UIViewAutoresizing(
+                    objc2_ui_kit::UIViewAutoresizing::FlexibleWidth.0
+                        | objc2_ui_kit::UIViewAutoresizing::FlexibleHeight.0,
+                ));
+                effect_view.setUserInteractionEnabled(false);
+
+                let effect_layer: objc2::rc::Retained<objc2_quartz_core::CALayer> = effect_view.layer();
+                effect_layer.setCornerRadius(19.0);
+                effect_layer.setMasksToBounds(true);
+                effect_view.setClipsToBounds(true);
+
+                let view_layer: objc2::rc::Retained<objc2_quartz_core::CALayer> = view.layer();
+                view_layer.setCornerRadius(19.0);
+                view_layer.setMasksToBounds(true);
+
+                let clear = objc2_ui_kit::UIColor::clearColor();
+                view.setBackgroundColor(Some(&clear));
+
+                view.insertSubview_atIndex(&effect_view, 0);
+                view.setClipsToBounds(true);
+            }
+        })
+    };
+
+    #[cfg(not(target_os = "ios"))]
+    let btn = btn.background(move || {
         if day::dark_mode() {
             Color::rgba(0.25, 0.25, 0.28, 0.55)
         } else {
             Color::rgba(1.0, 1.0, 1.0, 0.75)
         }
-    })
-    .corner_radius(19.0)
+    });
+
+    btn
 }
