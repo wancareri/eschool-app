@@ -87,7 +87,6 @@ pub fn page_overlay() -> impl Piece {
 
 
 
-#[cfg(not(target_os = "ios"))]
 fn accent_dark_bg(hex: u32, alpha: f64) -> Color {
     let r = (((hex >> 16) & 0xFF) as f64 / 255.0) * 0.70;
     let g = (((hex >> 8) & 0xFF) as f64 / 255.0) * 0.70;
@@ -244,7 +243,46 @@ pub fn render() -> impl Piece {
         ),
     ))
     .align(VAlign::Center)
-    .padding(Insets { top: 6.0, leading: 6.0, bottom: 6.0, trailing: 6.0 });
+    .padding(Insets { top: 6.0, leading: 6.0, bottom: 6.0, trailing: 6.0 })
+    .background(move || {
+        let dark = day::dark_mode();
+        match state.island_state.get() {
+            ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
+                let accent = state.accent_color.get();
+                if dark {
+                    accent_dark_bg(accent, 0.45)
+                } else {
+                    Color::hex(accent).with_alpha(0.18)
+                }
+            }
+            ConnStatus::Offline => {
+                if dark {
+                    Color::rgba(0.28, 0.28, 0.28, 0.35)
+                } else {
+                    Color::rgba(0.55, 0.55, 0.55, 0.22)
+                }
+            }
+            ConnStatus::Error => {
+                if dark {
+                    Color::rgba(0.70, 0.15, 0.15, 0.50)
+                } else {
+                    Color::rgba(0.94, 0.27, 0.27, 0.22)
+                }
+            }
+        }
+    })
+    // Half of the 25 pt box: CALayer does not clamp a larger radius, and 14 on
+    // 25 overshoots into a self-intersecting lens (the "eye").
+    .corner_radius(12.5)
+    // Node-scoped fallback so the capsule's RESIZE animates even when the collapse's
+    // with_animation ambient doesn't reach the turn-end layout (the snap-to-circle).
+    .animation(Animation::ease_out(220))
+    .on_tap(move || {
+        crate::shared::nslog::nslog("[cover] status capsule tap: open");
+        state
+            .show_network_modal
+            .set(Some(String::from("net")));
+    });
 
     #[cfg(target_os = "ios")]
     let content = {
@@ -252,9 +290,7 @@ pub fn render() -> impl Piece {
         use objc2::MainThreadOnly;
         content.uikit(move |view, _class, mtm| {
             let tag: objc2::ffi::NSInteger = 9993;
-            let ev = if let Some(sub) = view.viewWithTag(tag) {
-                sub.downcast::<objc2_ui_kit::UIVisualEffectView>().ok()
-            } else {
+            if view.viewWithTag(tag).is_none() {
                 let blur = objc2_ui_kit::UIBlurEffect::effectWithStyle(
                     objc2_ui_kit::UIBlurEffectStyle::SystemUltraThinMaterial,
                     mtm,
@@ -264,12 +300,42 @@ pub fn render() -> impl Piece {
                     Some(&blur),
                 );
                 ev.setTag(tag);
-                ev.setFrame(view.bounds());
-                ev.setAutoresizingMask(objc2_ui_kit::UIViewAutoresizing(
-                    objc2_ui_kit::UIViewAutoresizing::FlexibleWidth.0
-                        | objc2_ui_kit::UIViewAutoresizing::FlexibleHeight.0,
-                ));
+                let bounds = view.bounds();
+                let initial_rect = if bounds.size.width > 1.0 && bounds.size.height > 1.0 {
+                    bounds
+                } else {
+                    objc2_core_foundation::CGRect::new(
+                        objc2_core_foundation::CGPoint::new(0.0, 0.0),
+                        objc2_core_foundation::CGSize::new(120.0, 25.0),
+                    )
+                };
+                ev.setFrame(initial_rect);
                 ev.setUserInteractionEnabled(false);
+
+                // AutoLayout constraints ensure ev ALWAYS matches view bounds exactly,
+                // even when view is laid out after mount or resizes dynamically.
+                let _: () = unsafe { objc2::msg_send![&*ev, setTranslatesAutoresizingMaskIntoConstraints: false] };
+                unsafe {
+                    let leading: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, leadingAnchor];
+                    let v_leading: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, leadingAnchor];
+                    let c1: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*leading, constraintEqualToAnchor: &*v_leading];
+                    let _: () = objc2::msg_send![&*c1, setActive: true];
+
+                    let trailing: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, trailingAnchor];
+                    let v_trailing: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, trailingAnchor];
+                    let c2: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*trailing, constraintEqualToAnchor: &*v_trailing];
+                    let _: () = objc2::msg_send![&*c2, setActive: true];
+
+                    let top: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, topAnchor];
+                    let v_top: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, topAnchor];
+                    let c3: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*top, constraintEqualToAnchor: &*v_top];
+                    let _: () = objc2::msg_send![&*c3, setActive: true];
+
+                    let bottom: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, bottomAnchor];
+                    let v_bottom: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, bottomAnchor];
+                    let c4: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*bottom, constraintEqualToAnchor: &*v_bottom];
+                    let _: () = objc2::msg_send![&*c4, setActive: true];
+                }
 
                 let ev_layer = ev.layer();
                 ev_layer.setCornerRadius(12.5);
@@ -277,7 +343,7 @@ pub fn render() -> impl Piece {
                 ev.setClipsToBounds(true);
 
                 // Specular liquid glass highlight border (bubble rim)
-                let rim_color = objc2_ui_kit::UIColor::colorWithWhite_alpha(1.0, 0.22);
+                let rim_color = objc2_ui_kit::UIColor::colorWithWhite_alpha(1.0, 0.25);
                 let cg_rim = unsafe { rim_color.CGColor() };
                 ev_layer.setBorderColor(Some(&*cg_rim));
                 ev_layer.setBorderWidth(0.5);
@@ -287,107 +353,10 @@ pub fn render() -> impl Piece {
                 view_layer.setMasksToBounds(true);
                 view.setClipsToBounds(true);
 
-                let clear = objc2_ui_kit::UIColor::clearColor();
-                view.setBackgroundColor(Some(&clear));
-
                 view.insertSubview_atIndex(&ev, 0);
-
-                let cv = ev.contentView();
-                let weak_cv = objc2::rc::Weak::new(&*cv);
-                day::prelude::watch(
-                    move || (state.island_state.get(), state.accent_color.get()),
-                    move |&(st, accent), _| {
-                        if let Some(target_cv) = weak_cv.load() {
-                            let tint = match st {
-                                ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
-                                    let r = ((accent >> 16) & 0xFF) as f64 / 255.0;
-                                    let g = ((accent >> 8) & 0xFF) as f64 / 255.0;
-                                    let b = (accent & 0xFF) as f64 / 255.0;
-                                    objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(r, g, b, 0.15)
-                                }
-                                ConnStatus::Offline => {
-                                    objc2_ui_kit::UIColor::colorWithWhite_alpha(0.5, 0.18)
-                                }
-                                ConnStatus::Error => {
-                                    objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(0.94, 0.27, 0.27, 0.20)
-                                }
-                            };
-                            target_cv.setBackgroundColor(Some(&tint));
-                        }
-                    },
-                );
-
-                Some(ev)
-            };
-
-            // Set initial tint
-            if let Some(ev) = ev {
-                let st = state.island_state.get();
-                let accent = state.accent_color.get();
-                let tint = match st {
-                    ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
-                        let r = ((accent >> 16) & 0xFF) as f64 / 255.0;
-                        let g = ((accent >> 8) & 0xFF) as f64 / 255.0;
-                        let b = (accent & 0xFF) as f64 / 255.0;
-                        objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(r, g, b, 0.15)
-                    }
-                    ConnStatus::Offline => {
-                        objc2_ui_kit::UIColor::colorWithWhite_alpha(0.5, 0.18)
-                    }
-                    ConnStatus::Error => {
-                        objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(0.94, 0.27, 0.27, 0.20)
-                    }
-                };
-                ev.contentView().setBackgroundColor(Some(&tint));
             }
         })
     };
-
-    #[cfg(target_os = "ios")]
-    let content = content.background(Color::rgba(0.0, 0.0, 0.0, 0.0));
-
-    #[cfg(not(target_os = "ios"))]
-    let content = content.background(move || {
-        let dark = day::dark_mode();
-        match state.island_state.get() {
-            ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
-                let accent = state.accent_color.get();
-                if dark {
-                    accent_dark_bg(accent, 0.50)
-                } else {
-                    Color::hex(accent).with_alpha(0.16)
-                }
-            }
-            ConnStatus::Offline => {
-                if dark {
-                    Color::rgba(0.28, 0.28, 0.28, 0.32)
-                } else {
-                    Color::rgba(0.55, 0.55, 0.55, 0.18)
-                }
-            }
-            ConnStatus::Error => {
-                if dark {
-                    Color::rgba(0.70, 0.15, 0.15, 0.50)
-                } else {
-                    Color::rgba(0.94, 0.27, 0.27, 0.16)
-                }
-            }
-        }
-    });
-
-    let content = content
-        // Half of the 25 pt box: CALayer does not clamp a larger radius, and 14 on
-        // 25 overshoots into a self-intersecting lens (the "eye").
-        .corner_radius(12.5)
-        // Node-scoped fallback so the capsule's RESIZE animates even when the collapse's
-        // with_animation ambient doesn't reach the turn-end layout (the snap-to-circle).
-        .animation(Animation::ease_out(220))
-        .on_tap(move || {
-            crate::shared::nslog::nslog("[cover] status capsule tap: open");
-            state
-                .show_network_modal
-                .set(Some(String::from("net")));
-        });
 
     content
 }
