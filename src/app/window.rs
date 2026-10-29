@@ -193,6 +193,16 @@ fn window_shell(primary: bool) -> impl Piece {
             },
         );
 
+        #[cfg(target_os = "ios")]
+        {
+            day::reactive::on_main_delayed(200, move || {
+                crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
+            });
+            day::reactive::on_main_delayed(800, move || {
+                crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
+            });
+        }
+
         build_nav(primary)
     })
 }
@@ -240,6 +250,7 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
 
     let sel = nav(section)
         .style(day::prelude::NavStyle::Tabs)
+        .background(Color::rgba(0.0, 0.0, 0.0, 0.0))
         .title(move || {
             if state.loading.get() {
                 format!("{}  ⏳", res::str::app_title().format())

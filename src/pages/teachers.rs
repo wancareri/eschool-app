@@ -47,7 +47,7 @@ pub fn render() -> impl Piece {
                 move || state.is_authenticated.get() && !state.teachers_loading.get(),
                 move || teachers_list(state),
             ),
-            spacer().frame(0.0, 90.0),
+            spacer().frame(0.0, 16.0),
         ))
         .spacing(0.0)
         .grow()))

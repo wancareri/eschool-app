@@ -123,7 +123,7 @@ pub fn render() -> impl Piece {
                     move || show_summary.get(),
                     move || rebuild_on_class_change(move || summary_view(state)),
                 ),
-                spacer().frame(0.0, 90.0),
+                spacer().frame(0.0, 16.0),
             ))
             .spacing(0.0)
             .grow()))

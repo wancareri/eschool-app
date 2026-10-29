@@ -192,7 +192,7 @@ fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piec
         0 => column((
             when(move || state.is_authenticated.get(), move || profile_section(state)),
             when(move || state.is_authenticated.get(), move || logout_section(state)),
-            spacer().frame(0.0, 90.0),
+            spacer().frame(0.0, 16.0),
         ))
         .spacing(0.0)
         .grow()
@@ -201,7 +201,7 @@ fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piec
             appearance_section(state),
             haptics_section(state),
             system_settings(),
-            spacer().frame(0.0, 90.0),
+            spacer().frame(0.0, 16.0),
         ))
         .spacing(0.0)
         .grow()
@@ -209,14 +209,14 @@ fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piec
         2 => column((
             pin_section(state, pin_enabled),
             biometric_section(state, pin_enabled),
-            spacer().frame(0.0, 90.0),
+            spacer().frame(0.0, 16.0),
         ))
         .spacing(0.0)
         .grow()
         .any(),
         _ => column((
             dev_settings(state),
-            spacer().frame(0.0, 90.0),
+            spacer().frame(0.0, 16.0),
         ))
         .spacing(0.0)
         .grow()
