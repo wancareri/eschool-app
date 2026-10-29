@@ -201,6 +201,14 @@ fn window_shell(primary: bool) -> impl Piece {
             day::reactive::on_main_delayed(800, move || {
                 crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
             });
+            day::reactive::watch(
+                move || state.current_section.get(),
+                move |_, _| {
+                    day::reactive::on_main_delayed(100, move || {
+                        crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
+                    });
+                },
+            );
         }
 
         build_nav(primary)
