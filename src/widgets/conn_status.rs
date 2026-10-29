@@ -87,12 +87,7 @@ pub fn page_overlay() -> impl Piece {
 
 
 
-fn accent_dark_bg(hex: u32, alpha: f64) -> Color {
-    let r = (((hex >> 16) & 0xFF) as f64 / 255.0) * 0.70;
-    let g = (((hex >> 8) & 0xFF) as f64 / 255.0) * 0.70;
-    let b = ((hex & 0xFF) as f64 / 255.0) * 0.70;
-    Color::rgba(r, g, b, alpha)
-}
+
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
@@ -232,10 +227,12 @@ pub fn render() -> impl Piece {
                     ConnStatus::Error => "Ошибка сети",
                 })
                 .font(Font::Caption2)
-                .color(move || match state.island_label.get() {
-                    ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => Color::hex(state.accent_color.get()),
-                    ConnStatus::Offline => Color::hex(0x8E8E93),
-                    ConnStatus::Error => Color::hex(0xEF4444),
+                .color(move || {
+                    if day::dark_mode() {
+                        Color::rgba(1.0, 1.0, 1.0, 0.92)
+                    } else {
+                        Color::rgba(0.0, 0.0, 0.0, 0.85)
+                    }
                 })
                 .opacity(move || text_opacity.get())
                 .padding(Insets { top: 0.0, leading: 6.0, bottom: 0.0, trailing: 3.0 })
@@ -248,25 +245,24 @@ pub fn render() -> impl Piece {
         let dark = day::dark_mode();
         match state.island_state.get() {
             ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
-                let accent = state.accent_color.get();
                 if dark {
-                    accent_dark_bg(accent, 0.45)
+                    Color::rgba(0.12, 0.12, 0.14, 0.65)
                 } else {
-                    Color::hex(accent).with_alpha(0.18)
+                    Color::rgba(1.0, 1.0, 1.0, 0.70)
                 }
             }
             ConnStatus::Offline => {
                 if dark {
-                    Color::rgba(0.28, 0.28, 0.28, 0.35)
+                    Color::rgba(0.18, 0.18, 0.20, 0.65)
                 } else {
-                    Color::rgba(0.55, 0.55, 0.55, 0.22)
+                    Color::rgba(0.92, 0.92, 0.94, 0.70)
                 }
             }
             ConnStatus::Error => {
                 if dark {
-                    Color::rgba(0.70, 0.15, 0.15, 0.50)
+                    Color::rgba(0.24, 0.12, 0.12, 0.65)
                 } else {
-                    Color::rgba(0.94, 0.27, 0.27, 0.22)
+                    Color::rgba(0.98, 0.90, 0.90, 0.70)
                 }
             }
         }
@@ -278,6 +274,7 @@ pub fn render() -> impl Piece {
     // with_animation ambient doesn't reach the turn-end layout (the snap-to-circle).
     .animation(Animation::ease_out(220))
     .on_tap(move || {
+        crate::shared::haptics::tick();
         crate::shared::nslog::nslog("[cover] status capsule tap: open");
         state
             .show_network_modal
@@ -301,11 +298,33 @@ pub fn render() -> impl Piece {
                 );
                 ev.setTag(tag);
                 ev.setFrame(view.bounds());
-                ev.setAutoresizingMask(objc2_ui_kit::UIViewAutoresizing(
-                    objc2_ui_kit::UIViewAutoresizing::FlexibleWidth.0
-                        | objc2_ui_kit::UIViewAutoresizing::FlexibleHeight.0,
-                ));
                 ev.setUserInteractionEnabled(false);
+
+                // Insert into hierarchy FIRST so constraints have common ancestor
+                view.insertSubview_atIndex(&ev, 0);
+
+                let _: () = unsafe { objc2::msg_send![&*ev, setTranslatesAutoresizingMaskIntoConstraints: false] };
+                unsafe {
+                    let leading: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, leadingAnchor];
+                    let v_leading: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, leadingAnchor];
+                    let c1: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*leading, constraintEqualToAnchor: &*v_leading];
+                    let _: () = objc2::msg_send![&*c1, setActive: true];
+
+                    let trailing: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, trailingAnchor];
+                    let v_trailing: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, trailingAnchor];
+                    let c2: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*trailing, constraintEqualToAnchor: &*v_trailing];
+                    let _: () = objc2::msg_send![&*c2, setActive: true];
+
+                    let top: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, topAnchor];
+                    let v_top: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, topAnchor];
+                    let c3: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*top, constraintEqualToAnchor: &*v_top];
+                    let _: () = objc2::msg_send![&*c3, setActive: true];
+
+                    let bottom: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*ev, bottomAnchor];
+                    let v_bottom: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*view, bottomAnchor];
+                    let c4: objc2::rc::Retained<objc2::runtime::AnyObject> = objc2::msg_send![&*bottom, constraintEqualToAnchor: &*v_bottom];
+                    let _: () = objc2::msg_send![&*c4, setActive: true];
+                }
 
                 let ev_layer = ev.layer();
                 ev_layer.setCornerRadius(12.5);
@@ -313,17 +332,22 @@ pub fn render() -> impl Piece {
                 ev.setClipsToBounds(true);
 
                 // Specular liquid glass highlight border (bubble rim)
-                let rim_color = objc2_ui_kit::UIColor::colorWithWhite_alpha(1.0, 0.25);
+                let rim_color = if day::dark_mode() {
+                    objc2_ui_kit::UIColor::colorWithWhite_alpha(1.0, 0.18)
+                } else {
+                    objc2_ui_kit::UIColor::colorWithWhite_alpha(0.0, 0.10)
+                };
                 let cg_rim = unsafe { rim_color.CGColor() };
                 ev_layer.setBorderColor(Some(&*cg_rim));
                 ev_layer.setBorderWidth(0.5);
 
                 let view_layer = view.layer();
                 view_layer.setCornerRadius(12.5);
-                view_layer.setMasksToBounds(true);
-                view.setClipsToBounds(true);
-
-                view.insertSubview_atIndex(&ev, 0);
+                view_layer.setShadowColor(Some(&*unsafe { objc2_ui_kit::UIColor::blackColor().CGColor() }));
+                view_layer.setShadowOpacity(0.12);
+                view_layer.setShadowOffset(objc2_core_foundation::CGSize::new(0.0, 2.0));
+                view_layer.setShadowRadius(4.0);
+                view_layer.setMasksToBounds(false);
             }
         })
     };
