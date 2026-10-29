@@ -47,12 +47,12 @@ pub fn page_overlay() -> impl Piece {
         btn.uikit(move |view, _class, mtm| {
             // Keep full bleed layout
             view.setTag(day_uikit::ANNOTATION_TAG);
-            if let Some(parent) = unsafe { view.superview() } {
+            if let Some(parent) = view.superview() {
                 parent.setTag(day_uikit::ANNOTATION_TAG);
             }
 
             // Sync with actual window safe-area top
-            if let Some(win) = unsafe { view.window() } {
+            if let Some(win) = view.window() {
                 let top = win.safeAreaInsets().top as f64;
                 if top > 0.0 {
                     top_setter.set(top + 6.0);
@@ -82,9 +82,7 @@ pub fn page_overlay() -> impl Piece {
                 view_layer.setCornerRadius(19.0);
                 view_layer.setMasksToBounds(true);
 
-                unsafe {
-                    view.setBackgroundColor(None);
-                }
+                view.setBackgroundColor(None);
 
                 view.insertSubview_atIndex(&effect_view, 0);
                 view.setClipsToBounds(true);
@@ -182,7 +180,7 @@ pub fn render() -> impl Piece {
     .background(move || {
         #[cfg(target_os = "ios")]
         {
-            Color::TRANSPARENT
+            Color::rgba(0.0, 0.0, 0.0, 0.0)
         }
         #[cfg(not(target_os = "ios"))]
         {
