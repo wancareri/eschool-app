@@ -92,3 +92,19 @@ day-spec = { git = "https://github.com/wancareri/day.git" }
 
 [workspace]
 members = [".", "crates/eschool-api"]
+
+[patch."https://github.com/wancareri/day.git"]
+day = { path = "../day/crates/day" }
+day-build = { path = "../day/crates/day-build" }
+day-core = { path = "../day/crates/day-core" }
+day-mock = { path = "../day/crates/day-mock" }
+day-part-clipboard = { path = "../day/parts/day-part-clipboard" }
+day-piece-colorpicker = { path = "../day/pieces/day-piece-colorpicker" }
+day-piece-datetime = { path = "../day/pieces/day-piece-datetime" }
+day-piece-pullrefresh = { path = "../day/pieces/day-piece-pullrefresh" }
+day-piece-rating = { path = "../day/pieces/day-piece-rating" }
+day-piece-settings = { path = "../day/pieces/day-piece-settings" }
+day-piece-swiftui = { path = "../day/pieces/day-piece-swiftui" }
+day-piece-texteditor = { path = "../day/pieces/day-piece-texteditor" }
+day-spec = { path = "../day/crates/day-spec" }
+day-uikit = { path = "../day/toolkits/day-uikit" }

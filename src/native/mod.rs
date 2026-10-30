@@ -1,42 +1,33 @@
-mod common;
+use day::prelude::*;
 
-#[cfg(any(feature = "appkit", feature = "uikit"))]
-mod ios;
+pub mod button {
+    use super::*;
+    pub fn render(title: impl Into<String>, _icon: impl Into<String>) -> AnyPiece {
+        day::prelude::button(title.into()).glass().any()
+    }
+}
 
-#[cfg(feature = "mdc")]
-mod android;
+pub mod card {
+    use super::*;
+    pub fn render(title: impl Into<String>, value: impl Into<String>, _icon: impl Into<String>) -> AnyPiece {
+        let t = title.into();
+        let v = value.into();
+        card(
+            column((
+                label(v).font(Font::Title),
+                label(t).font(Font::Caption),
+            ))
+            .spacing(4.0)
+            .padding(12.0),
+        )
+        .glass()
+        .any()
+    }
+}
 
-#[cfg(feature = "appkit")]
-mod macos;
-
-#[cfg(feature = "xaml")]
-mod windows;
-
-#[cfg(feature = "gtk")]
-mod linux;
-
-#[cfg(feature = "gtk")]
-mod bsd;
-
-// Re-export active platform's components directly
-#[cfg(feature = "uikit")]
-pub use ios::*;
-
-#[cfg(feature = "appkit")]
-pub use macos::*;
-
-#[cfg(feature = "mdc")]
-pub use android::*;
-
-#[cfg(feature = "xaml")]
-pub use windows::*;
-
-#[cfg(feature = "gtk")]
-pub use linux::*;
-
-#[cfg(all(target_os = "freebsd", feature = "gtk"))]
-pub use bsd::*;
-
-// Fallback
-#[cfg(not(any(feature = "appkit", feature = "uikit", feature = "mdc", feature = "xaml", feature = "gtk")))]
-pub use common::*;
+pub mod header {
+    use super::*;
+    pub fn render(title: impl Into<String>, subtitle: impl Into<String>) -> AnyPiece {
+        header(title.into(), subtitle.into()).glass().any()
+    }
+}

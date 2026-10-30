@@ -163,39 +163,6 @@ pub fn render() -> impl Piece {
         },
     );
 
-    #[cfg(any(feature = "appkit", feature = "uikit"))]
-    if day_piece_swiftui::support() == Support::Native {
-        let title_fn = move || {
-            if expanded.get() {
-                match state.island_label.get() {
-                    ConnStatus::Connecting => "Обновление…".to_string(),
-                    ConnStatus::Connected | ConnStatus::Idle => "Обновлено".to_string(),
-                    ConnStatus::Offline => "Оффлайн".to_string(),
-                    ConnStatus::Error => "Ошибка сети".to_string(),
-                }
-            } else {
-                String::new()
-            }
-        };
-        let icon_fn = move || match state.island_state.get() {
-            ConnStatus::Connecting => "spinner".to_string(),
-            ConnStatus::Connected | ConnStatus::Idle => "wifi".to_string(),
-            ConnStatus::Offline => "wifi.slash".to_string(),
-            ConnStatus::Error => "wifi.exclamationmark".to_string(),
-        };
-
-        return crate::swiftui::GlassStatusCapsuleView(title_fn, icon_fn)
-            .frame(180.0, 32.0)
-            .on_tap(move || {
-                crate::shared::haptics::tick();
-                crate::shared::nslog::nslog("[cover] status capsule tap: open");
-                state
-                    .show_network_modal
-                    .set(Some(String::from("net")));
-            })
-            .any();
-    }
-
     let status_icon = when(
         move || state.island_state.get() == ConnStatus::Offline,
         || vector(res::vectors::status_offline).frame(13.0, 13.0).tint(Color::hex(0x8E8E93)).any(),
@@ -282,9 +249,7 @@ pub fn render() -> impl Piece {
             }
         }
     })
-    // Half of the 25 pt box: CALayer does not clamp a larger radius, and 14 on
-    // 25 overshoots into a self-intersecting lens (the "eye").
-    .corner_radius(12.5)
+    .glass_radius(12.5)
     // Node-scoped fallback so the capsule's RESIZE animates even when the collapse's
     // with_animation ambient doesn't reach the turn-end layout (the snap-to-circle).
     .animation(Animation::ease_out(220))
