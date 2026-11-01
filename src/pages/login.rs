@@ -393,76 +393,50 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             }),
 
             // Prominent action button directly following the input fields
-            {
-                let btn = button(move || {
-                    if state.loading.get() {
-                        "Вход в систему…"
-                    } else if step.get() == 0 {
-                        "Продолжить"
-                    } else {
-                        "Войти"
-                    }
-                })
-                .glass()
-                .frame(0.0, 50.0)
-                .grow_w()
-                .corner_radius(25.0)
-                .action(move || {
-                    if state.loading.get() { return; }
-                    let u = username.get_untracked();
-                    let p = password.get_untracked();
-                    let r = remember.get_untracked();
+            button(move || {
+                if state.loading.get() {
+                    "Вход в систему…"
+                } else if step.get() == 0 {
+                    "Продолжить"
+                } else {
+                    "Войти"
+                }
+            })
+            .glass()
+            .frame(0.0, 50.0)
+            .grow_w()
+            .corner_radius(25.0)
+            .action(move || {
+                if state.loading.get() { return; }
+                let u = username.get_untracked();
+                let p = password.get_untracked();
+                let r = remember.get_untracked();
 
-                    if step.get() == 0 {
-                        if u.trim().is_empty() {
-                            error_local.set("Введите имя пользователя".into());
-                        } else {
-                            error_local.set(String::new());
-                            state.error_msg.set(String::new());
-                            crate::shared::haptics::tick();
-                            password_focused.set(true);
-                            with_animation(AnimSpec::ease_out(250), move || step.set(1));
-                        }
+                if step.get() == 0 {
+                    if u.trim().is_empty() {
+                        error_local.set("Введите имя пользователя".into());
                     } else {
-                        if p.is_empty() {
-                            error_local.set("Введите пароль".into());
-                            return;
-                        }
                         error_local.set(String::new());
                         state.error_msg.set(String::new());
-                        crate::shared::keyboard::dismiss();
-                        crate::shared::haptics::pop();
-                        features::auth::login(state, &u, &p, r);
+                        crate::shared::haptics::tick();
+                        password_focused.set(true);
+                        with_animation(AnimSpec::ease_out(250), move || step.set(1));
                     }
-                })
-                .id("login-btn")
-                .log_pos("Auth:ActionButton")
-                .padding(Insets { top: 8.0, leading: 20.0, bottom: 16.0, trailing: 20.0 });
-
-                #[cfg(target_os = "ios")]
-                let btn = {
-                    use day_uikit::UiKitExt;
-                    btn.uikit(|view, _class, mtm| {
-                        if let Some(btn) = view.downcast_ref::<objc2_ui_kit::UIButton>() {
-                            let config = objc2_ui_kit::UIButtonConfiguration::plainButtonConfiguration(mtm);
-                            let bg = objc2_ui_kit::UIBackgroundConfiguration::clearConfiguration(mtm);
-                            let blur = objc2_ui_kit::UIBlurEffect::effectWithStyle(
-                                objc2_ui_kit::UIBlurEffectStyle::SystemUltraThinMaterial,
-                                mtm,
-                            );
-                            bg.setVisualEffect(Some(&blur));
-                            bg.setBackgroundColor(Some(&objc2_ui_kit::UIColor::colorWithWhite_alpha(1.0, 0.15)));
-                            bg.setCornerRadius(25.0);
-                            config.setBackground(&bg);
-                            config.setCornerStyle(objc2_ui_kit::UIButtonConfigurationCornerStyle::Capsule);
-                            config.setBaseForegroundColor(Some(&objc2_ui_kit::UIColor::whiteColor()));
-                            btn.setConfiguration(Some(&config));
-                        }
-                    })
-                };
-
-                btn
-            },
+                } else {
+                    if p.is_empty() {
+                        error_local.set("Введите пароль".into());
+                        return;
+                    }
+                    error_local.set(String::new());
+                    state.error_msg.set(String::new());
+                    crate::shared::keyboard::dismiss();
+                    crate::shared::haptics::pop();
+                    features::auth::login(state, &u, &p, r);
+                }
+            })
+            .id("login-btn")
+            .log_pos("Auth:ActionButton")
+            .padding(Insets { top: 8.0, leading: 20.0, bottom: 16.0, trailing: 20.0 }),
 
             when(
                 move || kb_h.get() > 0.0,
