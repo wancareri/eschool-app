@@ -397,8 +397,9 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
         )
         .on_tap(move || {
             crate::shared::keyboard::dismiss();
-        })
-        .grow(),
+        }),
+
+        spacer().grow(),
 
         // Prominent action button pinned at bottom, lifts above keyboard
         button(move || {
@@ -589,8 +590,9 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
     )
     .on_tap(move || {
         crate::shared::keyboard::dismiss();
-    })
-    .grow(),
+    }),
+
+    spacer().grow(),
 
     button(move || {
         if state.loading.get() {
