@@ -182,19 +182,32 @@ pub fn parse_attachments(raw_json: &str) -> Vec<LessonAttachment> {
 }
 
 pub fn download_to_path(token: &str, file_url: &str, dest_path: &Path) -> Result<String, String> {
-    if !file_url.starts_with("https://diary.e-schools.by/") && !file_url.starts_with('/') {
-        return Err(format!("Disallowed external URL: {file_url}"));
-    }
+    let full_url = if file_url.starts_with("http://") || file_url.starts_with("https://") {
+        file_url.to_string()
+    } else if file_url.starts_with('/') {
+        format!("https://diary.e-schools.by{file_url}")
+    } else {
+        format!("https://diary.e-schools.by/{file_url}")
+    };
+
+    crate::shared::nslog::nslog(&format!("[Attachments] Downloading: {full_url} -> {:?}", dest_path));
 
     if let Some(parent) = dest_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
 
-    let client = eschool_api::client::blocking::build_client(token);
-    let resp = client
-        .get(file_url)
-        .send()
-        .map_err(|e| format!("HTTP send error: {e}"))?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .map_err(|e| format!("Client build error: {e}"))?;
+
+    let mut req = client.get(&full_url);
+    if !token.is_empty() && (full_url.contains("e-schools.by") || full_url.contains("schools.by")) {
+        req = req.header(reqwest::header::AUTHORIZATION, token);
+    }
+
+    let resp = req.send().map_err(|e| format!("HTTP send error: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!("Download returned HTTP {}", resp.status()));
@@ -202,9 +215,11 @@ pub fn download_to_path(token: &str, file_url: &str, dest_path: &Path) -> Result
 
     // Limit download size to max 100 MB to prevent disk exhaustion
     use std::io::Read;
-    let mut file = std::fs::File::create(dest_path).map_err(|e| format!("File create error: {e}"))?;
+    let mut file = std::fs::File::create(dest_path).map_err(|e| format!("File create error ({:?}): {e}", dest_path))?;
     let mut limited_reader = resp.take(100 * 1024 * 1024);
-    std::io::copy(&mut limited_reader, &mut file).map_err(|e| format!("File write error: {e}"))?;
+    let bytes_copied = std::io::copy(&mut limited_reader, &mut file).map_err(|e| format!("File write error: {e}"))?;
+
+    crate::shared::nslog::nslog(&format!("[Attachments] Successfully saved {bytes_copied} bytes to {:?}", dest_path));
 
     dest_path
         .to_str()
@@ -213,9 +228,24 @@ pub fn download_to_path(token: &str, file_url: &str, dest_path: &Path) -> Result
 }
 
 pub fn get_local_path_for_attachment(att: &LessonAttachment) -> PathBuf {
-    let temp_dir = std::env::temp_dir().join("eschool_attachments");
-    let safe_name = sanitize_filename(&att.title);
-    temp_dir.join(&safe_name)
+    #[cfg(target_os = "ios")]
+    let base_dir = {
+        let ns_str = objc2_foundation::NSTemporaryDirectory();
+        PathBuf::from(ns_str.to_string()).join("eschool_attachments")
+    };
+    #[cfg(not(target_os = "ios"))]
+    let base_dir = std::env::temp_dir().join("eschool_attachments");
+
+    let mut safe_name = sanitize_filename(&att.title);
+    if !safe_name.contains('.') {
+        if let Some(ext) = Path::new(&att.url).extension().and_then(|e| e.to_str()) {
+            let clean_ext: String = ext.chars().take_while(|c| c.is_alphanumeric()).collect();
+            if !clean_ext.is_empty() {
+                safe_name = format!("{safe_name}.{clean_ext}");
+            }
+        }
+    }
+    base_dir.join(&safe_name)
 }
 
 pub fn is_attachment_downloaded(att: &LessonAttachment) -> bool {
