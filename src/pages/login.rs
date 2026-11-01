@@ -395,13 +395,12 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             ))
             .grow_w()
         )
+        .grow()
         .on_tap(move || {
             crate::shared::keyboard::dismiss();
         }),
 
-        spacer().grow(),
-
-        // Telegram-style solid rounded action button pinned at bottom, lifts above keyboard
+        // Telegram-style solid rounded action button pinned at bottom, lifts directly above keyboard
         button(move || {
             if state.loading.get() {
                 "Вход в систему…"
@@ -443,12 +442,13 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
         })
         .id("login-btn")
         .log_pos("Auth:ActionButton")
-        .padding(Insets { top: 8.0, leading: 24.0, bottom: 16.0, trailing: 24.0 }),
+        .padding(Insets { top: 6.0, leading: 24.0, bottom: 8.0, trailing: 24.0 }),
 
         when(
             move || kb_h.get() > 0.0,
-            move || spacer().frame(0.0, kb_h.get() + 8.0).any(),
+            move || spacer().height(kb_h.get()).any(),
         )
+        .otherwise(|| spacer().height(8.0).any())
         .animation(AnimSpec::ease_out(250)),
     ))
     .grow()
@@ -586,11 +586,10 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
         ))
         .grow_w()
     )
+    .grow()
     .on_tap(move || {
         crate::shared::keyboard::dismiss();
     }),
-
-    spacer().grow(),
 
     button(move || {
         if state.loading.get() {
@@ -644,8 +643,9 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
 
     when(
         move || kb_h.get() > 0.0,
-        move || spacer().frame(0.0, kb_h.get() + 8.0).any(),
+        move || spacer().height(kb_h.get()).any(),
     )
+    .otherwise(|| spacer().height(8.0).any())
     .animation(AnimSpec::ease_out(250)),
 ))
 .grow()
