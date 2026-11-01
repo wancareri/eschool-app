@@ -401,7 +401,7 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
 
         spacer().grow(),
 
-        // Prominent action button pinned at bottom, lifts above keyboard
+        // Pure native liquid glass action button pinned at bottom, lifts above keyboard
         button(move || {
             if state.loading.get() {
                 "Вход в систему…"
@@ -411,10 +411,8 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                 "Войти"
             }
         })
-        .prominent()
-        .frame(0.0, 50.0)
+        .glass()
         .grow_w()
-        .corner_radius(25.0)
         .action(move || {
             if state.loading.get() { return; }
             let u = username.get_untracked();
@@ -601,10 +599,8 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             "Создать пароль и войти"
         }
     })
-    .prominent()
-    .frame(0.0, 50.0)
+    .glass()
     .grow_w()
-    .corner_radius(25.0)
     .log_pos("Setup:SubmitButton")
     .action(move || {
         if state.loading.get() { return; }
