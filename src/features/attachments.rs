@@ -10,8 +10,22 @@ pub struct LessonAttachment {
     pub file_size: Option<String>,
 }
 
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+unsafe extern "C" {
+    fn eschool_quicklook_file(path: *const std::ffi::c_char);
+    fn eschool_share_file(path: *const std::ffi::c_char);
+    fn eschool_open_url(url: *const std::ffi::c_char);
+}
+
 pub fn native_quicklook(path: &str) {
     crate::shared::nslog::nslog(&format!("[Attachments] native_quicklook: {path}"));
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    {
+        if let Ok(c_path) = std::ffi::CString::new(path) {
+            unsafe { eschool_quicklook_file(c_path.as_ptr()) };
+            return;
+        }
+    }
     let p = path.to_string();
     day::task(async move {
         let _ = day::preview_file(p, None).await;
@@ -20,6 +34,13 @@ pub fn native_quicklook(path: &str) {
 
 pub fn native_share(path: &str) {
     crate::shared::nslog::nslog(&format!("[Attachments] native_share: {path}"));
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    {
+        if let Ok(c_path) = std::ffi::CString::new(path) {
+            unsafe { eschool_share_file(c_path.as_ptr()) };
+            return;
+        }
+    }
     let p = path.to_string();
     day::task(async move {
         let _ = day::share_file(p).await;
@@ -28,6 +49,13 @@ pub fn native_share(path: &str) {
 
 pub fn native_open_url(url: &str) {
     crate::shared::nslog::nslog(&format!("[Attachments] native_open_url: {url}"));
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    {
+        if let Ok(c_url) = std::ffi::CString::new(url) {
+            unsafe { eschool_open_url(c_url.as_ptr()) };
+            return;
+        }
+    }
     day::open_url(url);
 }
 
