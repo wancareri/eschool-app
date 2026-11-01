@@ -402,7 +402,7 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                     "Войти"
                 }
             })
-            .prominent()
+            .glass()
             .frame(0.0, 50.0)
             .grow_w()
             .corner_radius(25.0)
@@ -587,7 +587,7 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                     "Создать пароль и войти"
                 }
             })
-            .prominent()
+            .glass()
             .frame(0.0, 50.0)
             .grow_w()
             .corner_radius(25.0)
@@ -794,7 +794,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         "Сохранить новый пароль"
                     }
                 })
-                .prominent()
+                .glass()
                 .frame(0.0, 50.0)
                 .grow_w()
                 .corner_radius(25.0)

@@ -228,23 +228,23 @@ pub fn render() -> impl Piece {
         match state.island_state.get() {
             ConnStatus::Connecting | ConnStatus::Connected | ConnStatus::Idle => {
                 if dark {
-                    Color::rgba(0.12, 0.12, 0.14, 0.65)
+                    Color::rgba(1.0, 1.0, 1.0, 0.08)
                 } else {
-                    Color::rgba(1.0, 1.0, 1.0, 0.70)
+                    Color::rgba(1.0, 1.0, 1.0, 0.15)
                 }
             }
             ConnStatus::Offline => {
                 if dark {
-                    Color::rgba(0.18, 0.18, 0.20, 0.65)
+                    Color::rgba(0.8, 0.8, 0.8, 0.12)
                 } else {
-                    Color::rgba(0.92, 0.92, 0.94, 0.70)
+                    Color::rgba(0.5, 0.5, 0.5, 0.15)
                 }
             }
             ConnStatus::Error => {
                 if dark {
-                    Color::rgba(0.24, 0.12, 0.12, 0.65)
+                    Color::rgba(1.0, 0.2, 0.2, 0.18)
                 } else {
-                    Color::rgba(0.98, 0.90, 0.90, 0.70)
+                    Color::rgba(0.9, 0.1, 0.1, 0.15)
                 }
             }
         }
