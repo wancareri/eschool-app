@@ -181,10 +181,8 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
     let kb_h = crate::shared::keyboard::keyboard_height_signal();
 
     column((
-        scroll(
-            column((
-                debug_log_button(show_logs),
-                spacer().height(16.0),
+        debug_log_button(show_logs),
+        spacer().height(16.0),
 
                 // Greeting header — adapts between Step 0 and Step 1
                 when(
@@ -392,67 +390,70 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                     ))
                     .grow_w()
                 }),
+
+                spacer().grow(),
+
+                // Telegram-style solid rounded action button pinned at bottom, lifts directly above keyboard
+                button(move || {
+                    if state.loading.get() {
+                        "Вход в систему…"
+                    } else if step.get() == 0 {
+                        "Продолжить"
+                    } else {
+                        "Войти"
+                    }
+                })
+                .prominent()
+                .frame(0.0, 50.0)
+                .grow_w()
+                .action(move || {
+                    if state.loading.get() { return; }
+                    let u = username.get_untracked();
+                    let p = password.get_untracked();
+                    let r = remember.get_untracked();
+
+                    if step.get() == 0 {
+                        if u.trim().is_empty() {
+                            error_local.set("Введите имя пользователя".into());
+                        } else {
+                            error_local.set(String::new());
+                            state.error_msg.set(String::new());
+                            crate::shared::haptics::tick();
+                            password_focused.set(true);
+                            with_animation(AnimSpec::ease_out(250), move || step.set(1));
+                        }
+                    } else {
+                        if p.is_empty() {
+                            error_local.set("Введите пароль".into());
+                            return;
+                        }
+                        error_local.set(String::new());
+                        state.error_msg.set(String::new());
+                        crate::shared::keyboard::dismiss();
+                        crate::shared::haptics::pop();
+                        features::auth::login(state, &u, &p, r);
+                    }
+                })
+                .id("login-btn")
+                .log_pos("Auth:ActionButton")
+                .padding(Insets { top: 0.0, leading: 24.0, bottom: 0.0, trailing: 24.0 }),
+
+                when(
+                    move || kb_h.get() > 0.0,
+                    move || {
+                        let safe_b = crate::shared::keyboard::get_safe_area_bottom();
+                        let lift = (kb_h.get() - safe_b).max(0.0) + 8.0;
+                        spacer().height(lift).any()
+                    },
+                )
+                .otherwise(|| spacer().height(16.0).any())
+                .animation(AnimSpec::ease_out(250)),
             ))
-            .grow_w()
-        )
-        .grow()
-        .on_tap(move || {
-            crate::shared::keyboard::dismiss();
-        }),
-
-        // Telegram-style solid rounded action button pinned at bottom, lifts directly above keyboard
-        button(move || {
-            if state.loading.get() {
-                "Вход в систему…"
-            } else if step.get() == 0 {
-                "Продолжить"
-            } else {
-                "Войти"
-            }
-        })
-        .prominent()
-        .grow_w()
-        .action(move || {
-            if state.loading.get() { return; }
-            let u = username.get_untracked();
-            let p = password.get_untracked();
-            let r = remember.get_untracked();
-
-            if step.get() == 0 {
-                if u.trim().is_empty() {
-                    error_local.set("Введите имя пользователя".into());
-                } else {
-                    error_local.set(String::new());
-                    state.error_msg.set(String::new());
-                    crate::shared::haptics::tick();
-                    password_focused.set(true);
-                    with_animation(AnimSpec::ease_out(250), move || step.set(1));
-                }
-            } else {
-                if p.is_empty() {
-                    error_local.set("Введите пароль".into());
-                    return;
-                }
-                error_local.set(String::new());
-                state.error_msg.set(String::new());
+            .grow()
+            .on_tap(move || {
                 crate::shared::keyboard::dismiss();
-                crate::shared::haptics::pop();
-                features::auth::login(state, &u, &p, r);
-            }
-        })
-        .id("login-btn")
-        .log_pos("Auth:ActionButton")
-        .padding(Insets { top: 6.0, leading: 24.0, bottom: 8.0, trailing: 24.0 }),
-
-        when(
-            move || kb_h.get() > 0.0,
-            move || spacer().height(kb_h.get()).any(),
-        )
-        .otherwise(|| spacer().height(8.0).any())
-        .animation(AnimSpec::ease_out(250)),
-    ))
-    .grow()
-}
+            })
+        }
 
 fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
     let new_password = Signal::new(String::new());
@@ -463,10 +464,8 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
     let kb_h = crate::shared::keyboard::keyboard_height_signal();
 
     column((
-        scroll(
-            column((
-            debug_log_button(show_logs),
-            spacer().height(16.0),
+        debug_log_button(show_logs),
+        spacer().height(16.0),
 
             column((
                 label("Создание постоянного пароля")
@@ -583,72 +582,75 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             .corner_radius(16.0)
             .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
             .grow_w(),
-        ))
+
+        spacer().grow(),
+
+        button(move || {
+            if state.loading.get() {
+                "Сохранение…"
+            } else {
+                "Создать пароль и войти"
+            }
+        })
+        .prominent()
+        .frame(0.0, 50.0)
         .grow_w()
-    )
+        .log_pos("Setup:SubmitButton")
+        .action(move || {
+            if state.loading.get() { return; }
+            let np = new_password.get_untracked();
+            let cp = confirm_password.get_untracked();
+            let r = remember.get_untracked();
+
+            if np.is_empty() {
+                error_local.set("Введите новый пароль".into());
+                return;
+            }
+            if np != cp {
+                error_local.set("Пароли не совпадают. Проверьте правильность ввода".into());
+                return;
+            }
+            if let Err(e) = eschool_api::auth::validate_parent_password(&np) {
+                error_local.set(e);
+                return;
+            }
+
+            if let Some((puuid, old_pwd, uname)) = state.setup_temp_password_data.get_untracked() {
+                error_local.set(String::new());
+                state.error_msg.set(String::new());
+                crate::shared::keyboard::dismiss();
+                crate::shared::haptics::pop();
+                features::auth::complete_parent_new_password(state, &puuid, &old_pwd, &np, &uname, r);
+            }
+        })
+        .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 })
+        .grow_w(),
+
+        button("← Назад к входу")
+            .log_pos("Setup:BackButton")
+            .action(move || {
+                crate::shared::haptics::tick();
+                crate::shared::keyboard::dismiss();
+                state.setup_new_password_active.set(false);
+                state.setup_temp_password_data.set(None);
+            })
+            .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 }),
+
+        when(
+            move || kb_h.get() > 0.0,
+            move || {
+                let safe_b = crate::shared::keyboard::get_safe_area_bottom();
+                let lift = (kb_h.get() - safe_b).max(0.0) + 8.0;
+                spacer().height(lift).any()
+            },
+        )
+        .otherwise(|| spacer().height(16.0).any())
+        .animation(AnimSpec::ease_out(250)),
+    ))
     .grow()
     .on_tap(move || {
         crate::shared::keyboard::dismiss();
-    }),
-
-    button(move || {
-        if state.loading.get() {
-            "Сохранение…"
-        } else {
-            "Создать пароль и войти"
-        }
     })
-    .prominent()
-    .grow_w()
-    .log_pos("Setup:SubmitButton")
-    .action(move || {
-        if state.loading.get() { return; }
-        let np = new_password.get_untracked();
-        let cp = confirm_password.get_untracked();
-        let r = remember.get_untracked();
-
-        if np.is_empty() {
-            error_local.set("Введите новый пароль".into());
-            return;
-        }
-        if np != cp {
-            error_local.set("Пароли не совпадают. Проверьте правильность ввода".into());
-            return;
-        }
-        if let Err(e) = eschool_api::auth::validate_parent_password(&np) {
-            error_local.set(e);
-            return;
-        }
-
-        if let Some((puuid, old_pwd, uname)) = state.setup_temp_password_data.get_untracked() {
-            error_local.set(String::new());
-            state.error_msg.set(String::new());
-            crate::shared::keyboard::dismiss();
-            crate::shared::haptics::pop();
-            features::auth::complete_parent_new_password(state, &puuid, &old_pwd, &np, &uname, r);
-        }
-    })
-    .padding(Insets { top: 8.0, leading: 24.0, bottom: 8.0, trailing: 24.0 })
-    .grow_w(),
-
-    button("← Назад к входу")
-        .log_pos("Setup:BackButton")
-        .action(move || {
-            crate::shared::haptics::tick();
-            crate::shared::keyboard::dismiss();
-            state.setup_new_password_active.set(false);
-            state.setup_temp_password_data.set(None);
-        })
-        .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 }),
-
-    when(
-        move || kb_h.get() > 0.0,
-        move || spacer().height(kb_h.get()).any(),
-    )
-    .otherwise(|| spacer().height(8.0).any())
-    .animation(AnimSpec::ease_out(250)),
-))
-.grow()
 }
 
 fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {

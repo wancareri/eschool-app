@@ -20,6 +20,23 @@ pub fn get_keyboard_height() -> f64 {
     keyboard_height_signal().get()
 }
 
+#[allow(deprecated)]
+pub fn get_safe_area_bottom() -> f64 {
+    #[cfg(target_os = "ios")]
+    {
+        use objc2::MainThreadMarker;
+        use objc2_ui_kit::UIApplication;
+        if let Some(mtm) = MainThreadMarker::new() {
+            let app = UIApplication::sharedApplication(mtm);
+            if let Some(window) = app.keyWindow() {
+                let insets = unsafe { window.safeAreaInsets() };
+                return insets.bottom as f64;
+            }
+        }
+    }
+    0.0
+}
+
 pub fn set_keyboard_height(h: f64) {
     let sig = keyboard_height_signal();
     if (sig.get() - h).abs() > 0.5 {
