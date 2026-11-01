@@ -401,7 +401,7 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
 
         spacer().grow(),
 
-        // Pure native liquid glass action button pinned at bottom, lifts above keyboard
+        // Telegram-style solid rounded action button pinned at bottom, lifts above keyboard
         button(move || {
             if state.loading.get() {
                 "Вход в систему…"
@@ -411,7 +411,7 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                 "Войти"
             }
         })
-        .glass()
+        .prominent()
         .grow_w()
         .action(move || {
             if state.loading.get() { return; }
@@ -443,7 +443,7 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
         })
         .id("login-btn")
         .log_pos("Auth:ActionButton")
-        .padding(Insets { top: 8.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
+        .padding(Insets { top: 8.0, leading: 24.0, bottom: 16.0, trailing: 24.0 }),
 
         when(
             move || kb_h.get() > 0.0,
@@ -599,7 +599,7 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             "Создать пароль и войти"
         }
     })
-    .glass()
+    .prominent()
     .grow_w()
     .log_pos("Setup:SubmitButton")
     .action(move || {
@@ -629,7 +629,7 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             features::auth::complete_parent_new_password(state, &puuid, &old_pwd, &np, &uname, r);
         }
     })
-    .padding(Insets { top: 8.0, leading: 20.0, bottom: 4.0, trailing: 20.0 })
+    .padding(Insets { top: 8.0, leading: 24.0, bottom: 8.0, trailing: 24.0 })
     .grow_w(),
 
     button("← Назад к входу")
