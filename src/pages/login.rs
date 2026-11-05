@@ -172,24 +172,12 @@ fn profile_view(state: AppState) -> impl Piece {
 }
 
 fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
-    let step = Signal::new(0u8); // 0 = username, 1 = password
     let username = Signal::new(String::new());
     let password = Signal::new(String::new());
     let password_focused = Signal::new(false);
     let remember = Signal::new(true);
     let error_local = Signal::new(String::new());
     let kb_h = crate::shared::keyboard::keyboard_height_signal();
-
-    // Auto-advance to Step 1 when AutoFill populates password on Step 0
-    watch(
-        move || password.get(),
-        move |pwd, _| {
-            if step.get_untracked() == 0 && !pwd.is_empty() {
-                crate::shared::haptics::tick();
-                with_animation(AnimSpec::ease_out(250), move || step.set(1));
-            }
-        },
-    );
 
     column((
         debug_log_button(show_logs),
@@ -203,252 +191,118 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
         )),
         spacer().height(16.0),
 
-        // Greeting header — adapts between Step 0 and Step 1
-                when(
-                    move || step.get() == 0,
-                    || column((
-                        label("Вход в аккаунт")
-                            .font(Font::Title)
-                            .bold()
+        // Greeting header
+        column((
+            label("Вход в аккаунт")
+                .font(Font::Title)
+                .bold()
+                .align(TextAlign::Center),
+            label("Введите логин ученика или пригласительный код родителя для доступа к дневнику")
+                .font(Font::Subheadline)
+                .secondary()
+                .align(TextAlign::Center)
+                .padding(Insets { top: 6.0, leading: 32.0, bottom: 20.0, trailing: 32.0 }),
+        ))
+        .grow_w(),
+
+        // Error message card
+        when(
+            move || {
+                let local_err = error_local.get();
+                let state_err = state.error_msg.get();
+                let is_loading = state.loading.get();
+                (!local_err.is_empty() || !state_err.is_empty()) && !is_loading
+            },
+            move || {
+                let local_err = error_local.get();
+                let state_err = state.error_msg.get();
+                let msg = if !local_err.is_empty() { local_err } else { state_err };
+                let is_network = msg.contains("error sending request")
+                    || msg.contains("Не удалось подключиться")
+                    || msg.contains("таймаут")
+                    || msg.contains("dns error");
+
+                if is_network {
+                    column((
+                        label("Не удалось подключиться к серверу")
+                            .font(Font::Headline)
+                            .color(colors::ERROR)
                             .align(TextAlign::Center),
-                        label("Введите логин ученика или пригласительный код родителя для доступа к дневнику")
+                        label("Проверьте интернет или отключите VPN/прокси")
                             .font(Font::Subheadline)
                             .secondary()
-                            .align(TextAlign::Center)
-                            .padding(Insets { top: 6.0, leading: 32.0, bottom: 20.0, trailing: 32.0 }),
-                    ))
-                    .grow_w(),
-                )
-                .otherwise(move || {
-                    let u = username.get();
-                    column((
-                        label("Введите пароль")
-                            .font(Font::Title)
-                            .bold()
                             .align(TextAlign::Center),
-                        label(move || {
-                            if u.trim().is_empty() {
-                                "Введите пароль для входа".into()
-                            } else {
-                                format!("Аккаунт: {}", u.trim())
-                            }
-                        })
-                        .font(Font::Subheadline)
-                        .color(move || Color::hex(state.accent_color.get()))
+                        label(msg)
+                            .font(Font::Caption2)
+                            .color(colors::ERROR.with_alpha(0.7))
+                            .align(TextAlign::Center),
+                    ))
+                    .spacing(4.0)
+                    .padding(Insets { top: 10.0, leading: 14.0, bottom: 10.0, trailing: 14.0 })
+                    .background(colors::ERROR.with_alpha(0.12))
+                    .corner_radius(12.0)
+                    .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
+                    .grow_w()
+                    .any()
+                } else {
+                    label(msg)
+                        .font(Font::Callout)
+                        .color(colors::ERROR)
                         .align(TextAlign::Center)
-                        .padding(Insets { top: 6.0, leading: 32.0, bottom: 20.0, trailing: 32.0 }),
-                    ))
-                    .grow_w()
-                }),
-
-                // Error message card
-                when(
-                    move || {
-                        let local_err = error_local.get();
-                        let state_err = state.error_msg.get();
-                        let is_loading = state.loading.get();
-                        (!local_err.is_empty() || !state_err.is_empty()) && !is_loading
-                    },
-                    move || {
-                        let local_err = error_local.get();
-                        let state_err = state.error_msg.get();
-                        let msg = if !local_err.is_empty() { local_err } else { state_err };
-                        let is_network = msg.contains("error sending request")
-                            || msg.contains("Не удалось подключиться")
-                            || msg.contains("таймаут")
-                            || msg.contains("dns error");
-
-                        if is_network {
-                            column((
-                                label("Не удалось подключиться к серверу")
-                                    .font(Font::Headline)
-                                    .color(colors::ERROR)
-                                    .align(TextAlign::Center),
-                                label("Проверьте интернет или отключите VPN/прокси")
-                                    .font(Font::Subheadline)
-                                    .secondary()
-                                    .align(TextAlign::Center),
-                                label(msg)
-                                    .font(Font::Caption2)
-                                    .color(colors::ERROR.with_alpha(0.7))
-                                    .align(TextAlign::Center),
-                            ))
-                            .spacing(4.0)
-                            .padding(Insets { top: 10.0, leading: 14.0, bottom: 10.0, trailing: 14.0 })
-                            .background(colors::ERROR.with_alpha(0.12))
-                            .corner_radius(12.0)
-                            .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
-                            .grow_w()
-                            .any()
-                        } else {
-                            label(msg)
-                                .font(Font::Callout)
-                                .color(colors::ERROR)
-                                .align(TextAlign::Center)
-                                .padding(Insets { top: 8.0, leading: 14.0, bottom: 8.0, trailing: 14.0 })
-                                .background(colors::ERROR.with_alpha(0.12))
-                                .corner_radius(12.0)
-                                .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
-                                .grow_w()
-                                .any()
-                        }
-                    },
-                ),
-
-                // Step 0: Username entry card
-                when(
-                    move || step.get() == 0,
-                    move || {
-                        column((
-                            column((
-                                label("ЛОГИН ИЛИ ПРИГЛАСИТЕЛЬНЫЙ КОД")
-                                    .font(Font::Caption2)
-                                    .bold()
-                                    .secondary(),
-                                text_field(username)
-                                    .frame(0.0, 44.0)
-                                    .grow_w()
-                                    .log_pos("Auth:UsernameField")
-                                    .on_submit(move || {
-                                        let u = username.get_untracked();
-                                        if u.trim().is_empty() {
-                                            error_local.set("Введите имя пользователя".into());
-                                        } else {
-                                            error_local.set(String::new());
-                                            state.error_msg.set(String::new());
-                                            crate::shared::haptics::tick();
-                                            password_focused.set(true);
-                                            with_animation(AnimSpec::ease_out(250), move || step.set(1));
-                                        }
-                                    }),
-                            ))
-                            .spacing(4.0)
-                            .padding(Insets { top: 10.0, leading: 16.0, bottom: 10.0, trailing: 16.0 })
-                            .background(move || {
-                                if day::dark_mode() {
-                                    Color::rgba(1.0, 1.0, 1.0, 0.07)
-                                } else {
-                                    Color::rgba(0.0, 0.0, 0.0, 0.04)
-                                }
-                            })
-                            .corner_radius(16.0)
-                            .padding(Insets { top: 0.0, leading: 20.0, bottom: 16.0, trailing: 20.0 })
-                            .grow_w(),
-
-                            // Remember session toggle
-                            row((
-                                label("Сохранить сессию на устройстве")
-                                    .font(Font::Subheadline)
-                                    .grow(),
-                                toggle(remember),
-                            ))
-                            .align(VAlign::Center)
-                            .padding(Insets { top: 0.0, leading: 24.0, bottom: 20.0, trailing: 24.0 })
-                            .grow_w(),
-
-                            // Hidden password field mounted in hierarchy so iOS AutoFill sees both
-                            // username & password credentials on Step 0 and offers Passwords Keychain picker
-                            text_field(password)
-                                .secure()
-                                .frame(0.0, 0.0)
-                                .opacity(0.0),
-                        ))
+                        .padding(Insets { top: 8.0, leading: 14.0, bottom: 8.0, trailing: 14.0 })
+                        .background(colors::ERROR.with_alpha(0.12))
+                        .corner_radius(12.0)
+                        .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
                         .grow_w()
-                    },
-                )
-                // Step 1: Password entry card
-                .otherwise(move || {
-                    column((
-                        column((
-                            label("ПАРОЛЬ")
-                                .font(Font::Caption2)
-                                .bold()
-                                .secondary(),
-                            text_field(password)
-                                .secure()
-                                .focused(password_focused)
-                                .frame(0.0, 44.0)
-                                .grow_w()
-                                .id("password-field")
-                                .log_pos("Auth:PasswordField")
-                                .on_submit(move || {
-                                    if state.loading.get() { return; }
-                                    let u = username.get_untracked();
-                                    let p = password.get_untracked();
-                                    let r = remember.get_untracked();
-                                    if p.is_empty() {
-                                        error_local.set("Введите пароль".into());
-                                        return;
-                                    }
-                                    error_local.set(String::new());
-                                    state.error_msg.set(String::new());
-                                    crate::shared::keyboard::dismiss();
-                                    crate::shared::haptics::pop();
-                                    features::auth::login(state, &u, &p, r);
-                                }),
-                        ))
-                        .spacing(4.0)
-                        .padding(Insets { top: 10.0, leading: 16.0, bottom: 10.0, trailing: 16.0 })
-                        .background(move || {
-                            if day::dark_mode() {
-                                Color::rgba(1.0, 1.0, 1.0, 0.07)
-                            } else {
-                                Color::rgba(0.0, 0.0, 0.0, 0.04)
-                            }
-                        })
-                        .corner_radius(16.0)
-                        .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-                        .grow_w(),
+                        .any()
+                }
+            },
+        ),
 
-                        // Back button to change login
-                        row((
-                            button("← Изменить логин")
-                                .action(move || {
-                                    crate::shared::haptics::tick();
-                                    error_local.set(String::new());
-                                    password_focused.set(false);
-                                    with_animation(AnimSpec::ease_out(250), move || step.set(0));
-                                }),
-                            spacer().grow(),
-                        ))
-                        .padding(Insets { top: 0.0, leading: 24.0, bottom: 20.0, trailing: 24.0 })
-                        .grow_w(),
-                    ))
+        // Unified login & password card: both fields are visible and in the hierarchy,
+        // allowing iOS AutoFill to offer Keychain credentials and dual-fill in a SINGLE Face ID scan!
+        column((
+            // Username field
+            column((
+                label("ЛОГИН ИЛИ ПРИГЛАСИТЕЛЬНЫЙ КОД")
+                    .font(Font::Caption2)
+                    .bold()
+                    .secondary(),
+                text_field(username)
+                    .frame(0.0, 44.0)
                     .grow_w()
-                }),
+                    .log_pos("Auth:UsernameField")
+                    .on_submit(move || {
+                        password_focused.set(true);
+                    }),
+            ))
+            .spacing(4.0)
+            .padding(Insets { top: 10.0, leading: 16.0, bottom: 8.0, trailing: 16.0 }),
 
-                spacer().grow(),
+            divider().padding(Insets { top: 0.0, leading: 16.0, bottom: 0.0, trailing: 16.0 }),
 
-                // Telegram-style solid rounded action button pinned at bottom, lifts directly above keyboard
-                button(move || {
-                    if state.loading.get() {
-                        "Вход в систему…"
-                    } else if step.get() == 0 {
-                        "Продолжить"
-                    } else {
-                        "Войти"
-                    }
-                })
-                .prominent()
-                .frame(0.0, 50.0)
-                .grow_w()
-                .action(move || {
-                    if state.loading.get() { return; }
-                    let u = username.get_untracked();
-                    let p = password.get_untracked();
-                    let r = remember.get_untracked();
-
-                    if step.get() == 0 {
+            // Password field
+            column((
+                label("ПАРОЛЬ")
+                    .font(Font::Caption2)
+                    .bold()
+                    .secondary(),
+                text_field(password)
+                    .secure()
+                    .focused(password_focused)
+                    .frame(0.0, 44.0)
+                    .grow_w()
+                    .id("password-field")
+                    .log_pos("Auth:PasswordField")
+                    .on_submit(move || {
+                        if state.loading.get() { return; }
+                        let u = username.get_untracked();
+                        let p = password.get_untracked();
+                        let r = remember.get_untracked();
                         if u.trim().is_empty() {
                             error_local.set("Введите имя пользователя".into());
-                        } else {
-                            error_local.set(String::new());
-                            state.error_msg.set(String::new());
-                            crate::shared::haptics::tick();
-                            password_focused.set(true);
-                            with_animation(AnimSpec::ease_out(250), move || step.set(1));
+                            return;
                         }
-                    } else {
                         if p.is_empty() {
                             error_local.set("Введите пароль".into());
                             return;
@@ -458,29 +312,87 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                         crate::shared::keyboard::dismiss();
                         crate::shared::haptics::pop();
                         features::auth::login(state, &u, &p, r);
-                    }
-                })
-                .id("login-btn")
-                .log_pos("Auth:ActionButton")
-                .padding(Insets { top: 0.0, leading: 24.0, bottom: 0.0, trailing: 24.0 }),
-
-                dyn_piece(
-                    move || {
-                        let h = kb_h.get();
-                        if h > 0.0 {
-                            let safe_b = crate::shared::keyboard::get_safe_area_bottom();
-                            (h - safe_b).max(0.0) + 8.0
-                        } else {
-                            16.0
-                        }
-                    },
-                    move |lift| spacer().height(lift).any(),
-                ),
+                    }),
             ))
-            .grow()
-            .on_tap(move || {
-                crate::shared::keyboard::dismiss();
-            })
+            .spacing(4.0)
+            .padding(Insets { top: 8.0, leading: 16.0, bottom: 10.0, trailing: 16.0 }),
+        ))
+        .background(move || {
+            if day::dark_mode() {
+                Color::rgba(1.0, 1.0, 1.0, 0.07)
+            } else {
+                Color::rgba(0.0, 0.0, 0.0, 0.04)
+            }
+        })
+        .corner_radius(16.0)
+        .padding(Insets { top: 0.0, leading: 20.0, bottom: 16.0, trailing: 20.0 })
+        .grow_w(),
+
+        // Remember session toggle
+        row((
+            label("Сохранить сессию на устройстве")
+                .font(Font::Subheadline)
+                .grow(),
+            toggle(remember),
+        ))
+        .align(VAlign::Center)
+        .padding(Insets { top: 0.0, leading: 24.0, bottom: 20.0, trailing: 24.0 })
+        .grow_w(),
+
+        spacer().grow(),
+
+        // Telegram-style solid rounded action button pinned at bottom, lifts directly above keyboard
+        button(move || {
+            if state.loading.get() {
+                "Вход в систему…"
+            } else {
+                "Войти"
+            }
+        })
+        .prominent()
+        .frame(0.0, 50.0)
+        .grow_w()
+        .action(move || {
+            if state.loading.get() { return; }
+            let u = username.get_untracked();
+            let p = password.get_untracked();
+            let r = remember.get_untracked();
+
+            if u.trim().is_empty() {
+                error_local.set("Введите имя пользователя".into());
+                return;
+            }
+            if p.is_empty() {
+                error_local.set("Введите пароль".into());
+                return;
+            }
+            error_local.set(String::new());
+            state.error_msg.set(String::new());
+            crate::shared::keyboard::dismiss();
+            crate::shared::haptics::pop();
+            features::auth::login(state, &u, &p, r);
+        })
+        .id("login-btn")
+        .log_pos("Auth:ActionButton")
+        .padding(Insets { top: 0.0, leading: 24.0, bottom: 0.0, trailing: 24.0 }),
+
+        dyn_piece(
+            move || {
+                let h = kb_h.get();
+                if h > 0.0 {
+                    let safe_b = crate::shared::keyboard::get_safe_area_bottom();
+                    (h - safe_b).max(0.0) + 14.0
+                } else {
+                    4.0
+                }
+            },
+            move |lift| spacer().height(lift).any(),
+        ),
+    ))
+    .grow()
+    .on_tap(move || {
+        crate::shared::keyboard::dismiss();
+    })
         }
 
 fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
@@ -669,9 +581,9 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                 let h = kb_h.get();
                 if h > 0.0 {
                     let safe_b = crate::shared::keyboard::get_safe_area_bottom();
-                    (h - safe_b).max(0.0) + 8.0
+                    (h - safe_b).max(0.0) + 14.0
                 } else {
-                    16.0
+                    4.0
                 }
             },
             move |lift| spacer().height(lift).any(),
