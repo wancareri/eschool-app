@@ -73,12 +73,37 @@ pub fn init() {
 
 #[cfg(target_os = "ios")]
 mod ios {
-    use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyClass, AnyObject, Imp, NSObject, NSObjectProtocol, Sel};
+    use objc2::{define_class, MainThreadMarker, MainThreadOnly};
     use objc2_foundation::NSNotification;
     use objc2_ui_kit::{NSValueUIGeometryExtensions, UIKeyboardFrameEndUserInfoKey};
+    use std::cell::Cell;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     static INSTALLED: AtomicBool = AtomicBool::new(false);
+
+    thread_local! {
+        static OBSERVER: Cell<Option<Retained<KeyboardObserver>>> = const { Cell::new(None) };
+    }
+
+    define_class!(
+        #[unsafe(super(NSObject))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "DayKeyboardHeightObserver"]
+        struct KeyboardObserver;
+
+        unsafe impl NSObjectProtocol for KeyboardObserver {}
+
+        impl KeyboardObserver {
+            #[unsafe(method(keyboardFrameChanged:))]
+            fn keyboard_frame_changed(&self, notif: *mut NSNotification) {
+                unsafe {
+                    swizzled_keyboard_will_change(std::ptr::null_mut(), objc2::sel!(keyboardFrameChanged:), notif);
+                }
+            }
+        }
+    );
 
     unsafe extern "C-unwind" fn swizzled_keyboard_will_change(
         _this: *mut AnyObject,
@@ -139,6 +164,36 @@ mod ios {
             crate::shared::nslog::nslog("[Keyboard] WARNING: DayAppDelegate class not found");
         }
 
+        // Register dedicated observer for all keyboard frame notifications
+        // (willChange, didChange, didShow) so accessory bars (e.g. QuickType Passwords)
+        // dynamically adjust the keyboard height even after initial presentation.
+        if let Some(mtm) = MainThreadMarker::new() {
+            let obs: Retained<KeyboardObserver> = unsafe { objc2::msg_send![KeyboardObserver::alloc(mtm), init] };
+            let center = objc2_foundation::NSNotificationCenter::defaultCenter();
+            unsafe {
+                center.addObserver_selector_name_object(
+                    &obs,
+                    objc2::sel!(keyboardFrameChanged:),
+                    Some(objc2_ui_kit::UIKeyboardWillChangeFrameNotification),
+                    None,
+                );
+                center.addObserver_selector_name_object(
+                    &obs,
+                    objc2::sel!(keyboardFrameChanged:),
+                    Some(objc2_ui_kit::UIKeyboardDidChangeFrameNotification),
+                    None,
+                );
+                center.addObserver_selector_name_object(
+                    &obs,
+                    objc2::sel!(keyboardFrameChanged:),
+                    Some(objc2_ui_kit::UIKeyboardDidShowNotification),
+                    None,
+                );
+            }
+            OBSERVER.with(|c| c.set(Some(obs)));
+            crate::shared::nslog::nslog("[Keyboard] Registered KeyboardObserver for WillChange, DidChange, and DidShow");
+        }
+
         // Swizzle UITextField setBorderStyle: to force UITextBorderStyleNone (0) so text fields have no native border/outline
         let tf_cls = AnyClass::get(c"UITextField");
         if let Some(cls) = tf_cls {
@@ -152,10 +207,23 @@ mod ios {
                 }
                 crate::shared::nslog::nslog("[TextField] Successfully swizzled UITextField setBorderStyle: to force None");
             }
+
+            let sel_sec = objc2::sel!(setSecureTextEntry:);
+            if let Some(method) = cls.instance_method(sel_sec) {
+                let orig: Imp = method.implementation();
+                ORIG_SET_SECURE_TEXT_ENTRY.store(orig as *mut (), std::sync::atomic::Ordering::Release);
+                let imp: Imp = unsafe { std::mem::transmute(swizzled_set_secure_text_entry as *const ()) };
+                unsafe {
+                    method.set_implementation(imp);
+                }
+                crate::shared::nslog::nslog("[TextField] Successfully swizzled UITextField setSecureTextEntry:");
+            }
         }
     }
 
     static ORIG_SET_BORDER_STYLE: std::sync::atomic::AtomicPtr<()> =
+        std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
+    static ORIG_SET_SECURE_TEXT_ENTRY: std::sync::atomic::AtomicPtr<()> =
         std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
 
     unsafe extern "C-unwind" fn swizzled_set_border_style(
@@ -171,6 +239,40 @@ mod ios {
             unsafe {
                 orig(this, cmd, 0);
             }
+        }
+        unsafe {
+            let _: () = objc2::msg_send![this, setAutocapitalizationType: 0isize];
+            let _: () = objc2::msg_send![this, setAutocorrectionType: 1isize];
+            let is_secure: bool = objc2::msg_send![this, isSecureTextEntry];
+            let ctype = if is_secure {
+                objc2_foundation::NSString::from_str("password")
+            } else {
+                objc2_foundation::NSString::from_str("username")
+            };
+            let _: () = objc2::msg_send![this, setTextContentType: &*ctype];
+        }
+    }
+
+    unsafe extern "C-unwind" fn swizzled_set_secure_text_entry(
+        this: *mut AnyObject,
+        cmd: Sel,
+        secure: bool,
+    ) {
+        let orig_ptr = ORIG_SET_SECURE_TEXT_ENTRY.load(std::sync::atomic::Ordering::Acquire);
+        if !orig_ptr.is_null() {
+            let orig: unsafe extern "C-unwind" fn(*mut AnyObject, Sel, bool) =
+                unsafe { std::mem::transmute(orig_ptr) };
+            unsafe {
+                orig(this, cmd, secure);
+            }
+        }
+        unsafe {
+            let ctype = if secure {
+                objc2_foundation::NSString::from_str("password")
+            } else {
+                objc2_foundation::NSString::from_str("username")
+            };
+            let _: () = objc2::msg_send![this, setTextContentType: &*ctype];
         }
     }
 }

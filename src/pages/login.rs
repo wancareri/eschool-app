@@ -180,11 +180,30 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
     let error_local = Signal::new(String::new());
     let kb_h = crate::shared::keyboard::keyboard_height_signal();
 
+    // Auto-advance to Step 1 when AutoFill populates password on Step 0
+    watch(
+        move || password.get(),
+        move |pwd, _| {
+            if step.get_untracked() == 0 && !pwd.is_empty() {
+                crate::shared::haptics::tick();
+                with_animation(AnimSpec::ease_out(250), move || step.set(1));
+            }
+        },
+    );
+
     column((
         debug_log_button(show_logs),
         spacer().height(16.0),
 
-                // Greeting header — adapts between Step 0 and Step 1
+        // Telegram-style centered Lottie animation above login header
+        row((
+            spacer().grow(),
+            crate::widgets::lottie_view::login_animation_view(),
+            spacer().grow(),
+        )),
+        spacer().height(16.0),
+
+        // Greeting header — adapts between Step 0 and Step 1
                 when(
                     move || step.get() == 0,
                     || column((
@@ -326,6 +345,13 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                             .align(VAlign::Center)
                             .padding(Insets { top: 0.0, leading: 24.0, bottom: 20.0, trailing: 24.0 })
                             .grow_w(),
+
+                            // Hidden password field mounted in hierarchy so iOS AutoFill sees both
+                            // username & password credentials on Step 0 and offers Passwords Keychain picker
+                            text_field(password)
+                                .secure()
+                                .frame(0.0, 0.0)
+                                .opacity(0.0),
                         ))
                         .grow_w()
                     },
@@ -438,16 +464,18 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                 .log_pos("Auth:ActionButton")
                 .padding(Insets { top: 0.0, leading: 24.0, bottom: 0.0, trailing: 24.0 }),
 
-                when(
-                    move || kb_h.get() > 0.0,
+                dyn_piece(
                     move || {
-                        let safe_b = crate::shared::keyboard::get_safe_area_bottom();
-                        let lift = (kb_h.get() - safe_b).max(0.0) + 8.0;
-                        spacer().height(lift).any()
+                        let h = kb_h.get();
+                        if h > 0.0 {
+                            let safe_b = crate::shared::keyboard::get_safe_area_bottom();
+                            (h - safe_b).max(0.0) + 8.0
+                        } else {
+                            16.0
+                        }
                     },
-                )
-                .otherwise(|| spacer().height(16.0).any())
-                .animation(AnimSpec::ease_out(250)),
+                    move |lift| spacer().height(lift).any(),
+                ),
             ))
             .grow()
             .on_tap(move || {
@@ -636,16 +664,18 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             })
             .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 }),
 
-        when(
-            move || kb_h.get() > 0.0,
+        dyn_piece(
             move || {
-                let safe_b = crate::shared::keyboard::get_safe_area_bottom();
-                let lift = (kb_h.get() - safe_b).max(0.0) + 8.0;
-                spacer().height(lift).any()
+                let h = kb_h.get();
+                if h > 0.0 {
+                    let safe_b = crate::shared::keyboard::get_safe_area_bottom();
+                    (h - safe_b).max(0.0) + 8.0
+                } else {
+                    16.0
+                }
             },
-        )
-        .otherwise(|| spacer().height(16.0).any())
-        .animation(AnimSpec::ease_out(250)),
+            move |lift| spacer().height(lift).any(),
+        ),
     ))
     .grow()
     .on_tap(move || {
@@ -861,9 +891,17 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                     })
                     .padding(Insets { top: 0.0, leading: 24.0, bottom: 16.0, trailing: 24.0 }),
 
-                when(
-                    move || kb_h.get() > 0.0,
-                    move || spacer().frame(0.0, kb_h.get() + 20.0).any(),
+                dyn_piece(
+                    move || {
+                        let h = kb_h.get();
+                        if h > 0.0 {
+                            let safe_b = crate::shared::keyboard::get_safe_area_bottom();
+                            (h - safe_b).max(0.0) + 20.0
+                        } else {
+                            0.0
+                        }
+                    },
+                    move |lift| spacer().frame(0.0, lift).any(),
                 ),
             ))
             .grow_w()
