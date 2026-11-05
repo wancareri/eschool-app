@@ -103,7 +103,7 @@ fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f6
     use objc2_foundation::NSString;
 
     unsafe {
-        extern "C" {
+        unsafe extern "C" {
             fn dlopen(path: *const std::ffi::c_char, mode: std::ffi::c_int) -> *mut std::ffi::c_void;
         }
         dlopen(c"/System/Library/Frameworks/WebKit.framework/WebKit".as_ptr(), 1);
