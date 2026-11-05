@@ -79,7 +79,10 @@ try {{
 }
 
 pub fn login_animation_view() -> impl Piece {
-    let size = 110.0;
+    login_animation_view_sized(90.0)
+}
+
+pub fn login_animation_view_sized(size: f64) -> impl Piece {
     #[cfg(target_os = "ios")]
     {
         use day_uikit::UiKitExt;
