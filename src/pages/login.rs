@@ -226,7 +226,7 @@ fn error_banner(error_local: Signal<String>, state: AppState) -> impl Piece {
     )
 }
 
-fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
+fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
     let step = Signal::new(0u8); // 0 = Intro, 1 = Login/Username, 2 = Password
     let username = Signal::new(String::new());
     let password = Signal::new(String::new());
@@ -236,22 +236,7 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
     let error_local = Signal::new(String::new());
     let kb_h = crate::shared::keyboard::keyboard_height_signal();
 
-    // Auto-advance to Step 2 (Password) when AutoFill populates password on Step 1
-    watch(
-        move || password.get(),
-        move |pwd, _| {
-            if step.get_untracked() == 1 && !pwd.is_empty() {
-                crate::shared::haptics::tick();
-                username_focused.set(false);
-                password_focused.set(true);
-                with_animation(AnimSpec::ease_out(250), move || step.set(2));
-            }
-        },
-    );
-
     column((
-        debug_log_button(show_logs),
-
         // Step 0: Intro screen (Telegram style: Logo + title + subtitle + spacer)
         when(
             move || step.get() == 0,
@@ -291,18 +276,7 @@ fn auth_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             move || step.get() == 1,
             move || {
                 column((
-                    spacer().height(4.0),
-                    row((
-                        button("← Назад")
-                            .action(move || {
-                                crate::shared::haptics::tick();
-                                username_focused.set(false);
-                                crate::shared::keyboard::dismiss();
-                                with_animation(AnimSpec::ease_out(250), move || step.set(0));
-                            }),
-                        spacer().grow(),
-                    ))
-                    .padding(Insets { top: 0.0, leading: 16.0, bottom: 4.0, trailing: 16.0 }),
+                    spacer().height(16.0),
 
                     column((
                         label("Вход в аккаунт")
