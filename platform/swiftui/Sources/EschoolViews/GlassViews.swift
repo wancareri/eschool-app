@@ -280,9 +280,9 @@ final class LiquidGlassBackButtonView: UIView {
         self.layer.masksToBounds = false
 
         addSubview(blurView)
-        addSubview(tintOverlayView)
-        layer.addSublayer(borderGradientLayer)
-        addSubview(iconImageView)
+        blurView.contentView.addSubview(tintOverlayView)
+        blurView.contentView.layer.addSublayer(borderGradientLayer)
+        blurView.contentView.addSubview(iconImageView)
 
         updateAppearance()
     }
@@ -291,14 +291,18 @@ final class LiquidGlassBackButtonView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let radius = bounds.width / 2.0
-        blurView.frame = bounds
+        let w = bounds.width > 0 ? bounds.width : 42.0
+        let h = bounds.height > 0 ? bounds.height : 42.0
+        let currentBounds = CGRect(x: 0, y: 0, width: w, height: h)
+        let radius = w / 2.0
+
+        blurView.frame = currentBounds
         blurView.layer.cornerRadius = radius
-        tintOverlayView.frame = bounds
+        tintOverlayView.frame = currentBounds
         tintOverlayView.layer.cornerRadius = radius
-        borderGradientLayer.frame = bounds
-        borderMaskLayer.path = UIBezierPath(ovalIn: bounds.insetBy(dx: 0.5, dy: 0.5)).cgPath
-        iconImageView.frame = bounds
+        borderGradientLayer.frame = currentBounds
+        borderMaskLayer.path = UIBezierPath(ovalIn: currentBounds.insetBy(dx: 0.5, dy: 0.5)).cgPath
+        iconImageView.frame = currentBounds
     }
 
     func updateAppearance() {
@@ -339,6 +343,7 @@ final class ButtonSpringAnimator: NSObject {
 @_cdecl("eschool_style_liquid_glass_button")
 public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer) {
     let raw = Unmanaged<UIView>.fromOpaque(buttonPtr).takeUnretainedValue()
+    NSLog("[LiquidGlass] Styling button: %@", raw)
 
     raw.backgroundColor = .clear
     raw.layer.backgroundColor = UIColor.clear.cgColor
@@ -346,36 +351,10 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
     raw.layer.masksToBounds = false
     raw.clipsToBounds = false
 
-    func clearBackgrounds(in v: UIView) {
-        v.backgroundColor = .clear
-        v.layer.backgroundColor = UIColor.clear.cgColor
-        for sub in v.subviews {
-            clearBackgrounds(in: sub)
-        }
-    }
-
-    func findButton(in v: UIView) -> UIButton? {
-        if let b = v as? UIButton { return b }
-        for sub in v.subviews {
-            if let b = findButton(in: sub) { return b }
-        }
-        return nil
-    }
-
-    clearBackgrounds(in: raw)
-
-    let tag = 99881
-    if raw.viewWithTag(tag) != nil { return }
-
-    let size: CGFloat = 42.0
-    let glassView = LiquidGlassBackButtonView(size: size)
-    glassView.tag = tag
-    glassView.frame = CGRect(x: 0, y: 0, width: size, height: size)
-    raw.insertSubview(glassView, at: 0)
-
-    if let btn = findButton(in: raw) ?? (raw as? UIButton) {
+    if let btn = raw as? UIButton {
         btn.setTitle(nil, for: .normal)
         btn.setTitle(nil, for: .highlighted)
+        btn.configuration = nil
         btn.titleLabel?.text = nil
         btn.titleLabel?.alpha = 0.0
         btn.backgroundColor = .clear
@@ -384,6 +363,17 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
         btn.addTarget(ButtonSpringAnimator.shared, action: #selector(ButtonSpringAnimator.touchDown(_:)), for: [.touchDown, .touchDragEnter])
         btn.addTarget(ButtonSpringAnimator.shared, action: #selector(ButtonSpringAnimator.touchUp(_:)), for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
     }
+
+    let tag = 99881
+    if let existing = raw.viewWithTag(tag) {
+        existing.removeFromSuperview()
+    }
+
+    let size: CGFloat = 42.0
+    let glassView = LiquidGlassBackButtonView(size: size)
+    glassView.tag = tag
+    glassView.frame = CGRect(x: 0, y: 0, width: size, height: size)
+    raw.insertSubview(glassView, at: 0)
 }
 
 // MARK: - Hardware-Synchronized Keyboard Button Gluer
@@ -395,15 +385,29 @@ final class KeyboardGluer: NSObject {
 
     override init() {
         super.init()
-        NotificationCenter.default.addObserver(
+        let center = NotificationCenter.default
+        center.addObserver(
             self,
             selector: #selector(keyboardWillChange(_:)),
             name: UIResponder.keyboardWillChangeFrameNotification,
             object: nil
         )
+        center.addObserver(
+            self,
+            selector: #selector(keyboardWillChange(_:)),
+            name: UIResponder.keyboardWillShowNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(keyboardWillChange(_:)),
+            name: UIResponder.keyboardWillHideNotification,
+            object: nil
+        )
     }
 
     func register(view: UIView) {
+        NSLog("[KeyboardGluer] Registered view: %@", view)
         self.targetView = view
         if self.currentLift > 0 {
             view.transform = CGAffineTransform(translationX: 0, y: -self.currentLift)
@@ -411,25 +415,37 @@ final class KeyboardGluer: NSObject {
     }
 
     @objc private func keyboardWillChange(_ notification: Notification) {
-        guard let view = self.targetView,
-              let userInfo = notification.userInfo,
-              let endFrame = (userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
-              let duration = (userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?.doubleValue,
-              let curveValue = (userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?.intValue
+        guard let view = self.targetView else {
+            NSLog("[KeyboardGluer] targetView is nil on notification")
+            return
+        }
+
+        guard let userInfo = notification.userInfo,
+              let endFrameValue = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue
         else { return }
+
+        let rawEndFrame = endFrameValue.cgRectValue
+        let duration = (userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?.doubleValue ?? 0.25
+        let curveValue = (userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?.intValue ?? 7
 
         guard let window = view.window ?? UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .flatMap({ $0.windows })
             .first(where: { $0.isKeyWindow })
-        else { return }
+        else {
+            NSLog("[KeyboardGluer] window is nil")
+            return
+        }
 
+        let endFrame = window.convert(rawEndFrame, from: nil)
         let screenHeight = window.bounds.height
         let safeAreaBottom = window.safeAreaInsets.bottom
 
         let keyboardHeight: CGFloat = endFrame.origin.y < screenHeight ? (screenHeight - endFrame.origin.y) : 0
-        let lift: CGFloat = keyboardHeight > 0 ? max(0, keyboardHeight - safeAreaBottom + 4.0) : 0
+        let lift: CGFloat = keyboardHeight > 0 ? max(0, keyboardHeight - safeAreaBottom + 8.0) : 0
         self.currentLift = lift
+
+        NSLog("[KeyboardGluer] kbHeight=%.1f safeAreaBottom=%.1f lift=%.1f dur=%.2f", keyboardHeight, safeAreaBottom, lift, duration)
 
         let options = UIView.AnimationOptions(rawValue: UInt(curveValue << 16))
 

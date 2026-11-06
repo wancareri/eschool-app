@@ -304,15 +304,16 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
     #[cfg(target_os = "ios")]
     {
         button("")
-            .frame(42.0, 42.0)
-            .action(move || {
-                act_clone();
-            })
-            .uikit(|view, _class, _mtm| {
+            .uikit(|view, class, _mtm| {
+                crate::shared::nslog::nslog(&format!("[Auth] BackButton uikit called on class={class}"));
                 let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
                 unsafe {
                     eschool_style_liquid_glass_button(ptr);
                 }
+            })
+            .frame(42.0, 42.0)
+            .action(move || {
+                act_clone();
             })
             .id("liquid-glass-back-arrow")
     }
@@ -341,28 +342,35 @@ fn auth_action_button(
     title: impl Fn() -> &'static str + 'static,
     action: impl Fn() + 'static,
 ) -> impl Piece {
-    let btn = button(title)
-        .prominent()
-        .frame(0.0, 50.0)
-        .grow_w()
-        .action(action)
-        .id("login-btn")
-        .log_pos("Auth:ActionButton")
-        .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 });
-
     #[cfg(target_os = "ios")]
     {
-        btn.uikit(|view, _class, _mtm| {
-            let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
-            unsafe {
-                eschool_glue_button_to_keyboard(ptr);
-            }
-        })
+        button(title)
+            .prominent()
+            .uikit(|view, class, _mtm| {
+                crate::shared::nslog::nslog(&format!("[Auth] ActionButton uikit called on class={class}"));
+                let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
+                unsafe {
+                    eschool_glue_button_to_keyboard(ptr);
+                }
+            })
+            .frame(0.0, 50.0)
+            .grow_w()
+            .action(action)
+            .id("login-btn")
+            .log_pos("Auth:ActionButton")
+            .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
     }
 
     #[cfg(not(target_os = "ios"))]
     {
-        btn
+        button(title)
+            .prominent()
+            .frame(0.0, 50.0)
+            .grow_w()
+            .action(action)
+            .id("login-btn")
+            .log_pos("Auth:ActionButton")
+            .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
     }
 }
 
