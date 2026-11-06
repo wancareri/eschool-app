@@ -226,6 +226,129 @@ public struct GlassNavBarView: View {
 
 #if canImport(UIKit)
 import UIKit
+
+// MARK: - True Native Liquid Glass Button Styler
+
+final class LiquidGlassContainerView: UIView {
+    let blurView: UIVisualEffectView
+    let tintView: UIView
+    let gradientLayer: CAGradientLayer
+    let shapeLayer: CAShapeLayer
+
+    init(size: CGFloat) {
+        let frame = CGRect(x: 0, y: 0, width: size, height: size)
+        let radius = size / 2.0
+
+        let blur = UIBlurEffect(style: .systemUltraThinMaterial)
+        self.blurView = UIVisualEffectView(effect: blur)
+        self.blurView.frame = frame
+        self.blurView.layer.cornerRadius = radius
+        self.blurView.layer.masksToBounds = true
+
+        self.tintView = UIView(frame: frame)
+        self.tintView.layer.cornerRadius = radius
+        self.tintView.layer.masksToBounds = true
+
+        self.gradientLayer = CAGradientLayer()
+        self.gradientLayer.frame = frame
+        self.gradientLayer.startPoint = CGPoint(x: 0.0, y: 0.0)
+        self.gradientLayer.endPoint = CGPoint(x: 1.0, y: 1.0)
+
+        self.shapeLayer = CAShapeLayer()
+        self.shapeLayer.lineWidth = 1.2
+        let path = UIBezierPath(ovalIn: frame.insetBy(dx: 0.6, dy: 0.6))
+        self.shapeLayer.path = path.cgPath
+        self.shapeLayer.strokeColor = UIColor.black.cgColor
+        self.shapeLayer.fillColor = UIColor.clear.cgColor
+        self.gradientLayer.mask = self.shapeLayer
+
+        super.init(frame: frame)
+        self.isUserInteractionEnabled = false
+        self.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+        addSubview(blurView)
+        addSubview(tintView)
+        layer.addSublayer(gradientLayer)
+
+        updateAppearance()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let radius = bounds.width / 2.0
+        blurView.frame = bounds
+        blurView.layer.cornerRadius = radius
+        tintView.frame = bounds
+        tintView.layer.cornerRadius = radius
+        gradientLayer.frame = bounds
+        let path = UIBezierPath(ovalIn: bounds.insetBy(dx: 0.6, dy: 0.6))
+        shapeLayer.path = path.cgPath
+    }
+
+    func updateAppearance() {
+        let isDark = traitCollection.userInterfaceStyle == .dark
+        tintView.backgroundColor = isDark ? UIColor(white: 1.0, alpha: 0.14) : UIColor(white: 1.0, alpha: 0.52)
+
+        gradientLayer.colors = [
+            (isDark ? UIColor(white: 1.0, alpha: 0.80) : UIColor(white: 1.0, alpha: 0.95)).cgColor,
+            (isDark ? UIColor(white: 1.0, alpha: 0.18) : UIColor(white: 1.0, alpha: 0.35)).cgColor,
+            (isDark ? UIColor(white: 1.0, alpha: 0.06) : UIColor(white: 1.0, alpha: 0.12)).cgColor,
+            (isDark ? UIColor(white: 1.0, alpha: 0.45) : UIColor(white: 1.0, alpha: 0.60)).cgColor
+        ]
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        updateAppearance()
+    }
+}
+
+@_cdecl("eschool_style_liquid_glass_button")
+public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer) {
+    let btn = Unmanaged<UIButton>.fromOpaque(buttonPtr).takeUnretainedValue()
+
+    DispatchQueue.main.async {
+        let size: CGFloat = 42.0
+        let radius: CGFloat = size / 2.0
+
+        if btn.bounds.width == 0 || btn.bounds.height == 0 {
+            btn.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+        }
+
+        btn.setTitle(nil, for: .normal)
+        btn.backgroundColor = .clear
+
+        let tag = 99881
+        if let existing = btn.viewWithTag(tag) {
+            existing.removeFromSuperview()
+        }
+
+        let glassView = LiquidGlassContainerView(size: size)
+        glassView.tag = tag
+
+        // 4. Drop Shadow on the button
+        btn.layer.cornerRadius = radius
+        btn.layer.shadowColor = UIColor.black.cgColor
+        btn.layer.shadowOpacity = 0.16
+        btn.layer.shadowRadius = 8.0
+        btn.layer.shadowOffset = CGSize(width: 0.0, height: 3.0)
+        btn.layer.masksToBounds = false
+
+        btn.insertSubview(glassView, at: 0)
+
+        // 5. Centered SF Symbol chevron
+        let config = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
+        let img = UIImage(systemName: "chevron.backward", withConfiguration: config)
+        btn.setImage(img, for: .normal)
+        btn.tintColor = .label
+        btn.contentHorizontalAlignment = .center
+        btn.contentVerticalAlignment = .center
+    }
+}
 #if canImport(QuickLook)
 import QuickLook
 

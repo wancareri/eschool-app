@@ -291,6 +291,11 @@ fn error_banner(error_local: Signal<String>, state: AppState) -> impl Piece {
     )
 }
 
+#[cfg(target_os = "ios")]
+unsafe extern "C" {
+    fn eschool_style_liquid_glass_button(button_ptr: *mut std::ffi::c_void);
+}
+
 fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
     let act = std::rc::Rc::new(action);
     let act_clone = act.clone();
@@ -298,49 +303,17 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
     #[cfg(target_os = "ios")]
     {
         button("")
-            .glass()
             .frame(42.0, 42.0)
             .corner_radius(21.0)
             .action(move || {
                 act_clone();
             })
-            .uikit(|view, _class, mtm| {
-                use objc2_foundation::NSString;
-                use objc2_ui_kit::{
-                    UIButton, UIImage, UIControlState, UIColor,
-                    UIBackgroundConfiguration, UIBlurEffect, UIBlurEffectStyle,
-                    UIButtonConfiguration, UIButtonConfigurationCornerStyle,
-                };
+            .uikit(|view, _class, _mtm| {
+                use objc2_ui_kit::UIButton;
                 if let Some(btn) = view.downcast_ref::<UIButton>() {
+                    let ptr = (btn as &UIButton as *const UIButton) as *mut std::ffi::c_void;
                     unsafe {
-                        let mut config = if let Some(existing) = btn.configuration() {
-                            existing
-                        } else {
-                            UIButtonConfiguration::plainButtonConfiguration(mtm)
-                        };
-                        config.setTitle(None);
-
-                        let bg = UIBackgroundConfiguration::clearConfiguration(mtm);
-                        let blur = UIBlurEffect::effectWithStyle(
-                            UIBlurEffectStyle::SystemUltraThinMaterial,
-                            mtm,
-                        );
-                        bg.setVisualEffect(Some(&blur));
-                        bg.setCornerRadius(21.0);
-                        config.setBackground(&bg);
-                        config.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
-
-                        let name = NSString::from_str("chevron.backward");
-                        if let Some(img) = UIImage::systemImageNamed(&name) {
-                            config.setImage(Some(&img));
-                            btn.setImage_forState(Some(&img), UIControlState::Normal);
-                        }
-                        config.setBaseForegroundColor(Some(&*UIColor::labelColor()));
-                        btn.setConfiguration(Some(&config));
-                        btn.setTintColor(Some(&*UIColor::labelColor()));
-
-                        let btn_layer = btn.layer();
-                        btn_layer.setCornerRadius(21.0);
+                        eschool_style_liquid_glass_button(ptr);
                     }
                 }
             })
