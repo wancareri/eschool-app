@@ -297,31 +297,50 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
 
     #[cfg(target_os = "ios")]
     {
-        button("‹")
+        button("")
+            .glass()
             .frame(42.0, 42.0)
             .corner_radius(21.0)
-            .glass_radius(21.0)
-            .background(move || {
-                if day::dark_mode() {
-                    Color::rgba(1.0, 1.0, 1.0, 0.12)
-                } else {
-                    Color::rgba(0.0, 0.0, 0.0, 0.06)
-                }
-            })
             .action(move || {
                 act_clone();
             })
-            .uikit(|view, _class, _mtm| {
+            .uikit(|view, _class, mtm| {
                 use objc2_foundation::NSString;
-                use objc2_ui_kit::{UIButton, UIImage, UIControlState, UIColor};
+                use objc2_ui_kit::{
+                    UIButton, UIImage, UIControlState, UIColor,
+                    UIBackgroundConfiguration, UIBlurEffect, UIBlurEffectStyle,
+                    UIButtonConfiguration, UIButtonConfigurationCornerStyle,
+                };
                 if let Some(btn) = view.downcast_ref::<UIButton>() {
-                    let name = NSString::from_str("chevron.backward");
-                    if let Some(img) = UIImage::systemImageNamed(&name) {
-                        unsafe {
+                    unsafe {
+                        let mut config = if let Some(existing) = btn.configuration() {
+                            existing
+                        } else {
+                            UIButtonConfiguration::plainButtonConfiguration(mtm)
+                        };
+                        config.setTitle(None);
+
+                        let bg = UIBackgroundConfiguration::clearConfiguration(mtm);
+                        let blur = UIBlurEffect::effectWithStyle(
+                            UIBlurEffectStyle::SystemUltraThinMaterial,
+                            mtm,
+                        );
+                        bg.setVisualEffect(Some(&blur));
+                        bg.setCornerRadius(21.0);
+                        config.setBackground(&bg);
+                        config.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
+
+                        let name = NSString::from_str("chevron.backward");
+                        if let Some(img) = UIImage::systemImageNamed(&name) {
+                            config.setImage(Some(&img));
                             btn.setImage_forState(Some(&img), UIControlState::Normal);
-                            btn.setTitle_forState(None, UIControlState::Normal);
-                            btn.setTintColor(Some(&*UIColor::labelColor()));
                         }
+                        config.setBaseForegroundColor(Some(&*UIColor::labelColor()));
+                        btn.setConfiguration(Some(&config));
+                        btn.setTintColor(Some(&*UIColor::labelColor()));
+
+                        let btn_layer = btn.layer();
+                        btn_layer.setCornerRadius(21.0);
                     }
                 }
             })
@@ -336,9 +355,9 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
             .glass_radius(21.0)
             .background(move || {
                 if day::dark_mode() {
-                    Color::rgba(1.0, 1.0, 1.0, 0.12)
+                    Color::rgba(1.0, 1.0, 1.0, 0.16)
                 } else {
-                    Color::rgba(0.0, 0.0, 0.0, 0.06)
+                    Color::rgba(0.0, 0.0, 0.0, 0.08)
                 }
             })
             .action(move || {
@@ -521,7 +540,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                                         } else {
                                             error_local.set(String::new());
                                             state.error_msg.set(String::new());
-                                            crate::shared::keyboard::dismiss();
                                             crate::shared::haptics::tick();
                                             prompt_login_confirmation(
                                                 u.trim().to_string(),
@@ -682,7 +700,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                         } else {
                             error_local.set(String::new());
                             state.error_msg.set(String::new());
-                            crate::shared::keyboard::dismiss();
                             crate::shared::haptics::tick();
                             prompt_login_confirmation(
                                 u.trim().to_string(),
@@ -726,16 +743,13 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                         let safe_b = crate::shared::keyboard::get_safe_area_bottom();
                         (h - safe_b).max(0.0) + 12.0
                     } else {
-                        4.0
+                        12.0
                     }
                 },
                 move |lift| spacer().height(lift).any(),
             ),
     ))
     .grow()
-    .on_tap(move || {
-        crate::shared::keyboard::dismiss();
-    })
 }
 
 fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {

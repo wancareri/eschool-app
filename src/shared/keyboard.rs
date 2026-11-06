@@ -38,12 +38,21 @@ pub fn get_safe_area_bottom() -> f64 {
 }
 
 pub fn set_keyboard_height(h: f64) {
+    set_keyboard_height_with_duration(h, 250);
+}
+
+pub fn set_keyboard_height_with_duration(h: f64, duration_ms: u32) {
     let sig = keyboard_height_signal();
     if (sig.get() - h).abs() > 0.5 {
-        crate::shared::nslog::nslog(&format!("[Keyboard] Height updated to: {h:.1}"));
-        with_animation(AnimSpec::ease_out(380), move || {
+        crate::shared::nslog::nslog(&format!("[Keyboard] Height updated to: {h:.1} in {duration_ms}ms"));
+        if duration_ms == 0 {
             sig.set(h);
-        });
+        } else {
+            let dur = duration_ms.clamp(150, 300);
+            with_animation(AnimSpec::ease_out(dur), move || {
+                sig.set(h);
+            });
+        }
     }
 }
 
@@ -130,7 +139,15 @@ mod ios {
         } else {
             0.0
         };
-        super::set_keyboard_height(visible_h);
+
+        let dur_key = objc2_foundation::NSString::from_str("UIKeyboardAnimationDurationUserInfoKey");
+        let duration_ms = info
+            .objectForKey(&dur_key)
+            .and_then(|o| o.downcast::<objc2_foundation::NSNumber>().ok())
+            .map(|n| (n.as_f64() * 1000.0).round() as u32)
+            .unwrap_or(250);
+
+        super::set_keyboard_height_with_duration(visible_h, duration_ms);
     }
 
     pub fn install() {
