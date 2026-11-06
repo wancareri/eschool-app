@@ -229,83 +229,106 @@ import UIKit
 
 // MARK: - Native Liquid Glass Back Button Styler
 
-final class LiquidSpringButtonHandler: NSObject {
-    static let shared = LiquidSpringButtonHandler()
+final class LiquidGlassBackdropView: UIView {
+    private let blurView = UIVisualEffectView()
+    private let shineGradient = CAGradientLayer()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        isUserInteractionEnabled = false
+        setup()
+    }
+
+    private func setup() {
+        blurView.isUserInteractionEnabled = false
+        blurView.clipsToBounds = true
+        addSubview(blurView)
+
+        shineGradient.startPoint = CGPoint(x: 0.1, y: 0.0)
+        shineGradient.endPoint = CGPoint(x: 0.9, y: 1.0)
+        layer.addSublayer(shineGradient)
+
+        updateAppearance()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let radius = bounds.width / 2.0
+        layer.cornerRadius = radius
+        blurView.frame = bounds
+        blurView.layer.cornerRadius = radius
+        shineGradient.frame = bounds
+        shineGradient.cornerRadius = radius
+        updateAppearance()
+    }
+
+    func updateAppearance() {
+        let isDark = traitCollection.userInterfaceStyle == .dark
+        blurView.effect = UIBlurEffect(style: isDark ? .systemThinMaterialDark : .systemThinMaterialLight)
+
+        // Apple Liquid Glass Specular Reflection Gradient:
+        // Simulates light entering a polished curved glass lens
+        if isDark {
+            shineGradient.colors = [
+                UIColor(white: 1.0, alpha: 0.28).cgColor,
+                UIColor(white: 1.0, alpha: 0.10).cgColor,
+                UIColor(white: 1.0, alpha: 0.03).cgColor
+            ]
+            shineGradient.locations = [0.0, 0.45, 1.0]
+            layer.borderColor = UIColor(white: 1.0, alpha: 0.30).cgColor
+        } else {
+            // Light mode: intense crystal glass reflection and bright specular rim
+            shineGradient.colors = [
+                UIColor(white: 1.0, alpha: 0.70).cgColor,
+                UIColor(white: 1.0, alpha: 0.25).cgColor,
+                UIColor(white: 1.0, alpha: 0.08).cgColor
+            ]
+            shineGradient.locations = [0.0, 0.40, 1.0]
+            layer.borderColor = UIColor(white: 1.0, alpha: 0.85).cgColor
+        }
+        layer.borderWidth = 0.75
+    }
+}
+
+final class GlassPressHandler: NSObject {
+    static let shared = GlassPressHandler()
     private let haptic = UIImpactFeedbackGenerator(style: .light)
 
     func attach(to button: UIButton) {
         button.removeTarget(self, action: nil, for: .allEvents)
-        button.addTarget(self, action: #selector(touchDown(_:event:)), for: [.touchDown])
-        button.addTarget(self, action: #selector(touchDrag(_:event:)), for: [.touchDragInside, .touchDragOutside])
+        button.addTarget(self, action: #selector(touchDown(_:)), for: [.touchDown])
         button.addTarget(self, action: #selector(touchUp(_:)), for: [.touchUpInside, .touchUpOutside, .touchCancel])
     }
 
-    @objc private func touchDown(_ sender: UIButton, event: UIEvent) {
+    @objc private func touchDown(_ sender: UIButton) {
         haptic.prepare()
         haptic.impactOccurred()
-        updateTransform(for: sender, event: event, isDown: true)
-    }
-
-    @objc private func touchDrag(_ sender: UIButton, event: UIEvent) {
-        updateTransform(for: sender, event: event, isDown: true)
+        UIView.animate(
+            withDuration: 0.12,
+            delay: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction]
+        ) {
+            sender.transform = CGAffineTransform(scaleX: 0.93, y: 0.93)
+            sender.alpha = 0.85
+        }
     }
 
     @objc private func touchUp(_ sender: UIButton) {
-        // Elastic spring bounce back with liquid overshoot
         UIView.animate(
-            withDuration: 0.45,
+            withDuration: 0.40,
             delay: 0,
             usingSpringWithDamping: 0.55,
             initialSpringVelocity: 1.0,
             options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
             sender.transform = .identity
-            let isDark = sender.traitCollection.userInterfaceStyle == .dark
-            sender.layer.shadowOpacity = isDark ? 0.30 : 0.08
-        }
-    }
-
-    private func updateTransform(for sender: UIButton, event: UIEvent, isDown: Bool) {
-        let isDark = sender.traitCollection.userInterfaceStyle == .dark
-        guard let touch = event.touches(for: sender)?.first else {
-            UIView.animate(
-                withDuration: 0.18,
-                delay: 0,
-                usingSpringWithDamping: 0.65,
-                initialSpringVelocity: 0.8,
-                options: [.beginFromCurrentState, .allowUserInteraction]
-            ) {
-                sender.transform = CGAffineTransform(scaleX: 0.90, y: 0.90)
-                sender.layer.shadowOpacity = isDark ? 0.45 : 0.16
-            }
-            return
-        }
-
-        let location = touch.location(in: sender)
-        let center = CGPoint(x: sender.bounds.midX, y: sender.bounds.midY)
-        let dx = location.x - center.x
-        let dy = location.y - center.y
-
-        // Rubber-band liquid pull: dampening displacement (max 6 points in touch direction)
-        let maxPull: CGFloat = 6.0
-        let distance = sqrt(dx * dx + dy * dy)
-        let pullFactor = min(1.0, distance / 35.0)
-        let pullX = (distance > 0 ? (dx / distance) : 0) * maxPull * pullFactor
-        let pullY = (distance > 0 ? (dy / distance) : 0) * maxPull * pullFactor
-
-        let baseScale: CGFloat = 0.90
-
-        UIView.animate(
-            withDuration: 0.16,
-            delay: 0,
-            usingSpringWithDamping: 0.65,
-            initialSpringVelocity: 0.8,
-            options: [.beginFromCurrentState, .allowUserInteraction]
-        ) {
-            let scaleTransform = CGAffineTransform(scaleX: baseScale, y: baseScale)
-            let translationTransform = CGAffineTransform(translationX: pullX, y: pullY)
-            sender.transform = scaleTransform.concatenating(translationTransform)
-            sender.layer.shadowOpacity = isDark ? 0.45 : 0.16
+            sender.alpha = 1.0
         }
     }
 }
@@ -313,55 +336,50 @@ final class LiquidSpringButtonHandler: NSObject {
 @_cdecl("eschool_style_liquid_glass_button")
 public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer) {
     let raw = Unmanaged<UIView>.fromOpaque(buttonPtr).takeUnretainedValue()
-    NSLog("[LiquidGlass] Styling authentic Apple Liquid Glass circular back button: %@", raw)
+    NSLog("[LiquidGlass] Styling true Apple Liquid Glass circular back button: %@", raw)
 
     guard let btn = raw as? UIButton else { return }
 
-    // Remove legacy subviews if any
     let tag = 99881
-    btn.viewWithTag(tag)?.removeFromSuperview()
+    let backdrop: LiquidGlassBackdropView
+    if let existing = btn.viewWithTag(tag) as? LiquidGlassBackdropView {
+        backdrop = existing
+    } else {
+        backdrop = LiquidGlassBackdropView(frame: btn.bounds)
+        backdrop.tag = tag
+        backdrop.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        btn.insertSubview(backdrop, at: 0)
+    }
 
     btn.isUserInteractionEnabled = true
     btn.clipsToBounds = false
+    btn.backgroundColor = .clear
+    btn.layer.backgroundColor = UIColor.clear.cgColor
 
     let applyStyle: (UIButton) -> Void = { button in
         let isDark = button.traitCollection.userInterfaceStyle == .dark
 
         var config = UIButton.Configuration.plain()
-
-        var bg = UIBackgroundConfiguration.clear()
-        // Stronger, authentic frosted glass material
-        bg.visualEffect = UIBlurEffect(style: .systemMaterial)
-        // Translucent liquid tint layer so it frostedly refracts over any background
-        bg.backgroundColor = isDark
-            ? UIColor(white: 1.0, alpha: 0.14)
-            : UIColor(white: 1.0, alpha: 0.55)
-        bg.cornerRadius = 22.0
-        config.background = bg
-        config.cornerStyle = .capsule
+        config.background = .clear()
 
         let symbolConfig = UIImage.SymbolConfiguration(pointSize: 16.5, weight: .semibold)
         config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
         config.imagePlacement = .all
         config.title = nil
-        config.baseForegroundColor = isDark ? .white : .label
-        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+        config.baseForegroundColor = isDark ? .white : UIColor(white: 0.15, alpha: 1.0)
+        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: -1.0, bottom: 0, trailing: 0)
 
         button.configuration = config
 
-        // Hairline specular glass edge (Apple cut-glass outline)
-        button.layer.cornerRadius = 22.0
-        button.layer.borderWidth = 0.5
-        button.layer.borderColor = (isDark
-            ? UIColor(white: 1.0, alpha: 0.22)
-            : UIColor(white: 0.0, alpha: 0.10)).cgColor
-
-        // Subtle soft elevation shadow so glass floats cleanly over background
+        // Soft elevation shadow that makes the glass disc float
         button.layer.shadowColor = UIColor.black.cgColor
-        button.layer.shadowOpacity = isDark ? 0.30 : 0.08
+        button.layer.shadowOpacity = isDark ? 0.35 : 0.10
         button.layer.shadowRadius = 8.0
-        button.layer.shadowOffset = CGSize(width: 0, height: 2.0)
+        button.layer.shadowOffset = CGSize(width: 0, height: 2.5)
         button.layer.masksToBounds = false
+
+        backdrop.frame = button.bounds
+        backdrop.updateAppearance()
     }
 
     btn.configurationUpdateHandler = { button in
@@ -371,7 +389,7 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
 
     DispatchQueue.main.async {
         applyStyle(btn)
-        LiquidSpringButtonHandler.shared.attach(to: btn)
+        GlassPressHandler.shared.attach(to: btn)
     }
 }
 
