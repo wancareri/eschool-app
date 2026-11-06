@@ -253,27 +253,30 @@ final class LiquidSpringButtonHandler: NSObject {
     @objc private func touchUp(_ sender: UIButton) {
         // Elastic spring bounce back with liquid overshoot
         UIView.animate(
-            withDuration: 0.50,
+            withDuration: 0.45,
             delay: 0,
-            usingSpringWithDamping: 0.45,
-            initialSpringVelocity: 1.2,
+            usingSpringWithDamping: 0.55,
+            initialSpringVelocity: 1.0,
             options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
             sender.transform = .identity
-            sender.layer.shadowOpacity = sender.traitCollection.userInterfaceStyle == .dark ? 0.25 : 0.08
+            let isDark = sender.traitCollection.userInterfaceStyle == .dark
+            sender.layer.shadowOpacity = isDark ? 0.30 : 0.08
         }
     }
 
     private func updateTransform(for sender: UIButton, event: UIEvent, isDown: Bool) {
+        let isDark = sender.traitCollection.userInterfaceStyle == .dark
         guard let touch = event.touches(for: sender)?.first else {
             UIView.animate(
-                withDuration: 0.22,
+                withDuration: 0.18,
                 delay: 0,
-                usingSpringWithDamping: 0.55,
+                usingSpringWithDamping: 0.65,
                 initialSpringVelocity: 0.8,
                 options: [.beginFromCurrentState, .allowUserInteraction]
             ) {
-                sender.transform = CGAffineTransform(scaleX: 0.88, y: 0.88)
+                sender.transform = CGAffineTransform(scaleX: 0.90, y: 0.90)
+                sender.layer.shadowOpacity = isDark ? 0.45 : 0.16
             }
             return
         }
@@ -283,27 +286,26 @@ final class LiquidSpringButtonHandler: NSObject {
         let dx = location.x - center.x
         let dy = location.y - center.y
 
-        // Rubber-band liquid pull: dampening displacement (max 8 points in touch direction)
-        let maxPull: CGFloat = 8.0
+        // Rubber-band liquid pull: dampening displacement (max 6 points in touch direction)
+        let maxPull: CGFloat = 6.0
         let distance = sqrt(dx * dx + dy * dy)
-        let pullFactor = min(1.0, distance / 40.0)
+        let pullFactor = min(1.0, distance / 35.0)
         let pullX = (distance > 0 ? (dx / distance) : 0) * maxPull * pullFactor
         let pullY = (distance > 0 ? (dy / distance) : 0) * maxPull * pullFactor
 
-        // Compress down to 0.88 and elastically stretch in the pull direction
-        let baseScale: CGFloat = 0.88
+        let baseScale: CGFloat = 0.90
 
         UIView.animate(
             withDuration: 0.16,
             delay: 0,
-            usingSpringWithDamping: 0.6,
+            usingSpringWithDamping: 0.65,
             initialSpringVelocity: 0.8,
             options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
             let scaleTransform = CGAffineTransform(scaleX: baseScale, y: baseScale)
             let translationTransform = CGAffineTransform(translationX: pullX, y: pullY)
             sender.transform = scaleTransform.concatenating(translationTransform)
-            sender.layer.shadowOpacity = sender.traitCollection.userInterfaceStyle == .dark ? 0.40 : 0.18
+            sender.layer.shadowOpacity = isDark ? 0.45 : 0.16
         }
     }
 }
@@ -311,7 +313,7 @@ final class LiquidSpringButtonHandler: NSObject {
 @_cdecl("eschool_style_liquid_glass_button")
 public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer) {
     let raw = Unmanaged<UIView>.fromOpaque(buttonPtr).takeUnretainedValue()
-    NSLog("[LiquidGlass] Applying exact Day-Showcase bordered Symbol::Back configuration: %@", raw)
+    NSLog("[LiquidGlass] Styling authentic Apple Liquid Glass circular back button: %@", raw)
 
     guard let btn = raw as? UIButton else { return }
 
@@ -320,24 +322,57 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
     btn.viewWithTag(tag)?.removeFromSuperview()
 
     btn.isUserInteractionEnabled = true
-    btn.backgroundColor = .clear
-    btn.layer.backgroundColor = UIColor.clear.cgColor
-    btn.layer.shadowOpacity = 0.0
+    btn.clipsToBounds = false
 
-    // Exact canonical Day-Showcase bordered button configuration
-    var config = UIButton.Configuration.bordered()
-    let symbolConfig = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
-    config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
-    config.imagePlacement = .all
-    config.title = nil
-    config.imagePadding = 0.0
-    // Uses the view's native tintColor (Accent Blue/App tint), exactly as in Showcase
-    config.baseForegroundColor = nil
-    // System dynamic squircle corner style, exactly as in Showcase
-    config.cornerStyle = .dynamic
+    let applyStyle: (UIButton) -> Void = { button in
+        let isDark = button.traitCollection.userInterfaceStyle == .dark
 
-    btn.configuration = config
-    btn.configurationUpdateHandler = nil
+        var config = UIButton.Configuration.plain()
+
+        var bg = UIBackgroundConfiguration.clear()
+        // Stronger, authentic frosted glass material
+        bg.visualEffect = UIBlurEffect(style: .systemMaterial)
+        // Translucent liquid tint layer so it frostedly refracts over any background
+        bg.backgroundColor = isDark
+            ? UIColor(white: 1.0, alpha: 0.14)
+            : UIColor(white: 1.0, alpha: 0.55)
+        bg.cornerRadius = 22.0
+        config.background = bg
+        config.cornerStyle = .capsule
+
+        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 16.5, weight: .semibold)
+        config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
+        config.imagePlacement = .all
+        config.title = nil
+        config.baseForegroundColor = isDark ? .white : .label
+        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+
+        button.configuration = config
+
+        // Hairline specular glass edge (Apple cut-glass outline)
+        button.layer.cornerRadius = 22.0
+        button.layer.borderWidth = 0.5
+        button.layer.borderColor = (isDark
+            ? UIColor(white: 1.0, alpha: 0.22)
+            : UIColor(white: 0.0, alpha: 0.10)).cgColor
+
+        // Subtle soft elevation shadow so glass floats cleanly over background
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOpacity = isDark ? 0.30 : 0.08
+        button.layer.shadowRadius = 8.0
+        button.layer.shadowOffset = CGSize(width: 0, height: 2.0)
+        button.layer.masksToBounds = false
+    }
+
+    btn.configurationUpdateHandler = { button in
+        applyStyle(button)
+    }
+    applyStyle(btn)
+
+    DispatchQueue.main.async {
+        applyStyle(btn)
+        LiquidSpringButtonHandler.shared.attach(to: btn)
+    }
 }
 
 // MARK: - Hardware-Synchronized Keyboard Button Gluer

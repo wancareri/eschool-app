@@ -264,6 +264,7 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
                     eschool_style_liquid_glass_button(ptr);
                 }
             })
+            .frame(44.0, 44.0)
             .action(move || {
                 act_clone();
             })
@@ -274,6 +275,7 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
     {
         button("‹")
             .bordered()
+            .frame(44.0, 44.0)
             .action(move || {
                 act_clone();
             })
