@@ -302,16 +302,17 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
 
     #[cfg(target_os = "ios")]
     {
-        button("")
-            .frame(44.0, 44.0)
-            .action(move || {
-                act_clone();
-            })
-            .uikit(|view, _class, _mtm| {
+        button("‹")
+            .uikit(|view, class, _mtm| {
+                crate::shared::nslog::nslog(&format!("[Auth] BackButton uikit called on class={class}"));
                 let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
                 unsafe {
                     eschool_style_liquid_glass_button(ptr);
                 }
+            })
+            .frame(44.0, 44.0)
+            .action(move || {
+                act_clone();
             })
             .id("liquid-glass-back-arrow")
     }

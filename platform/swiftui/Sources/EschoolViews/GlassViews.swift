@@ -323,41 +323,50 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
     btn.backgroundColor = .clear
     btn.layer.backgroundColor = UIColor.clear.cgColor
 
-    // 1. Apple's canonical plain configuration
-    var config = UIButton.Configuration.plain()
+    let applyStyle: (UIButton) -> Void = { button in
+        var config = UIButton.Configuration.plain()
 
-    // 2. SF Symbol chevron.backward icon with semibold weight
-    let symbolConfig = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
-    config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
-    config.imagePlacement = .all
-    config.baseForegroundColor = .label
+        // 2. SF Symbol chevron.backward icon with semibold weight
+        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 18.0, weight: .semibold)
+        config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
+        config.imagePlacement = .all
+        config.title = nil
+        config.baseForegroundColor = .label
 
-    // 3. Apple's official systemUltraThinMaterial background configuration
-    var background = UIBackgroundConfiguration.clear()
-    background.visualEffect = UIBlurEffect(style: .systemUltraThinMaterial)
-    background.cornerRadius = 22.0
+        // 3. Apple's official systemUltraThinMaterial background configuration
+        var background = UIBackgroundConfiguration.clear()
+        background.visualEffect = UIBlurEffect(style: .systemUltraThinMaterial)
+        background.cornerRadius = 22.0
 
-    let isDark = btn.traitCollection.userInterfaceStyle == .dark
-    // Translucent glass tint so it has visible liquid refraction depth on any background
-    background.backgroundColor = isDark ? UIColor(white: 1.0, alpha: 0.14) : UIColor(white: 1.0, alpha: 0.45)
-    // Specular border outline
-    background.strokeColor = isDark ? UIColor(white: 1.0, alpha: 0.28) : UIColor(white: 0.0, alpha: 0.12)
-    background.strokeWidth = 1.0
+        let isDark = button.traitCollection.userInterfaceStyle == .dark
+        // Translucent glass tint so it has visible liquid refraction depth on any background
+        background.backgroundColor = isDark ? UIColor(white: 1.0, alpha: 0.16) : UIColor(white: 0.0, alpha: 0.06)
+        // Specular border outline
+        background.strokeColor = isDark ? UIColor(white: 1.0, alpha: 0.28) : UIColor(white: 0.0, alpha: 0.12)
+        background.strokeWidth = 1.0
 
-    config.background = background
-    config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+        config.background = background
+        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
 
-    btn.configuration = config
+        button.configuration = config
 
-    // 4. Floating glass shadow for depth
-    btn.layer.shadowColor = UIColor.black.cgColor
-    btn.layer.shadowOpacity = isDark ? 0.25 : 0.08
-    btn.layer.shadowRadius = 8.0
-    btn.layer.shadowOffset = CGSize(width: 0.0, height: 2.0)
-    btn.layer.masksToBounds = false
+        // 4. Floating glass shadow for depth
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOpacity = isDark ? 0.25 : 0.08
+        button.layer.shadowRadius = 8.0
+        button.layer.shadowOffset = CGSize(width: 0.0, height: 2.0)
+        button.layer.masksToBounds = false
+    }
 
-    // 5. Liquid rubber-band spring interaction with tactile haptics
-    LiquidSpringButtonHandler.shared.attach(to: btn)
+    btn.configurationUpdateHandler = { button in
+        applyStyle(button)
+    }
+    applyStyle(btn)
+
+    DispatchQueue.main.async {
+        applyStyle(btn)
+        LiquidSpringButtonHandler.shared.attach(to: btn)
+    }
 }
 
 // MARK: - Hardware-Synchronized Keyboard Button Gluer
