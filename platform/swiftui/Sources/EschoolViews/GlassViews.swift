@@ -227,15 +227,16 @@ public struct GlassNavBarView: View {
 #if canImport(UIKit)
 import UIKit
 
-// MARK: - True Native Liquid Glass Button Styler
+// MARK: - Native Liquid Glass Back Button Styler
 
-final class LiquidGlassContainerView: UIView {
+final class LiquidGlassBackButtonView: UIView {
     let blurView: UIVisualEffectView
-    let tintView: UIView
-    let gradientLayer: CAGradientLayer
-    let shapeLayer: CAShapeLayer
+    let tintOverlayView: UIView
+    let borderGradientLayer = CAGradientLayer()
+    let borderMaskLayer = CAShapeLayer()
+    let iconImageView: UIImageView
 
-    init(size: CGFloat) {
+    init(size: CGFloat = 42.0) {
         let frame = CGRect(x: 0, y: 0, width: size, height: size)
         let radius = size / 2.0
 
@@ -244,60 +245,70 @@ final class LiquidGlassContainerView: UIView {
         self.blurView.frame = frame
         self.blurView.layer.cornerRadius = radius
         self.blurView.layer.masksToBounds = true
+        self.blurView.isUserInteractionEnabled = false
 
-        self.tintView = UIView(frame: frame)
-        self.tintView.layer.cornerRadius = radius
-        self.tintView.layer.masksToBounds = true
+        self.tintOverlayView = UIView(frame: frame)
+        self.tintOverlayView.layer.cornerRadius = radius
+        self.tintOverlayView.layer.masksToBounds = true
+        self.tintOverlayView.isUserInteractionEnabled = false
 
-        self.gradientLayer = CAGradientLayer()
-        self.gradientLayer.frame = frame
-        self.gradientLayer.startPoint = CGPoint(x: 0.0, y: 0.0)
-        self.gradientLayer.endPoint = CGPoint(x: 1.0, y: 1.0)
+        self.borderGradientLayer.frame = frame
+        self.borderGradientLayer.startPoint = CGPoint(x: 0.1, y: 0.0)
+        self.borderGradientLayer.endPoint = CGPoint(x: 0.9, y: 1.0)
+        self.borderMaskLayer.lineWidth = 1.0
+        self.borderMaskLayer.path = UIBezierPath(ovalIn: frame.insetBy(dx: 0.5, dy: 0.5)).cgPath
+        self.borderMaskLayer.fillColor = UIColor.clear.cgColor
+        self.borderMaskLayer.strokeColor = UIColor.black.cgColor
+        self.borderGradientLayer.mask = self.borderMaskLayer
 
-        self.shapeLayer = CAShapeLayer()
-        self.shapeLayer.lineWidth = 1.2
-        let path = UIBezierPath(ovalIn: frame.insetBy(dx: 0.6, dy: 0.6))
-        self.shapeLayer.path = path.cgPath
-        self.shapeLayer.strokeColor = UIColor.black.cgColor
-        self.shapeLayer.fillColor = UIColor.clear.cgColor
-        self.gradientLayer.mask = self.shapeLayer
+        let config = UIImage.SymbolConfiguration(pointSize: 18.0, weight: .semibold)
+        let img = UIImage(systemName: "chevron.backward", withConfiguration: config)
+        self.iconImageView = UIImageView(image: img)
+        self.iconImageView.tintColor = .label
+        self.iconImageView.contentMode = .center
+        self.iconImageView.frame = frame
+        self.iconImageView.isUserInteractionEnabled = false
 
         super.init(frame: frame)
         self.isUserInteractionEnabled = false
         self.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
+        self.layer.shadowColor = UIColor.black.cgColor
+        self.layer.shadowOpacity = 0.14
+        self.layer.shadowRadius = 8.0
+        self.layer.shadowOffset = CGSize(width: 0.0, height: 2.0)
+        self.layer.masksToBounds = false
+
         addSubview(blurView)
-        addSubview(tintView)
-        layer.addSublayer(gradientLayer)
+        addSubview(tintOverlayView)
+        layer.addSublayer(borderGradientLayer)
+        addSubview(iconImageView)
 
         updateAppearance()
     }
 
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         let radius = bounds.width / 2.0
         blurView.frame = bounds
         blurView.layer.cornerRadius = radius
-        tintView.frame = bounds
-        tintView.layer.cornerRadius = radius
-        gradientLayer.frame = bounds
-        let path = UIBezierPath(ovalIn: bounds.insetBy(dx: 0.6, dy: 0.6))
-        shapeLayer.path = path.cgPath
+        tintOverlayView.frame = bounds
+        tintOverlayView.layer.cornerRadius = radius
+        borderGradientLayer.frame = bounds
+        borderMaskLayer.path = UIBezierPath(ovalIn: bounds.insetBy(dx: 0.5, dy: 0.5)).cgPath
+        iconImageView.frame = bounds
     }
 
     func updateAppearance() {
         let isDark = traitCollection.userInterfaceStyle == .dark
-        tintView.backgroundColor = isDark ? UIColor(white: 1.0, alpha: 0.14) : UIColor(white: 1.0, alpha: 0.52)
-
-        gradientLayer.colors = [
-            (isDark ? UIColor(white: 1.0, alpha: 0.80) : UIColor(white: 1.0, alpha: 0.95)).cgColor,
-            (isDark ? UIColor(white: 1.0, alpha: 0.18) : UIColor(white: 1.0, alpha: 0.35)).cgColor,
-            (isDark ? UIColor(white: 1.0, alpha: 0.06) : UIColor(white: 1.0, alpha: 0.12)).cgColor,
-            (isDark ? UIColor(white: 1.0, alpha: 0.45) : UIColor(white: 1.0, alpha: 0.60)).cgColor
+        tintOverlayView.backgroundColor = isDark ? UIColor(white: 1.0, alpha: 0.12) : UIColor(white: 1.0, alpha: 0.45)
+        borderGradientLayer.colors = [
+            (isDark ? UIColor(white: 1.0, alpha: 0.70) : UIColor(white: 1.0, alpha: 0.90)).cgColor,
+            (isDark ? UIColor(white: 1.0, alpha: 0.15) : UIColor(white: 1.0, alpha: 0.30)).cgColor,
+            (isDark ? UIColor(white: 1.0, alpha: 0.05) : UIColor(white: 1.0, alpha: 0.10)).cgColor,
+            (isDark ? UIColor(white: 1.0, alpha: 0.40) : UIColor(white: 1.0, alpha: 0.55)).cgColor
         ]
     }
 
@@ -307,69 +318,137 @@ final class LiquidGlassContainerView: UIView {
     }
 }
 
+final class ButtonSpringAnimator: NSObject {
+    static let shared = ButtonSpringAnimator()
+
+    @objc func touchDown(_ sender: UIButton) {
+        UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            sender.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+            sender.alpha = 0.82
+        }
+    }
+
+    @objc func touchUp(_ sender: UIButton) {
+        UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.6, initialSpringVelocity: 0.5, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            sender.transform = .identity
+            sender.alpha = 1.0
+        }
+    }
+}
+
 @_cdecl("eschool_style_liquid_glass_button")
 public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer) {
     let raw = Unmanaged<UIView>.fromOpaque(buttonPtr).takeUnretainedValue()
 
-    DispatchQueue.main.async {
-        func findButton(in v: UIView) -> UIButton? {
-            if let b = v as? UIButton { return b }
-            for sub in v.subviews {
-                if let b = findButton(in: sub) { return b }
-            }
-            return nil
-        }
+    raw.backgroundColor = .clear
+    raw.layer.backgroundColor = UIColor.clear.cgColor
+    raw.layer.cornerRadius = 21.0
+    raw.layer.masksToBounds = false
+    raw.clipsToBounds = false
 
-        let targetView: UIView = findButton(in: raw) ?? raw
-        let btn = targetView as? UIButton
-
-        btn?.setTitle(nil, for: .normal)
-        targetView.backgroundColor = .clear
-
-        let tag = 99881
-        if let existing = targetView.viewWithTag(tag) {
-            existing.removeFromSuperview()
-        }
-
-        let size: CGFloat = 42.0
-        let radius: CGFloat = size / 2.0
-
-        let glassView = LiquidGlassContainerView(size: size)
-        glassView.tag = tag
-
-        // Drop Shadow on the button
-        targetView.layer.cornerRadius = radius
-        targetView.layer.shadowColor = UIColor.black.cgColor
-        targetView.layer.shadowOpacity = 0.16
-        targetView.layer.shadowRadius = 8.0
-        targetView.layer.shadowOffset = CGSize(width: 0.0, height: 3.0)
-        targetView.layer.masksToBounds = false
-
-        targetView.insertSubview(glassView, at: 0)
-
-        // Centered SF Symbol chevron with semibold weight
-        if let btn = btn {
-            let config = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
-            let img = UIImage(systemName: "chevron.backward", withConfiguration: config)
-            btn.setImage(img, for: .normal)
-            btn.tintColor = .label
-            btn.contentHorizontalAlignment = .center
-            btn.contentVerticalAlignment = .center
-        } else {
-            let imgTag = 99882
-            if targetView.viewWithTag(imgTag) == nil {
-                let config = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
-                let iv = UIImageView(image: UIImage(systemName: "chevron.backward", withConfiguration: config))
-                iv.tag = imgTag
-                iv.tintColor = .label
-                iv.contentMode = .center
-                iv.frame = targetView.bounds
-                iv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-                iv.isUserInteractionEnabled = false
-                targetView.addSubview(iv)
-            }
+    func clearBackgrounds(in v: UIView) {
+        v.backgroundColor = .clear
+        v.layer.backgroundColor = UIColor.clear.cgColor
+        for sub in v.subviews {
+            clearBackgrounds(in: sub)
         }
     }
+
+    func findButton(in v: UIView) -> UIButton? {
+        if let b = v as? UIButton { return b }
+        for sub in v.subviews {
+            if let b = findButton(in: sub) { return b }
+        }
+        return nil
+    }
+
+    clearBackgrounds(in: raw)
+
+    let tag = 99881
+    if raw.viewWithTag(tag) != nil { return }
+
+    let size: CGFloat = 42.0
+    let glassView = LiquidGlassBackButtonView(size: size)
+    glassView.tag = tag
+    glassView.frame = CGRect(x: 0, y: 0, width: size, height: size)
+    raw.insertSubview(glassView, at: 0)
+
+    if let btn = findButton(in: raw) ?? (raw as? UIButton) {
+        btn.setTitle(nil, for: .normal)
+        btn.setTitle(nil, for: .highlighted)
+        btn.titleLabel?.text = nil
+        btn.titleLabel?.alpha = 0.0
+        btn.backgroundColor = .clear
+        btn.layer.backgroundColor = UIColor.clear.cgColor
+
+        btn.addTarget(ButtonSpringAnimator.shared, action: #selector(ButtonSpringAnimator.touchDown(_:)), for: [.touchDown, .touchDragEnter])
+        btn.addTarget(ButtonSpringAnimator.shared, action: #selector(ButtonSpringAnimator.touchUp(_:)), for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
+    }
+}
+
+// MARK: - Hardware-Synchronized Keyboard Button Gluer
+
+final class KeyboardGluer: NSObject {
+    static let shared = KeyboardGluer()
+    private weak var targetView: UIView?
+    private var currentLift: CGFloat = 0
+
+    override init() {
+        super.init()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardWillChange(_:)),
+            name: UIResponder.keyboardWillChangeFrameNotification,
+            object: nil
+        )
+    }
+
+    func register(view: UIView) {
+        self.targetView = view
+        if self.currentLift > 0 {
+            view.transform = CGAffineTransform(translationX: 0, y: -self.currentLift)
+        }
+    }
+
+    @objc private func keyboardWillChange(_ notification: Notification) {
+        guard let view = self.targetView,
+              let userInfo = notification.userInfo,
+              let endFrame = (userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
+              let duration = (userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?.doubleValue,
+              let curveValue = (userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?.intValue
+        else { return }
+
+        guard let window = view.window ?? UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .flatMap({ $0.windows })
+            .first(where: { $0.isKeyWindow })
+        else { return }
+
+        let screenHeight = window.bounds.height
+        let safeAreaBottom = window.safeAreaInsets.bottom
+
+        let keyboardHeight: CGFloat = endFrame.origin.y < screenHeight ? (screenHeight - endFrame.origin.y) : 0
+        let lift: CGFloat = keyboardHeight > 0 ? max(0, keyboardHeight - safeAreaBottom + 4.0) : 0
+        self.currentLift = lift
+
+        let options = UIView.AnimationOptions(rawValue: UInt(curveValue << 16))
+
+        UIView.animate(
+            withDuration: duration,
+            delay: 0,
+            options: [options, .beginFromCurrentState, .allowUserInteraction],
+            animations: {
+                view.transform = lift > 0 ? CGAffineTransform(translationX: 0, y: -lift) : .identity
+            },
+            completion: nil
+        )
+    }
+}
+
+@_cdecl("eschool_glue_button_to_keyboard")
+public func eschool_glue_button_to_keyboard(viewPtr: UnsafeMutableRawPointer) {
+    let raw = Unmanaged<UIView>.fromOpaque(viewPtr).takeUnretainedValue()
+    KeyboardGluer.shared.register(view: raw)
 }
 
 // MARK: - Global Tap To Dismiss Keyboard

@@ -294,6 +294,7 @@ fn error_banner(error_local: Signal<String>, state: AppState) -> impl Piece {
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
     fn eschool_style_liquid_glass_button(button_ptr: *mut std::ffi::c_void);
+    fn eschool_glue_button_to_keyboard(button_ptr: *mut std::ffi::c_void);
 }
 
 fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
@@ -302,17 +303,8 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
 
     #[cfg(target_os = "ios")]
     {
-        button("‹")
+        button("")
             .frame(42.0, 42.0)
-            .corner_radius(21.0)
-            .glass_radius(21.0)
-            .background(move || {
-                if day::dark_mode() {
-                    Color::rgba(1.0, 1.0, 1.0, 0.16)
-                } else {
-                    Color::rgba(0.0, 0.0, 0.0, 0.08)
-                }
-            })
             .action(move || {
                 act_clone();
             })
@@ -349,14 +341,29 @@ fn auth_action_button(
     title: impl Fn() -> &'static str + 'static,
     action: impl Fn() + 'static,
 ) -> impl Piece {
-    button(title)
+    let btn = button(title)
         .prominent()
         .frame(0.0, 50.0)
         .grow_w()
         .action(action)
         .id("login-btn")
         .log_pos("Auth:ActionButton")
-        .padding(Insets { top: 0.0, leading: 24.0, bottom: 4.0, trailing: 24.0 })
+        .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 });
+
+    #[cfg(target_os = "ios")]
+    {
+        btn.uikit(|view, _class, _mtm| {
+            let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
+            unsafe {
+                eschool_glue_button_to_keyboard(ptr);
+            }
+        })
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    {
+        btn
+    }
 }
 
 fn prompt_login_confirmation(
@@ -447,7 +454,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
     let password_focused = Signal::new(false);
     let remember = Signal::new(true);
     let error_local = Signal::new(String::new());
-    let kb_h = crate::shared::keyboard::keyboard_height_signal();
+    let _kb_h = crate::shared::keyboard::keyboard_height_signal();
 
     column((
             // Step 0: Intro screen (Telegram style: Logo + title + subtitle + spacer)
@@ -735,19 +742,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                         }
                     }
                 },
-            ),
-
-            dyn_piece(
-                move || {
-                    let h = kb_h.get();
-                    if h > 0.0 {
-                        let safe_b = crate::shared::keyboard::get_safe_area_bottom();
-                        (h - safe_b).max(0.0) + 16.0
-                    } else {
-                        8.0
-                    }
-                },
-                move |lift| spacer().height(lift).any(),
             ),
     ))
     .grow()
