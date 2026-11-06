@@ -229,17 +229,6 @@ import UIKit
 
 // MARK: - Native Liquid Glass Back Button Styler
 
-// Вспомогательный класс: glass-фон растягивается по bounds кнопки,
-// cornerRadius всегда = половина высоты → идеальная капсула/круг
-@available(iOS 26.0, *)
-private final class GlassBackgroundView: UIVisualEffectView {
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        layer.cornerRadius = bounds.height / 2
-        layer.cornerCurve = .continuous
-    }
-}
-
 @_cdecl("eschool_style_liquid_glass_button")
 public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer) {
     let raw = Unmanaged<UIView>.fromOpaque(buttonPtr).takeUnretainedValue()
@@ -259,22 +248,30 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
     btn.layer.backgroundColor = UIColor.clear.cgColor
 
     if #available(iOS 26.0, *) {
-        // iOS 26+: UIVisualEffectView с UIGlassEffect в качестве фона.
-        // Так glass корректно клипается в круг и растягивается по bounds кнопки.
-        let glassView = GlassBackgroundView(effect: UIGlassEffect())
+        // iOS 26+: UIVisualEffectView с UIGlassEffect.
+        // autoresizingMask + defer в main.async — потому что Day устанавливает
+        // .frame(44, 44) ПОСЛЕ uikit-коллбэка, bounds в момент вызова = 0×0.
+        let effect = UIGlassEffect()
+        effect.isInteractive = true  // даёт прозрачный liquid glass вместо серого матового
+
+        let glassView = UIVisualEffectView(effect: effect)
         glassView.tag = 99882
         glassView.isUserInteractionEnabled = false
         glassView.clipsToBounds = true
-        glassView.translatesAutoresizingMaskIntoConstraints = false
+        glassView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        glassView.frame = btn.bounds  // пока 0×0, обновится ниже
         btn.insertSubview(glassView, at: 0)
-        NSLayoutConstraint.activate([
-            glassView.leadingAnchor.constraint(equalTo: btn.leadingAnchor),
-            glassView.trailingAnchor.constraint(equalTo: btn.trailingAnchor),
-            glassView.topAnchor.constraint(equalTo: btn.topAnchor),
-            glassView.bottomAnchor.constraint(equalTo: btn.bottomAnchor),
-        ])
 
-        // Конфигурация кнопки — только иконка, без своего фона
+        // Откладываем на следующий runloop — к этому моменту Day уже
+        // применил .frame(44, 44) и мы получим реальный bounds
+        DispatchQueue.main.async {
+            glassView.frame = btn.bounds
+            let r = btn.bounds.height / 2
+            glassView.layer.cornerRadius = r
+            glassView.layer.cornerCurve = .continuous
+        }
+
+        // Кнопка: только иконка, без своего фона
         var config = UIButton.Configuration.plain()
         config.background = .clear()
         config.title = nil
