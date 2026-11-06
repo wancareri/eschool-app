@@ -29,7 +29,7 @@ pub fn get_safe_area_top() -> f64 {
         if let Some(mtm) = MainThreadMarker::new() {
             let app = UIApplication::sharedApplication(mtm);
             if let Some(window) = app.keyWindow() {
-                let insets = unsafe { window.safeAreaInsets() };
+                let insets = window.safeAreaInsets();
                 return insets.top as f64;
             }
         }
@@ -46,7 +46,7 @@ pub fn get_safe_area_bottom() -> f64 {
         if let Some(mtm) = MainThreadMarker::new() {
             let app = UIApplication::sharedApplication(mtm);
             if let Some(window) = app.keyWindow() {
-                let insets = unsafe { window.safeAreaInsets() };
+                let insets = window.safeAreaInsets();
                 return insets.bottom as f64;
             }
         }
@@ -89,7 +89,7 @@ pub fn init() {
     #[cfg(target_os = "ios")]
     {
         ios::install();
-        extern "C" {
+        unsafe extern "C" {
             fn eschool_install_tap_to_dismiss();
         }
         unsafe {
