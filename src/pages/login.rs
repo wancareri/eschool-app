@@ -4,6 +4,8 @@ use crate::shared::colors;
 use crate::shared::layout_diag::{debug_log_button, debug_log_overlay, PosLogExt};
 use crate::res;
 use day::prelude::*;
+#[cfg(target_os = "ios")]
+use day_uikit::UiKitExt;
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
@@ -289,6 +291,141 @@ fn error_banner(error_local: Signal<String>, state: AppState) -> impl Piece {
     )
 }
 
+fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
+    let act = std::rc::Rc::new(action);
+    let act_clone = act.clone();
+
+    #[cfg(target_os = "ios")]
+    {
+        button("‹")
+            .frame(42.0, 42.0)
+            .corner_radius(21.0)
+            .glass_radius(21.0)
+            .background(move || {
+                if day::dark_mode() {
+                    Color::rgba(1.0, 1.0, 1.0, 0.12)
+                } else {
+                    Color::rgba(0.0, 0.0, 0.0, 0.06)
+                }
+            })
+            .action(move || {
+                act_clone();
+            })
+            .uikit(|view, _class, _mtm| {
+                use objc2_foundation::NSString;
+                use objc2_ui_kit::{UIButton, UIImage, UIControlState, UIColor};
+                if let Some(btn) = view.downcast_ref::<UIButton>() {
+                    let name = NSString::from_str("chevron.backward");
+                    if let Some(img) = UIImage::systemImageNamed(&name) {
+                        btn.setImage_forState(Some(&img), UIControlState::Normal);
+                        btn.setTitle_forState(None, UIControlState::Normal);
+                        btn.setTintColor(Some(&*UIColor::labelColor()));
+                    }
+                }
+            })
+            .id("liquid-glass-back-arrow")
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    {
+        button("‹")
+            .frame(42.0, 42.0)
+            .corner_radius(21.0)
+            .glass_radius(21.0)
+            .background(move || {
+                if day::dark_mode() {
+                    Color::rgba(1.0, 1.0, 1.0, 0.12)
+                } else {
+                    Color::rgba(0.0, 0.0, 0.0, 0.06)
+                }
+            })
+            .action(move || {
+                act_clone();
+            })
+            .id("liquid-glass-back-arrow")
+    }
+}
+
+fn prompt_login_confirmation(
+    username: String,
+    on_confirm: impl Fn() + 'static,
+    on_edit: impl Fn() + 'static,
+) {
+    #[cfg(target_os = "ios")]
+    {
+        use objc2::MainThreadMarker;
+        use objc2_foundation::NSString;
+        use objc2_ui_kit::{
+            UIApplication, UIAlertAction, UIAlertActionStyle, UIAlertController, UIAlertControllerStyle,
+        };
+        use std::ptr::NonNull;
+
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        let app = UIApplication::sharedApplication(mtm);
+        let Some(window) = app.keyWindow() else { return };
+        let Some(root_vc) = window.rootViewController() else { return };
+
+        let mut top = root_vc;
+        while let Some(presented) = top.presentedViewController() {
+            top = presented;
+        }
+
+        let title = NSString::from_str(&username);
+        let message = NSString::from_str("Это верный логин?");
+
+        let alert = unsafe {
+            UIAlertController::alertControllerWithTitle_message_preferredStyle(
+                Some(&title),
+                Some(&message),
+                UIAlertControllerStyle::Alert,
+                mtm,
+            )
+        };
+
+        let on_edit_rc = std::rc::Rc::new(on_edit);
+        let on_edit_clone = on_edit_rc.clone();
+        let edit_action = unsafe {
+            let title_edit = NSString::from_str("Изменить");
+            let handler = block2::RcBlock::new(move |_: NonNull<UIAlertAction>| {
+                on_edit_clone();
+            });
+            UIAlertAction::actionWithTitle_style_handler(
+                Some(&title_edit),
+                UIAlertActionStyle::Cancel,
+                Some(&handler),
+                mtm,
+            )
+        };
+
+        let on_confirm_rc = std::rc::Rc::new(on_confirm);
+        let confirm_action = unsafe {
+            let title_yes = NSString::from_str("Да");
+            let handler = block2::RcBlock::new(move |_: NonNull<UIAlertAction>| {
+                on_confirm_rc();
+            });
+            UIAlertAction::actionWithTitle_style_handler(
+                Some(&title_yes),
+                UIAlertActionStyle::Default,
+                Some(&handler),
+                mtm,
+            )
+        };
+
+        unsafe {
+            alert.addAction(&edit_action);
+            alert.addAction(&confirm_action);
+            top.presentViewController_animated_completion(&alert, true, None);
+        }
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = username;
+        let _ = on_edit;
+        on_confirm();
+    }
+}
+
 fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
     let step = Signal::new(0u8); // 0 = Intro, 1 = Login/Username, 2 = Password
     let username = Signal::new(String::new());
@@ -297,11 +434,9 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
     let password_focused = Signal::new(false);
     let remember = Signal::new(true);
     let error_local = Signal::new(String::new());
-    let show_confirm_modal = Signal::new(false);
     let kb_h = crate::shared::keyboard::keyboard_height_signal();
 
-    zstack((
-        column((
+    column((
             // Step 0: Intro screen (Telegram style: Logo + title + subtitle + spacer)
             when(
                 move || step.get() == 0,
@@ -386,7 +521,19 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                                             state.error_msg.set(String::new());
                                             crate::shared::keyboard::dismiss();
                                             crate::shared::haptics::tick();
-                                            show_confirm_modal.set(true);
+                                            prompt_login_confirmation(
+                                                u.trim().to_string(),
+                                                move || {
+                                                    crate::shared::haptics::tick();
+                                                    username_focused.set(false);
+                                                    password_focused.set(true);
+                                                    with_animation(AnimSpec::ease_out(250), move || step.set(2));
+                                                },
+                                                move || {
+                                                    crate::shared::haptics::tick();
+                                                    username_focused.set(true);
+                                                },
+                                            );
                                         }
                                     }),
                             )),
@@ -425,19 +572,15 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 move || step.get() == 2,
                 move || {
                     column((
-                        // Native circular liquid glass back bubble with left arrow icon
+                        // Real Apple Liquid Glass circular back bubble with native SF Symbol chevron
                         row((
-                            button("←")
-                                .glass()
-                                .frame(38.0, 38.0)
-                                .corner_radius(19.0)
-                                .action(move || {
-                                    crate::shared::haptics::tick();
-                                    error_local.set(String::new());
-                                    password_focused.set(false);
-                                    username_focused.set(true);
-                                    with_animation(AnimSpec::ease_out(250), move || step.set(1));
-                                }),
+                            liquid_glass_back_button(move || {
+                                crate::shared::haptics::tick();
+                                error_local.set(String::new());
+                                password_focused.set(false);
+                                username_focused.set(true);
+                                with_animation(AnimSpec::ease_out(250), move || step.set(1));
+                            }),
                             spacer().grow(),
                         ))
                         .padding(Insets { top: 6.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
@@ -539,7 +682,19 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                             state.error_msg.set(String::new());
                             crate::shared::keyboard::dismiss();
                             crate::shared::haptics::tick();
-                            show_confirm_modal.set(true);
+                            prompt_login_confirmation(
+                                u.trim().to_string(),
+                                move || {
+                                    crate::shared::haptics::tick();
+                                    username_focused.set(false);
+                                    password_focused.set(true);
+                                    with_animation(AnimSpec::ease_out(250), move || step.set(2));
+                                },
+                                move || {
+                                    crate::shared::haptics::tick();
+                                    username_focused.set(true);
+                                },
+                            );
                         }
                     }
                     _ => {
@@ -574,95 +729,11 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 },
                 move |lift| spacer().height(lift).any(),
             ),
-        ))
-        .grow()
-        .on_tap(move || {
-            crate::shared::keyboard::dismiss();
-        }),
-
-        // Telegram-style confirmation modal: "Это верный логин?"
-        when(
-            move || show_confirm_modal.get(),
-            move || {
-                let u = username.get();
-                column((
-                    spacer().grow(),
-                    column((
-                        column((
-                            label("Это верный логин?")
-                                .font(Font::Headline)
-                                .bold()
-                                .align(TextAlign::Center),
-                            spacer().height(8.0),
-                            label(move || u.trim().to_string())
-                                .font(Font::Title2)
-                                .bold()
-                                .color(move || Color::hex(state.accent_color.get()))
-                                .align(TextAlign::Center),
-                            spacer().height(6.0),
-                            label("Мы продолжим вход с этим логином.")
-                                .font(Font::Subheadline)
-                                .secondary()
-                                .align(TextAlign::Center),
-                        ))
-                        .padding(Insets { top: 20.0, leading: 20.0, bottom: 16.0, trailing: 20.0 })
-                        .grow_w(),
-
-                        divider(),
-
-                        row((
-                            button("Изменить")
-                                .action(move || {
-                                    crate::shared::haptics::tick();
-                                    show_confirm_modal.set(false);
-                                    username_focused.set(true);
-                                })
-                                .frame(0.0, 44.0)
-                                .grow(),
-
-                            divider().frame(1.0, 44.0),
-
-                            button("Да")
-                                .tint(move || Color::hex(state.accent_color.get()))
-                                .action(move || {
-                                    crate::shared::haptics::tick();
-                                    show_confirm_modal.set(false);
-                                    username_focused.set(false);
-                                    password_focused.set(true);
-                                    with_animation(AnimSpec::ease_out(250), move || step.set(2));
-                                })
-                                .frame(0.0, 44.0)
-                                .grow(),
-                        ))
-                        .align(VAlign::Center)
-                        .grow_w(),
-                    ))
-                    .background(move || {
-                        if day::dark_mode() {
-                            Color::rgba(0.18, 0.18, 0.20, 0.96)
-                        } else {
-                            Color::rgba(0.96, 0.96, 0.98, 0.96)
-                        }
-                    })
-                    .corner_radius(20.0)
-                    .padding(Insets { top: 0.0, leading: 28.0, bottom: 0.0, trailing: 28.0 })
-                    .grow_w()
-                    .on_tap(|| {}),
-
-                    spacer().grow(),
-                ))
-                .background(Color::rgba(0.0, 0.0, 0.0, 0.45))
-                .grow()
-                .on_tap(move || {
-                    show_confirm_modal.set(false);
-                    username_focused.set(true);
-                })
-                .animation(AnimSpec::ease_out(200))
-                .any()
-            },
-        ),
     ))
     .grow()
+    .on_tap(move || {
+        crate::shared::keyboard::dismiss();
+    })
 }
 
 fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
