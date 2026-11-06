@@ -317,9 +317,11 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
                 if let Some(btn) = view.downcast_ref::<UIButton>() {
                     let name = NSString::from_str("chevron.backward");
                     if let Some(img) = UIImage::systemImageNamed(&name) {
-                        btn.setImage_forState(Some(&img), UIControlState::Normal);
-                        btn.setTitle_forState(None, UIControlState::Normal);
-                        btn.setTintColor(Some(&*UIColor::labelColor()));
+                        unsafe {
+                            btn.setImage_forState(Some(&img), UIControlState::Normal);
+                            btn.setTitle_forState(None, UIControlState::Normal);
+                            btn.setTintColor(Some(&*UIColor::labelColor()));
+                        }
                     }
                 }
             })
