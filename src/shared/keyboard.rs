@@ -21,6 +21,23 @@ pub fn get_keyboard_height() -> f64 {
 }
 
 #[allow(deprecated)]
+pub fn get_safe_area_top() -> f64 {
+    #[cfg(target_os = "ios")]
+    {
+        use objc2::MainThreadMarker;
+        use objc2_ui_kit::UIApplication;
+        if let Some(mtm) = MainThreadMarker::new() {
+            let app = UIApplication::sharedApplication(mtm);
+            if let Some(window) = app.keyWindow() {
+                let insets = unsafe { window.safeAreaInsets() };
+                return insets.top as f64;
+            }
+        }
+    }
+    0.0
+}
+
+#[allow(deprecated)]
 pub fn get_safe_area_bottom() -> f64 {
     #[cfg(target_os = "ios")]
     {
@@ -45,14 +62,7 @@ pub fn set_keyboard_height_with_duration(h: f64, duration_ms: u32) {
     let sig = keyboard_height_signal();
     if (sig.get() - h).abs() > 0.5 {
         crate::shared::nslog::nslog(&format!("[Keyboard] Height updated to: {h:.1} in {duration_ms}ms"));
-        if duration_ms == 0 {
-            sig.set(h);
-        } else {
-            let dur = duration_ms.clamp(150, 300);
-            with_animation(AnimSpec::ease_out(dur), move || {
-                sig.set(h);
-            });
-        }
+        sig.set(h);
     }
 }
 
@@ -77,7 +87,15 @@ pub fn dismiss() {
 
 pub fn init() {
     #[cfg(target_os = "ios")]
-    ios::install();
+    {
+        ios::install();
+        extern "C" {
+            fn eschool_install_tap_to_dismiss();
+        }
+        unsafe {
+            eschool_install_tap_to_dismiss();
+        }
+    }
 }
 
 #[cfg(target_os = "ios")]

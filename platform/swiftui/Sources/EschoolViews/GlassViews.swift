@@ -310,109 +310,97 @@ final class LiquidGlassContainerView: UIView {
 @_cdecl("eschool_style_liquid_glass_button")
 public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer) {
     let raw = Unmanaged<UIView>.fromOpaque(buttonPtr).takeUnretainedValue()
-    let btn: UIButton = (raw as? UIButton) ?? raw.subviews.compactMap({ $0 as? UIButton }).first ?? {
-        let b = UIButton(frame: raw.bounds)
-        raw.addSubview(b)
-        return b
-    }()
 
-    let size: CGFloat = 42.0
-    let radius: CGFloat = size / 2.0
+    DispatchQueue.main.async {
+        func findButton(in v: UIView) -> UIButton? {
+            if let b = v as? UIButton { return b }
+            for sub in v.subviews {
+                if let b = findButton(in: sub) { return b }
+            }
+            return nil
+        }
 
-    if btn.bounds.width == 0 || btn.bounds.height == 0 {
-        btn.bounds = CGRect(x: 0, y: 0, width: size, height: size)
-    }
+        let targetView: UIView = findButton(in: raw) ?? raw
+        let btn = targetView as? UIButton
 
-    btn.setTitle(nil, for: .normal)
-    btn.backgroundColor = .clear
+        btn?.setTitle(nil, for: .normal)
+        targetView.backgroundColor = .clear
 
-    let tag = 99881
-    if let existing = btn.viewWithTag(tag) {
-        existing.removeFromSuperview()
-    }
+        let tag = 99881
+        if let existing = targetView.viewWithTag(tag) {
+            existing.removeFromSuperview()
+        }
 
-    let glassView = LiquidGlassContainerView(size: size)
-    glassView.tag = tag
+        let size: CGFloat = 42.0
+        let radius: CGFloat = size / 2.0
 
-    // Drop Shadow on the button
-    btn.layer.cornerRadius = radius
-    btn.layer.shadowColor = UIColor.black.cgColor
-    btn.layer.shadowOpacity = 0.16
-    btn.layer.shadowRadius = 8.0
-    btn.layer.shadowOffset = CGSize(width: 0.0, height: 3.0)
-    btn.layer.masksToBounds = false
+        let glassView = LiquidGlassContainerView(size: size)
+        glassView.tag = tag
 
-    btn.insertSubview(glassView, at: 0)
+        // Drop Shadow on the button
+        targetView.layer.cornerRadius = radius
+        targetView.layer.shadowColor = UIColor.black.cgColor
+        targetView.layer.shadowOpacity = 0.16
+        targetView.layer.shadowRadius = 8.0
+        targetView.layer.shadowOffset = CGSize(width: 0.0, height: 3.0)
+        targetView.layer.masksToBounds = false
 
-    // Centered SF Symbol chevron with semibold weight
-    let config = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
-    let img = UIImage(systemName: "chevron.backward", withConfiguration: config)
-    btn.setImage(img, for: .normal)
-    btn.tintColor = .label
-    btn.contentHorizontalAlignment = .center
-    btn.contentVerticalAlignment = .center
-}
+        targetView.insertSubview(glassView, at: 0)
 
-// MARK: - Hardware-Synchronized Keyboard Button Gluer
-
-final class KeyboardGluer: NSObject {
-    static let shared = KeyboardGluer()
-    private weak var button: UIButton?
-
-    override init() {
-        super.init()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(keyboardWillChange(_:)),
-            name: UIResponder.keyboardWillChangeFrameNotification,
-            object: nil
-        )
-    }
-
-    func register(button: UIButton) {
-        self.button = button
-    }
-
-    @objc private func keyboardWillChange(_ notification: Notification) {
-        guard let button = self.button,
-              let userInfo = notification.userInfo,
-              let endFrame = (userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
-              let duration = (userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?.doubleValue,
-              let curveValue = (userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?.intValue
-        else { return }
-
-        guard let window = button.window ?? UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .flatMap({ $0.windows })
-            .first(where: { $0.isKeyWindow })
-        else { return }
-
-        let screenHeight = window.bounds.height
-        let safeAreaBottom = window.safeAreaInsets.bottom
-
-        let keyboardHeight: CGFloat = endFrame.origin.y < screenHeight ? (screenHeight - endFrame.origin.y) : 0
-        let lift: CGFloat = keyboardHeight > 0 ? max(0, keyboardHeight - safeAreaBottom) : 0
-
-        let options = UIView.AnimationOptions(rawValue: UInt(curveValue << 16))
-
-        UIView.animate(
-            withDuration: duration,
-            delay: 0,
-            options: [options, .beginFromCurrentState, .allowUserInteraction],
-            animations: {
-                button.transform = lift > 0 ? CGAffineTransform(translationX: 0, y: -lift) : .identity
-            },
-            completion: nil
-        )
+        // Centered SF Symbol chevron with semibold weight
+        if let btn = btn {
+            let config = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
+            let img = UIImage(systemName: "chevron.backward", withConfiguration: config)
+            btn.setImage(img, for: .normal)
+            btn.tintColor = .label
+            btn.contentHorizontalAlignment = .center
+            btn.contentVerticalAlignment = .center
+        } else {
+            let imgTag = 99882
+            if targetView.viewWithTag(imgTag) == nil {
+                let config = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
+                let iv = UIImageView(image: UIImage(systemName: "chevron.backward", withConfiguration: config))
+                iv.tag = imgTag
+                iv.tintColor = .label
+                iv.contentMode = .center
+                iv.frame = targetView.bounds
+                iv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                iv.isUserInteractionEnabled = false
+                targetView.addSubview(iv)
+            }
+        }
     }
 }
 
-@_cdecl("eschool_glue_button_to_keyboard")
-public func eschool_glue_button_to_keyboard(buttonPtr: UnsafeMutableRawPointer) {
-    let raw = Unmanaged<UIView>.fromOpaque(buttonPtr).takeUnretainedValue()
-    let btn: UIButton? = (raw as? UIButton) ?? raw.subviews.compactMap({ $0 as? UIButton }).first
-    if let b = btn {
-        KeyboardGluer.shared.register(button: b)
+// MARK: - Global Tap To Dismiss Keyboard
+
+final class DismissKeyboardTapGesture: UITapGestureRecognizer {}
+
+final class KeyboardDismisser: NSObject {
+    static let shared = KeyboardDismisser()
+
+    @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+        gesture.view?.endEditing(true)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
+@_cdecl("eschool_install_tap_to_dismiss")
+public func eschool_install_tap_to_dismiss() {
+    DispatchQueue.main.async {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let windows = scenes.flatMap { $0.windows }
+        let allWindows = windows.isEmpty ? UIApplication.shared.windows : windows
+
+        for window in allWindows {
+            if window.gestureRecognizers?.contains(where: { $0 is DismissKeyboardTapGesture }) == true {
+                continue
+            }
+            let tap = DismissKeyboardTapGesture(target: KeyboardDismisser.shared, action: #selector(KeyboardDismisser.handleTap(_:)))
+            tap.cancelsTouchesInView = false
+            tap.requiresExclusiveTouchType = false
+            window.addGestureRecognizer(tap)
+        }
     }
 }
 #if canImport(QuickLook)
