@@ -173,6 +173,7 @@ fn profile_view(state: AppState) -> impl Piece {
     .grow()
 }
 
+#[allow(dead_code)]
 struct AuthErrorInfo {
     code: &'static str,
     title: &'static str,
@@ -243,53 +244,6 @@ fn parse_auth_error(raw: &str) -> AuthErrorInfo {
     }
 }
 
-fn error_banner(error_local: Signal<String>, state: AppState) -> impl Piece {
-    when(
-        move || {
-            let local_err = error_local.get();
-            let state_err = state.error_msg.get();
-            let is_loading = state.loading.get();
-            (!local_err.is_empty() || !state_err.is_empty()) && !is_loading
-        },
-        move || {
-            let local_err = error_local.get();
-            let state_err = state.error_msg.get();
-            let raw_msg = if !local_err.is_empty() { local_err } else { state_err };
-            let err = parse_auth_error(&raw_msg);
-
-            column((
-                row((
-                    label(err.title)
-                        .font(Font::Headline)
-                        .color(colors::ERROR),
-                    spacer().grow(),
-                    label(err.code)
-                        .font(Font::Caption2)
-                        .bold()
-                        .color(colors::ERROR)
-                        .padding(Insets { top: 3.0, leading: 7.0, bottom: 3.0, trailing: 7.0 })
-                        .background(colors::ERROR.with_alpha(0.14))
-                        .corner_radius(6.0),
-                ))
-                .align(VAlign::Center)
-                .grow_w(),
-
-                spacer().height(4.0),
-
-                label(err.message)
-                    .font(Font::Subheadline)
-                    .secondary()
-                    .align(TextAlign::Leading),
-            ))
-            .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
-            .background(colors::ERROR.with_alpha(0.08))
-            .corner_radius(14.0)
-            .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-            .grow_w()
-            .any()
-        },
-    )
-}
 
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
@@ -491,15 +445,27 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                                 .font(Font::Title)
                                 .bold()
                                 .align(TextAlign::Center),
-                            label("Введите логин ученика или пригласительный код родителя для доступа к дневнику")
-                                .font(Font::Subheadline)
-                                .secondary()
-                                .align(TextAlign::Center)
-                                .padding(Insets { top: 4.0, leading: 24.0, bottom: 12.0, trailing: 24.0 }),
+                            label(move || {
+                                let local_err = error_local.get();
+                                let state_err = state.error_msg.get();
+                                if !local_err.is_empty() {
+                                    local_err
+                                } else if !state_err.is_empty() {
+                                    let err = parse_auth_error(&state_err);
+                                    err.message
+                                } else {
+                                    "Введите логин ученика или пригласительный код родителя для доступа к дневнику".to_string()
+                                }
+                            })
+                            .font(Font::Subheadline)
+                            .color(move || {
+                                let has_err = !error_local.get().is_empty() || !state.error_msg.get().is_empty();
+                                if has_err { colors::ERROR } else { colors::SECONDARY }
+                            })
+                            .align(TextAlign::Center)
+                            .padding(Insets { top: 4.0, leading: 24.0, bottom: 12.0, trailing: 24.0 }),
                         ))
                         .grow_w(),
-
-                        error_banner(error_local, state),
 
                         column((
                             label("ЛОГИН ИЛИ ПРИГЛАСИТЕЛЬНЫЙ КОД")
@@ -597,15 +563,27 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                                 .font(Font::Title)
                                 .bold()
                                 .align(TextAlign::Center),
-                            label("Введите пароль для входа в дневник")
-                                .font(Font::Subheadline)
-                                .secondary()
-                                .align(TextAlign::Center)
-                                .padding(Insets { top: 4.0, leading: 24.0, bottom: 12.0, trailing: 24.0 }),
+                            label(move || {
+                                let local_err = error_local.get();
+                                let state_err = state.error_msg.get();
+                                if !local_err.is_empty() {
+                                    local_err
+                                } else if !state_err.is_empty() {
+                                    let err = parse_auth_error(&state_err);
+                                    err.message
+                                } else {
+                                    "Введите пароль для входа в дневник".to_string()
+                                }
+                            })
+                            .font(Font::Subheadline)
+                            .color(move || {
+                                let has_err = !error_local.get().is_empty() || !state.error_msg.get().is_empty();
+                                if has_err { colors::ERROR } else { colors::SECONDARY }
+                            })
+                            .align(TextAlign::Center)
+                            .padding(Insets { top: 4.0, leading: 24.0, bottom: 12.0, trailing: 24.0 }),
                         ))
                         .grow_w(),
-
-                        error_banner(error_local, state),
 
                         column((
                             label("ПАРОЛЬ")
@@ -754,37 +732,28 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                     .font(Font::Title)
                     .bold()
                     .align(TextAlign::Center),
-                label("Вы вошли по временному коду. Придумайте надёжный постоянный пароль для кабинета родителя (12–15 символов, строчные и заглавные латинские буквы, цифры и спецсимволы)")
-                    .font(Font::Subheadline)
-                    .secondary()
-                    .align(TextAlign::Center)
-                    .padding(Insets { top: 6.0, leading: 24.0, bottom: 16.0, trailing: 24.0 }),
+                label(move || {
+                    let local = error_local.get();
+                    let state_err = state.error_msg.get();
+                    if !local.is_empty() {
+                        local
+                    } else if !state_err.is_empty() {
+                        let err = parse_auth_error(&state_err);
+                        err.message
+                    } else {
+                        "Вы вошли по временному коду. Придумайте надёжный постоянный пароль для кабинета родителя (12–15 символов, буквы, цифры и спецсимволы)".to_string()
+                    }
+                })
+                .font(Font::Subheadline)
+                .color(move || {
+                    let has_err = !error_local.get().is_empty() || !state.error_msg.get().is_empty();
+                    if has_err { colors::ERROR } else { colors::SECONDARY }
+                })
+                .align(TextAlign::Center)
+                .padding(Insets { top: 6.0, leading: 24.0, bottom: 16.0, trailing: 24.0 }),
             ))
             .log_pos("Setup:TitleColumn")
             .grow_w(),
-
-            when(
-                move || {
-                    let local = error_local.get();
-                    let state_err = state.error_msg.get();
-                    !local.is_empty() || !state_err.is_empty()
-                },
-                move || {
-                    let local = error_local.get();
-                    let state_err = state.error_msg.get();
-                    let msg = if !local.is_empty() { local } else { state_err };
-                    label(msg)
-                        .font(Font::Callout)
-                        .color(colors::ERROR)
-                        .align(TextAlign::Center)
-                        .padding(Insets { top: 8.0, leading: 14.0, bottom: 8.0, trailing: 14.0 })
-                        .background(colors::ERROR.with_alpha(0.12))
-                        .corner_radius(12.0)
-                        .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-                        .grow_w()
-                        .any()
-                },
-            ),
 
             column((
                 label("НОВЫЙ ПАРОЛЬ")

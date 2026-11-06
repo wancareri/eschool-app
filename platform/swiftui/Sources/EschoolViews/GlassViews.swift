@@ -324,14 +324,21 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
     btn.layer.backgroundColor = UIColor.clear.cgColor
 
     let applyStyle: (UIButton) -> Void = { button in
-        // Canonical Apple bordered button: .bordered().icon(Symbol::Back).icon_only()
-        var config = UIButton.Configuration.bordered()
+        var config = UIButton.Configuration.plain()
+
+        var background = UIBackgroundConfiguration.clear()
+        background.visualEffect = UIBlurEffect(style: .systemMaterial)
+        let isDark = button.traitCollection.userInterfaceStyle == .dark
+        // Visible frosted glass refraction tint on both light and dark backgrounds
+        background.backgroundColor = isDark ? UIColor(white: 1.0, alpha: 0.15) : UIColor(white: 1.0, alpha: 0.65)
+        config.background = background
+        config.cornerStyle = .capsule
 
         let symbolConfig = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
         config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
         config.imagePlacement = .all
         config.title = nil
-        config.cornerStyle = .capsule
+        config.baseForegroundColor = .label
         config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
 
         button.configuration = config
