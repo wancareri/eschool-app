@@ -229,20 +229,81 @@ import UIKit
 
 // MARK: - Native Liquid Glass Back Button Styler
 
-final class ButtonSpringAnimator: NSObject {
-    static let shared = ButtonSpringAnimator()
+final class LiquidSpringButtonHandler: NSObject {
+    static let shared = LiquidSpringButtonHandler()
+    private let haptic = UIImpactFeedbackGenerator(style: .light)
 
-    @objc func touchDown(_ sender: UIButton) {
-        UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
-            sender.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
-            sender.alpha = 0.82
+    func attach(to button: UIButton) {
+        button.removeTarget(self, action: nil, for: .allEvents)
+        button.addTarget(self, action: #selector(touchDown(_:event:)), for: [.touchDown])
+        button.addTarget(self, action: #selector(touchDrag(_:event:)), for: [.touchDragInside, .touchDragOutside])
+        button.addTarget(self, action: #selector(touchUp(_:)), for: [.touchUpInside, .touchUpOutside, .touchCancel])
+    }
+
+    @objc private func touchDown(_ sender: UIButton, event: UIEvent) {
+        haptic.prepare()
+        haptic.impactOccurred()
+        updateTransform(for: sender, event: event, isDown: true)
+    }
+
+    @objc private func touchDrag(_ sender: UIButton, event: UIEvent) {
+        updateTransform(for: sender, event: event, isDown: true)
+    }
+
+    @objc private func touchUp(_ sender: UIButton) {
+        // Elastic spring bounce back with liquid overshoot
+        UIView.animate(
+            withDuration: 0.50,
+            delay: 0,
+            usingSpringWithDamping: 0.45,
+            initialSpringVelocity: 1.2,
+            options: [.beginFromCurrentState, .allowUserInteraction]
+        ) {
+            sender.transform = .identity
+            sender.layer.shadowOpacity = sender.traitCollection.userInterfaceStyle == .dark ? 0.25 : 0.08
         }
     }
 
-    @objc func touchUp(_ sender: UIButton) {
-        UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.6, initialSpringVelocity: 0.5, options: [.beginFromCurrentState, .allowUserInteraction]) {
-            sender.transform = .identity
-            sender.alpha = 1.0
+    private func updateTransform(for sender: UIButton, event: UIEvent, isDown: Bool) {
+        guard let touch = event.touches(for: sender)?.first else {
+            UIView.animate(
+                withDuration: 0.22,
+                delay: 0,
+                usingSpringWithDamping: 0.55,
+                initialSpringVelocity: 0.8,
+                options: [.beginFromCurrentState, .allowUserInteraction]
+            ) {
+                sender.transform = CGAffineTransform(scaleX: 0.88, y: 0.88)
+            }
+            return
+        }
+
+        let location = touch.location(in: sender)
+        let center = CGPoint(x: sender.bounds.midX, y: sender.bounds.midY)
+        let dx = location.x - center.x
+        let dy = location.y - center.y
+
+        // Rubber-band liquid pull: dampening displacement (max 8 points in touch direction)
+        let maxPull: CGFloat = 8.0
+        let distance = sqrt(dx * dx + dy * dy)
+        let pullFactor = min(1.0, distance / 40.0)
+        let pullX = (distance > 0 ? (dx / distance) : 0) * maxPull * pullFactor
+        let pullY = (distance > 0 ? (dy / distance) : 0) * maxPull * pullFactor
+
+        // Compress down to 0.88 and elastically stretch in the pull direction
+        let baseScale: CGFloat = 0.88
+
+        UIView.animate(
+            withDuration: 0.16,
+            delay: 0,
+            usingSpringWithDamping: 0.6,
+            initialSpringVelocity: 0.8,
+            options: [.beginFromCurrentState, .allowUserInteraction]
+        ) {
+            let scaleTransform = CGAffineTransform(scaleX: baseScale, y: baseScale)
+            let translationTransform = CGAffineTransform(translationX: pullX, y: pullY)
+            sender.transform = scaleTransform.concatenating(translationTransform)
+            sender.layer.shadowOpacity = sender.traitCollection.userInterfaceStyle == .dark ? 0.40 : 0.18
         }
     }
 }
@@ -295,10 +356,8 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
     btn.layer.shadowOffset = CGSize(width: 0.0, height: 2.0)
     btn.layer.masksToBounds = false
 
-    // 5. Tactile spring interaction
-    btn.removeTarget(ButtonSpringAnimator.shared, action: nil, for: .allEvents)
-    btn.addTarget(ButtonSpringAnimator.shared, action: #selector(ButtonSpringAnimator.touchDown(_:)), for: [.touchDown, .touchDragEnter])
-    btn.addTarget(ButtonSpringAnimator.shared, action: #selector(ButtonSpringAnimator.touchUp(_:)), for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
+    // 5. Liquid rubber-band spring interaction with tactile haptics
+    LiquidSpringButtonHandler.shared.attach(to: btn)
 }
 
 // MARK: - Hardware-Synchronized Keyboard Button Gluer
