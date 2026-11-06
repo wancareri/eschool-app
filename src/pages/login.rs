@@ -426,9 +426,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             when(
                 move || step.get() == 1,
                 move || {
-                    let top_inset = (crate::shared::keyboard::get_safe_area_top()).max(24.0) + 8.0;
                     column((
-                        spacer().height(top_inset),
                         row((
                             liquid_glass_back_button(move || {
                                 crate::shared::haptics::tick();
@@ -438,7 +436,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                             }),
                             spacer().grow(),
                         ))
-                        .padding(Insets { top: 0.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
+                        .padding(Insets { top: 12.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
                         column((
                             label("Вход в аккаунт")
@@ -542,10 +540,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             when(
                 move || step.get() == 2,
                 move || {
-                    let top_inset = (crate::shared::keyboard::get_safe_area_top()).max(24.0) + 8.0;
                     column((
-                        spacer().height(top_inset),
-                        // Real Apple Liquid Glass circular back bubble with native SF Symbol chevron
                         row((
                             liquid_glass_back_button(move || {
                                 crate::shared::haptics::tick();
@@ -556,7 +551,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                             }),
                             spacer().grow(),
                         ))
-                        .padding(Insets { top: 0.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
+                        .padding(Insets { top: 12.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
                         column((
                             label("Введите пароль")

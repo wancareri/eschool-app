@@ -327,10 +327,8 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
         var config = UIButton.Configuration.plain()
 
         var background = UIBackgroundConfiguration.clear()
-        background.visualEffect = UIBlurEffect(style: .systemMaterial)
-        let isDark = button.traitCollection.userInterfaceStyle == .dark
-        // Visible frosted glass refraction tint on both light and dark backgrounds
-        background.backgroundColor = isDark ? UIColor(white: 1.0, alpha: 0.15) : UIColor(white: 1.0, alpha: 0.65)
+        // System material blur matching navigation and settings (SystemUltraThinMaterial)
+        background.visualEffect = UIBlurEffect(style: .systemUltraThinMaterial)
         config.background = background
         config.cornerStyle = .capsule
 
