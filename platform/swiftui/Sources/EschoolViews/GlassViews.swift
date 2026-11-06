@@ -234,7 +234,7 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
     let raw = Unmanaged<UIView>.fromOpaque(buttonPtr).takeUnretainedValue()
     guard let btn = raw as? UIButton else { return }
 
-    // Clean up any legacy experimental subviews or layers
+    // Clean up any legacy subviews or layers
     btn.subviews.filter { $0.tag == 99881 }.forEach { $0.removeFromSuperview() }
     btn.layer.sublayers?.removeAll(where: { $0 is CAGradientLayer })
     btn.layer.borderWidth = 0.0
@@ -247,34 +247,57 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
     btn.backgroundColor = .clear
     btn.layer.backgroundColor = UIColor.clear.cgColor
 
-    let applyStyle: (UIButton) -> Void = { button in
-        let isDark = button.traitCollection.userInterfaceStyle == .dark
-
+    if #available(iOS 26.0, *) {
+        // iOS 26+: настоящий Liquid Glass через UIGlassEffect
         var config = UIButton.Configuration.plain()
-
-        var bg = UIBackgroundConfiguration.clear()
-        let blur = UIBlurEffect(style: .systemUltraThinMaterial)
-        bg.visualEffect = blur
-        bg.backgroundColor = isDark
-            ? UIColor(white: 1.0, alpha: 0.12)
-            : UIColor(white: 0.0, alpha: 0.06)
-        config.background = bg
         config.cornerStyle = .capsule
+        config.title = nil
 
         let symbolConfig = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
         config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
         config.imagePlacement = .all
-        config.title = nil
-        config.baseForegroundColor = isDark ? .white : .label
         config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: -1.0, bottom: 0, trailing: 0)
 
-        button.configuration = config
-    }
+        var bg = UIBackgroundConfiguration.clear()
+        bg.visualEffect = UIGlassEffect()
+        config.background = bg
 
-    btn.configurationUpdateHandler = { button in
-        applyStyle(button)
+        btn.configuration = config
+        btn.configurationUpdateHandler = { button in
+            var c = button.configuration ?? UIButton.Configuration.plain()
+            c.baseForegroundColor = button.traitCollection.userInterfaceStyle == .dark ? .white : .label
+            button.configuration = c
+        }
+        btn.setNeedsUpdateConfiguration()
+    } else {
+        // iOS < 26: fallback — blur материал (ultraThinMaterial)
+        let applyStyle: (UIButton) -> Void = { button in
+            let isDark = button.traitCollection.userInterfaceStyle == .dark
+
+            var config = UIButton.Configuration.plain()
+
+            var bg = UIBackgroundConfiguration.clear()
+            let blur = UIBlurEffect(style: .systemUltraThinMaterial)
+            bg.visualEffect = blur
+            bg.backgroundColor = isDark
+                ? UIColor(white: 1.0, alpha: 0.12)
+                : UIColor(white: 0.0, alpha: 0.06)
+            config.background = bg
+            config.cornerStyle = .capsule
+
+            let symbolConfig = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
+            config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
+            config.imagePlacement = .all
+            config.title = nil
+            config.baseForegroundColor = isDark ? .white : .label
+            config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: -1.0, bottom: 0, trailing: 0)
+
+            button.configuration = config
+        }
+
+        btn.configurationUpdateHandler = { button in applyStyle(button) }
+        applyStyle(btn)
     }
-    applyStyle(btn)
 }
 
 // MARK: - Hardware-Synchronized Keyboard Button Gluer
