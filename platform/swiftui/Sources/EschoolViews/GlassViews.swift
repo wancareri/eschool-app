@@ -311,7 +311,7 @@ final class LiquidSpringButtonHandler: NSObject {
 @_cdecl("eschool_style_liquid_glass_button")
 public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer) {
     let raw = Unmanaged<UIView>.fromOpaque(buttonPtr).takeUnretainedValue()
-    NSLog("[LiquidGlass] Styling button with canonical Day-Showcase bordered Symbol::Back: %@", raw)
+    NSLog("[LiquidGlass] Applying exact Day-Showcase bordered Symbol::Back configuration: %@", raw)
 
     guard let btn = raw as? UIButton else { return }
 
@@ -322,36 +322,22 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
     btn.isUserInteractionEnabled = true
     btn.backgroundColor = .clear
     btn.layer.backgroundColor = UIColor.clear.cgColor
+    btn.layer.shadowOpacity = 0.0
 
-    let applyStyle: (UIButton) -> Void = { button in
-        var config = UIButton.Configuration.plain()
+    // Exact canonical Day-Showcase bordered button configuration
+    var config = UIButton.Configuration.bordered()
+    let symbolConfig = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
+    config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
+    config.imagePlacement = .all
+    config.title = nil
+    config.imagePadding = 0.0
+    // Uses the view's native tintColor (Accent Blue/App tint), exactly as in Showcase
+    config.baseForegroundColor = nil
+    // System dynamic squircle corner style, exactly as in Showcase
+    config.cornerStyle = .dynamic
 
-        var background = UIBackgroundConfiguration.clear()
-        // System material blur matching navigation and settings (SystemUltraThinMaterial)
-        background.visualEffect = UIBlurEffect(style: .systemUltraThinMaterial)
-        config.background = background
-        config.cornerStyle = .capsule
-
-        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
-        config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
-        config.imagePlacement = .all
-        config.title = nil
-        config.baseForegroundColor = .label
-        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
-
-        button.configuration = config
-        button.layer.shadowOpacity = 0.0
-    }
-
-    btn.configurationUpdateHandler = { button in
-        applyStyle(button)
-    }
-    applyStyle(btn)
-
-    DispatchQueue.main.async {
-        applyStyle(btn)
-        LiquidSpringButtonHandler.shared.attach(to: btn)
-    }
+    btn.configuration = config
+    btn.configurationUpdateHandler = nil
 }
 
 // MARK: - Hardware-Synchronized Keyboard Button Gluer
