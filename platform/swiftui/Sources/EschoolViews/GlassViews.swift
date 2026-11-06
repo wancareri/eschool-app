@@ -229,13 +229,24 @@ import UIKit
 
 // MARK: - Native Liquid Glass Back Button Styler
 
+// Вспомогательный класс: glass-фон растягивается по bounds кнопки,
+// cornerRadius всегда = половина высоты → идеальная капсула/круг
+@available(iOS 26.0, *)
+private final class GlassBackgroundView: UIVisualEffectView {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.cornerRadius = bounds.height / 2
+        layer.cornerCurve = .continuous
+    }
+}
+
 @_cdecl("eschool_style_liquid_glass_button")
 public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer) {
     let raw = Unmanaged<UIView>.fromOpaque(buttonPtr).takeUnretainedValue()
     guard let btn = raw as? UIButton else { return }
 
-    // Clean up any legacy subviews or layers
-    btn.subviews.filter { $0.tag == 99881 }.forEach { $0.removeFromSuperview() }
+    // Убираем старые subviews/layers от предыдущих вызовов
+    btn.subviews.filter { $0.tag == 99881 || $0.tag == 99882 }.forEach { $0.removeFromSuperview() }
     btn.layer.sublayers?.removeAll(where: { $0 is CAGradientLayer })
     btn.layer.borderWidth = 0.0
     btn.layer.shadowOpacity = 0.0
@@ -248,34 +259,44 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
     btn.layer.backgroundColor = UIColor.clear.cgColor
 
     if #available(iOS 26.0, *) {
-        // iOS 26+: настоящий Liquid Glass через UIGlassEffect
-        var config = UIButton.Configuration.plain()
-        config.cornerStyle = .capsule
-        config.title = nil
+        // iOS 26+: UIVisualEffectView с UIGlassEffect в качестве фона.
+        // Так glass корректно клипается в круг и растягивается по bounds кнопки.
+        let glassView = GlassBackgroundView(effect: UIGlassEffect())
+        glassView.tag = 99882
+        glassView.isUserInteractionEnabled = false
+        glassView.clipsToBounds = true
+        glassView.translatesAutoresizingMaskIntoConstraints = false
+        btn.insertSubview(glassView, at: 0)
+        NSLayoutConstraint.activate([
+            glassView.leadingAnchor.constraint(equalTo: btn.leadingAnchor),
+            glassView.trailingAnchor.constraint(equalTo: btn.trailingAnchor),
+            glassView.topAnchor.constraint(equalTo: btn.topAnchor),
+            glassView.bottomAnchor.constraint(equalTo: btn.bottomAnchor),
+        ])
 
+        // Конфигурация кнопки — только иконка, без своего фона
+        var config = UIButton.Configuration.plain()
+        config.background = .clear()
+        config.title = nil
         let symbolConfig = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
         config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
         config.imagePlacement = .all
         config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: -1.0, bottom: 0, trailing: 0)
-
-        var bg = UIBackgroundConfiguration.clear()
-        bg.visualEffect = UIGlassEffect()
-        config.background = bg
-
         btn.configuration = config
+
         btn.configurationUpdateHandler = { button in
             var c = button.configuration ?? UIButton.Configuration.plain()
             c.baseForegroundColor = button.traitCollection.userInterfaceStyle == .dark ? .white : .label
             button.configuration = c
         }
         btn.setNeedsUpdateConfiguration()
+
     } else {
-        // iOS < 26: fallback — blur материал (ultraThinMaterial)
+        // iOS < 26: fallback — ultraThinMaterial blur
         let applyStyle: (UIButton) -> Void = { button in
             let isDark = button.traitCollection.userInterfaceStyle == .dark
 
             var config = UIButton.Configuration.plain()
-
             var bg = UIBackgroundConfiguration.clear()
             let blur = UIBlurEffect(style: .systemUltraThinMaterial)
             bg.visualEffect = blur
@@ -291,7 +312,6 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
             config.title = nil
             config.baseForegroundColor = isDark ? .white : .label
             config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: -1.0, bottom: 0, trailing: 0)
-
             button.configuration = config
         }
 
