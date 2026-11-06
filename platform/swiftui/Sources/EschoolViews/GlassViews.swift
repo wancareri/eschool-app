@@ -511,9 +511,13 @@ final class KeyboardDismisser: NSObject, UIGestureRecognizerDelegate {
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        // If user tapped a text field or text view, don't dismiss immediately so they can type/focus
-        if touch.view is UITextField || touch.view is UITextView {
-            return false
+        // Never intercept touches intended for interactive controls (buttons, text fields, pickers)
+        var v: UIView? = touch.view
+        while let current = v {
+            if current is UIControl || current is UITextField || current is UITextView {
+                return false
+            }
+            v = current.superview
         }
         return true
     }

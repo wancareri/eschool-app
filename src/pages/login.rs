@@ -291,11 +291,41 @@ fn error_banner(error_local: Signal<String>, state: AppState) -> impl Piece {
     )
 }
 
+#[cfg(target_os = "ios")]
+unsafe extern "C" {
+    fn eschool_style_liquid_glass_button(button_ptr: *mut std::ffi::c_void);
+}
+
 fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
-    button("‹")
-        .bordered()
-        .action(action)
-        .id("liquid-glass-back-arrow")
+    let act = std::rc::Rc::new(action);
+    let act_clone = act.clone();
+
+    #[cfg(target_os = "ios")]
+    {
+        button("")
+            .frame(44.0, 44.0)
+            .action(move || {
+                act_clone();
+            })
+            .uikit(|view, _class, _mtm| {
+                let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
+                unsafe {
+                    eschool_style_liquid_glass_button(ptr);
+                }
+            })
+            .id("liquid-glass-back-arrow")
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    {
+        button("‹")
+            .glass()
+            .frame(42.0, 42.0)
+            .action(move || {
+                act_clone();
+            })
+            .id("liquid-glass-back-arrow")
+    }
 }
 
 fn auth_action_button(
@@ -304,6 +334,7 @@ fn auth_action_button(
 ) -> impl Piece {
     button(title)
         .prominent()
+        .height(50.0)
         .grow_w()
         .action(action)
         .id("login-btn")
@@ -399,7 +430,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
     let password_focused = Signal::new(false);
     let remember = Signal::new(true);
     let error_local = Signal::new(String::new());
-    let _kb_h = crate::shared::keyboard::keyboard_height_signal();
+    let kb_h = crate::shared::keyboard::keyboard_height_signal();
 
     column((
             // Step 0: Intro screen (Telegram style: Logo + title + subtitle + spacer)
@@ -685,8 +716,24 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                     }
                 },
             ),
+
+            dyn_piece(
+                move || {
+                    let h = kb_h.get();
+                    if h > 0.0 {
+                        let safe_b = crate::shared::keyboard::get_safe_area_bottom();
+                        (h - safe_b).max(0.0)
+                    } else {
+                        0.0
+                    }
+                },
+                move |lift| spacer().height(lift).animation(AnimSpec::ease_out(250)).any(),
+            ),
     ))
     .grow()
+    .on_tap(move || {
+        crate::shared::keyboard::dismiss();
+    })
 }
 
 fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
@@ -825,6 +872,7 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             }
         })
         .prominent()
+        .height(50.0)
         .grow_w()
         .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
         .log_pos("Setup:SubmitButton")
@@ -1031,6 +1079,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                     }
                 })
                 .prominent()
+                .height(50.0)
                 .grow_w()
                 .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
                 .log_pos("ChangePwd:SubmitButton")
