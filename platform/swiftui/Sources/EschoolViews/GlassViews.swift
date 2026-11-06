@@ -280,6 +280,8 @@ final class LiquidGlassBackButtonView: UIView {
         self.layer.masksToBounds = false
 
         addSubview(blurView)
+        blurView.isUserInteractionEnabled = false
+        blurView.contentView.isUserInteractionEnabled = false
         blurView.contentView.addSubview(tintOverlayView)
         blurView.contentView.layer.addSublayer(borderGradientLayer)
         blurView.contentView.addSubview(iconImageView)
@@ -345,13 +347,15 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
     let raw = Unmanaged<UIView>.fromOpaque(buttonPtr).takeUnretainedValue()
     NSLog("[LiquidGlass] Styling button: %@", raw)
 
+    raw.isUserInteractionEnabled = true
     raw.backgroundColor = .clear
     raw.layer.backgroundColor = UIColor.clear.cgColor
-    raw.layer.cornerRadius = 21.0
+    raw.layer.cornerRadius = 22.0
     raw.layer.masksToBounds = false
     raw.clipsToBounds = false
 
     if let btn = raw as? UIButton {
+        btn.isUserInteractionEnabled = true
         btn.setTitle(nil, for: .normal)
         btn.setTitle(nil, for: .highlighted)
         btn.configuration = nil
@@ -369,9 +373,10 @@ public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer
         existing.removeFromSuperview()
     }
 
-    let size: CGFloat = 42.0
+    let size: CGFloat = 44.0
     let glassView = LiquidGlassBackButtonView(size: size)
     glassView.tag = tag
+    glassView.isUserInteractionEnabled = false
     glassView.frame = CGRect(x: 0, y: 0, width: size, height: size)
     raw.insertSubview(glassView, at: 0)
 }
@@ -404,11 +409,27 @@ final class KeyboardGluer: NSObject {
             name: UIResponder.keyboardWillHideNotification,
             object: nil
         )
+        center.addObserver(
+            self,
+            selector: #selector(windowDidBecomeKey(_:)),
+            name: UIWindow.didBecomeKeyNotification,
+            object: nil
+        )
+    }
+
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        if let window = notification.object as? UIWindow {
+            KeyboardDismisser.shared.install(on: window)
+        }
     }
 
     func register(view: UIView) {
         NSLog("[KeyboardGluer] Registered view: %@", view)
         self.targetView = view
+        if let window = view.window {
+            KeyboardDismisser.shared.install(on: window)
+        }
+        eschool_install_tap_to_dismiss()
         if self.currentLift > 0 {
             view.transform = CGAffineTransform(translationX: 0, y: -self.currentLift)
         }
@@ -437,11 +458,29 @@ final class KeyboardGluer: NSObject {
             return
         }
 
+        KeyboardDismisser.shared.install(on: window)
+
         let endFrame = window.convert(rawEndFrame, from: nil)
         let screenHeight = window.bounds.height
         let safeAreaBottom = window.safeAreaInsets.bottom
 
-        let keyboardHeight: CGFloat = endFrame.origin.y < screenHeight ? (screenHeight - endFrame.origin.y) : 0
+        // Standard iOS portrait keyboard height is never > 390 pt.
+        // During AutoFill sheet or FaceID/modal presentation, endFrame.origin.y can be 0 or small,
+        // which would cause keyboardHeight to erroneously become screenHeight (800+ pt).
+        let maxAllowedKeyboardHeight: CGFloat = min(390.0, screenHeight * 0.48)
+        let keyboardHeight: CGFloat
+        if endFrame.origin.y < screenHeight {
+            let rawHeight = screenHeight - endFrame.origin.y
+            if rawHeight > maxAllowedKeyboardHeight {
+                // Clamped to standard keyboard height:
+                keyboardHeight = min(336.0, screenHeight * 0.42)
+            } else {
+                keyboardHeight = max(0, rawHeight)
+            }
+        } else {
+            keyboardHeight = 0
+        }
+
         let lift: CGFloat = keyboardHeight > 0 ? max(0, keyboardHeight - safeAreaBottom + 8.0) : 0
         self.currentLift = lift
 
@@ -471,12 +510,37 @@ public func eschool_glue_button_to_keyboard(viewPtr: UnsafeMutableRawPointer) {
 
 final class DismissKeyboardTapGesture: UITapGestureRecognizer {}
 
-final class KeyboardDismisser: NSObject {
+final class KeyboardDismisser: NSObject, UIGestureRecognizerDelegate {
     static let shared = KeyboardDismisser()
 
+    func install(on window: UIWindow?) {
+        guard let window = window else { return }
+        if window.gestureRecognizers?.contains(where: { $0 is DismissKeyboardTapGesture }) == true {
+            return
+        }
+        let tap = DismissKeyboardTapGesture(target: self, action: #selector(handleTap(_:)))
+        tap.cancelsTouchesInView = false
+        tap.requiresExclusiveTouchType = false
+        tap.delegate = self
+        window.addGestureRecognizer(tap)
+        NSLog("[KeyboardDismisser] Installed tap gesture on window: %@", window)
+    }
+
     @objc func handleTap(_ gesture: UITapGestureRecognizer) {
-        gesture.view?.endEditing(true)
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        guard let window = gesture.view as? UIWindow ?? UIApplication.shared.windows.first(where: { $0.isKeyWindow }) else { return }
+        window.endEditing(true)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        // If user tapped a text field or text view, don't dismiss immediately so they can type/focus
+        if touch.view is UITextField || touch.view is UITextView {
+            return false
+        }
+        return true
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        return true
     }
 }
 
@@ -488,13 +552,7 @@ public func eschool_install_tap_to_dismiss() {
         let allWindows = windows.isEmpty ? UIApplication.shared.windows : windows
 
         for window in allWindows {
-            if window.gestureRecognizers?.contains(where: { $0 is DismissKeyboardTapGesture }) == true {
-                continue
-            }
-            let tap = DismissKeyboardTapGesture(target: KeyboardDismisser.shared, action: #selector(KeyboardDismisser.handleTap(_:)))
-            tap.cancelsTouchesInView = false
-            tap.requiresExclusiveTouchType = false
-            window.addGestureRecognizer(tap)
+            KeyboardDismisser.shared.install(on: window)
         }
     }
 }

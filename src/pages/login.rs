@@ -304,6 +304,9 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
     #[cfg(target_os = "ios")]
     {
         button("")
+            .action(move || {
+                act_clone();
+            })
             .uikit(|view, class, _mtm| {
                 crate::shared::nslog::nslog(&format!("[Auth] BackButton uikit called on class={class}"));
                 let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
@@ -311,10 +314,7 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
                     eschool_style_liquid_glass_button(ptr);
                 }
             })
-            .frame(42.0, 42.0)
-            .action(move || {
-                act_clone();
-            })
+            .frame(44.0, 44.0)
             .id("liquid-glass-back-arrow")
     }
 
@@ -753,9 +753,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             ),
     ))
     .grow()
-    .on_tap(move || {
-        crate::shared::keyboard::dismiss();
-    })
 }
 
 fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
@@ -953,9 +950,6 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
         ),
     ))
     .grow()
-    .on_tap(move || {
-        crate::shared::keyboard::dismiss();
-    })
 }
 
 fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
