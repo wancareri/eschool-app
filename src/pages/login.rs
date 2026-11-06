@@ -294,6 +294,7 @@ fn error_banner(error_local: Signal<String>, state: AppState) -> impl Piece {
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
     fn eschool_style_liquid_glass_button(button_ptr: *mut std::ffi::c_void);
+    fn eschool_glue_button_to_keyboard(button_ptr: *mut std::ffi::c_void);
 }
 
 fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
@@ -304,17 +305,13 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
     {
         button("")
             .frame(42.0, 42.0)
-            .corner_radius(21.0)
             .action(move || {
                 act_clone();
             })
             .uikit(|view, _class, _mtm| {
-                use objc2_ui_kit::UIButton;
-                if let Some(btn) = view.downcast_ref::<UIButton>() {
-                    let ptr = (btn as &UIButton as *const UIButton) as *mut std::ffi::c_void;
-                    unsafe {
-                        eschool_style_liquid_glass_button(ptr);
-                    }
+                let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
+                unsafe {
+                    eschool_style_liquid_glass_button(ptr);
                 }
             })
             .id("liquid-glass-back-arrow")
@@ -337,6 +334,35 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
                 act_clone();
             })
             .id("liquid-glass-back-arrow")
+    }
+}
+
+fn auth_action_button(
+    title: impl Fn() -> &'static str + 'static,
+    action: impl Fn() + 'static,
+) -> impl Piece {
+    let btn = button(title)
+        .prominent()
+        .frame(0.0, 50.0)
+        .grow_w()
+        .action(action)
+        .id("login-btn")
+        .log_pos("Auth:ActionButton")
+        .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 });
+
+    #[cfg(target_os = "ios")]
+    {
+        btn.uikit(|view, _class, _mtm| {
+            let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
+            unsafe {
+                eschool_glue_button_to_keyboard(ptr);
+            }
+        })
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    {
+        btn
     }
 }
 
@@ -428,7 +454,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
     let password_focused = Signal::new(false);
     let remember = Signal::new(true);
     let error_local = Signal::new(String::new());
-    let kb_h = crate::shared::keyboard::keyboard_height_signal();
+    let _kb_h = crate::shared::keyboard::keyboard_height_signal();
 
     column((
             // Step 0: Intro screen (Telegram style: Logo + title + subtitle + spacer)
@@ -470,7 +496,16 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 move || step.get() == 1,
                 move || {
                     column((
-                        spacer().height(16.0),
+                        row((
+                            liquid_glass_back_button(move || {
+                                crate::shared::haptics::tick();
+                                crate::shared::keyboard::dismiss();
+                                username_focused.set(false);
+                                with_animation(AnimSpec::ease_out(250), move || step.set(0));
+                            }),
+                            spacer().grow(),
+                        ))
+                        .padding(Insets { top: 6.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
                         column((
                             label("Вход в аккаунт")
@@ -642,87 +677,73 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             spacer().grow(),
 
             // Telegram-style solid rounded action button pinned at bottom, lifts directly above keyboard
-            button(move || {
-                if state.loading.get() {
-                    "Вход в систему…"
-                } else {
-                    match step.get() {
-                        0 => "Начать",
-                        1 => "Продолжить",
-                        _ => "Войти",
-                    }
-                }
-            })
-            .prominent()
-            .frame(0.0, 50.0)
-            .grow_w()
-            .action(move || {
-                if state.loading.get() { return; }
-                match step.get_untracked() {
-                    0 => {
-                        crate::shared::haptics::tick();
-                        error_local.set(String::new());
-                        state.error_msg.set(String::new());
-                        username_focused.set(true);
-                        with_animation(AnimSpec::ease_out(250), move || step.set(1));
-                    }
-                    1 => {
-                        let u = username.get_untracked();
-                        if u.trim().is_empty() {
-                            error_local.set("Введите логин".into());
-                        } else {
-                            error_local.set(String::new());
-                            state.error_msg.set(String::new());
-                            crate::shared::haptics::tick();
-                            prompt_login_confirmation(
-                                u.trim().to_string(),
-                                move || {
-                                    crate::shared::haptics::tick();
-                                    username_focused.set(false);
-                                    password_focused.set(true);
-                                    with_animation(AnimSpec::ease_out(250), move || step.set(2));
-                                },
-                                move || {
-                                    crate::shared::haptics::tick();
-                                    username_focused.set(true);
-                                },
-                            );
-                        }
-                    }
-                    _ => {
-                        let u = username.get_untracked();
-                        let p = password.get_untracked();
-                        let r = remember.get_untracked();
-                        if p.is_empty() {
-                            error_local.set("Введите пароль".into());
-                            return;
-                        }
-                        error_local.set(String::new());
-                        state.error_msg.set(String::new());
-                        crate::shared::keyboard::dismiss();
-                        crate::shared::haptics::pop();
-                        features::auth::login(state, &u, &p, r);
-                    }
-                }
-            })
-            .id("login-btn")
-            .log_pos("Auth:ActionButton")
-            .padding(Insets { top: 0.0, leading: 24.0, bottom: 0.0, trailing: 24.0 }),
-
-            dyn_piece(
+            auth_action_button(
                 move || {
-                    let h = kb_h.get();
-                    if h > 0.0 {
-                        let safe_b = crate::shared::keyboard::get_safe_area_bottom();
-                        (h - safe_b).max(0.0) + 12.0
+                    if state.loading.get() {
+                        "Вход в систему…"
                     } else {
-                        12.0
+                        match step.get() {
+                            0 => "Начать",
+                            1 => "Продолжить",
+                            _ => "Войти",
+                        }
                     }
                 },
-                move |lift| spacer().height(lift).any(),
+                move || {
+                    if state.loading.get() { return; }
+                    match step.get_untracked() {
+                        0 => {
+                            crate::shared::haptics::tick();
+                            error_local.set(String::new());
+                            state.error_msg.set(String::new());
+                            username_focused.set(true);
+                            with_animation(AnimSpec::ease_out(250), move || step.set(1));
+                        }
+                        1 => {
+                            let u = username.get_untracked();
+                            if u.trim().is_empty() {
+                                error_local.set("Введите логин".into());
+                            } else {
+                                error_local.set(String::new());
+                                state.error_msg.set(String::new());
+                                crate::shared::haptics::tick();
+                                prompt_login_confirmation(
+                                    u.trim().to_string(),
+                                    move || {
+                                        crate::shared::haptics::tick();
+                                        username_focused.set(false);
+                                        password_focused.set(true);
+                                        with_animation(AnimSpec::ease_out(250), move || step.set(2));
+                                    },
+                                    move || {
+                                        crate::shared::haptics::tick();
+                                        username_focused.set(true);
+                                    },
+                                );
+                            }
+                        }
+                        _ => {
+                            let u = username.get_untracked();
+                            let p = password.get_untracked();
+                            let r = remember.get_untracked();
+                            if p.is_empty() {
+                                error_local.set("Введите пароль".into());
+                                return;
+                            }
+                            error_local.set(String::new());
+                            state.error_msg.set(String::new());
+                            crate::shared::keyboard::dismiss();
+                            crate::shared::haptics::pop();
+                            features::auth::login(state, &u, &p, r);
+                        }
+                    }
+                },
             ),
     ))
     .grow()
+    .on_tap(move || {
+        crate::shared::keyboard::dismiss();
+    })
 }
 
 fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
