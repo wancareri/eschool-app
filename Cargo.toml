@@ -1,6 +1,6 @@
 [package]
 name = "eschool-app"
-version = "0.2.9"
+version = "0.2.10"
 edition = "2024"
 # Generates typed `res::` constants from `resource/` (see build.rs).
 build = "build.rs"

@@ -229,101 +229,6 @@ import UIKit
 
 // MARK: - Native Liquid Glass Back Button Styler
 
-final class LiquidGlassBackButtonView: UIView {
-    let blurView: UIVisualEffectView
-    let tintOverlayView: UIView
-    let borderGradientLayer = CAGradientLayer()
-    let borderMaskLayer = CAShapeLayer()
-    let iconImageView: UIImageView
-
-    init(size: CGFloat = 42.0) {
-        let frame = CGRect(x: 0, y: 0, width: size, height: size)
-        let radius = size / 2.0
-
-        let blur = UIBlurEffect(style: .systemUltraThinMaterial)
-        self.blurView = UIVisualEffectView(effect: blur)
-        self.blurView.frame = frame
-        self.blurView.layer.cornerRadius = radius
-        self.blurView.layer.masksToBounds = true
-        self.blurView.isUserInteractionEnabled = false
-
-        self.tintOverlayView = UIView(frame: frame)
-        self.tintOverlayView.layer.cornerRadius = radius
-        self.tintOverlayView.layer.masksToBounds = true
-        self.tintOverlayView.isUserInteractionEnabled = false
-
-        self.borderGradientLayer.frame = frame
-        self.borderGradientLayer.startPoint = CGPoint(x: 0.1, y: 0.0)
-        self.borderGradientLayer.endPoint = CGPoint(x: 0.9, y: 1.0)
-        self.borderMaskLayer.lineWidth = 1.0
-        self.borderMaskLayer.path = UIBezierPath(ovalIn: frame.insetBy(dx: 0.5, dy: 0.5)).cgPath
-        self.borderMaskLayer.fillColor = UIColor.clear.cgColor
-        self.borderMaskLayer.strokeColor = UIColor.black.cgColor
-        self.borderGradientLayer.mask = self.borderMaskLayer
-
-        let config = UIImage.SymbolConfiguration(pointSize: 18.0, weight: .semibold)
-        let img = UIImage(systemName: "chevron.backward", withConfiguration: config)
-        self.iconImageView = UIImageView(image: img)
-        self.iconImageView.tintColor = .label
-        self.iconImageView.contentMode = .center
-        self.iconImageView.frame = frame
-        self.iconImageView.isUserInteractionEnabled = false
-
-        super.init(frame: frame)
-        self.isUserInteractionEnabled = false
-        self.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-
-        self.layer.shadowColor = UIColor.black.cgColor
-        self.layer.shadowOpacity = 0.14
-        self.layer.shadowRadius = 8.0
-        self.layer.shadowOffset = CGSize(width: 0.0, height: 2.0)
-        self.layer.masksToBounds = false
-
-        addSubview(blurView)
-        blurView.isUserInteractionEnabled = false
-        blurView.contentView.isUserInteractionEnabled = false
-        blurView.contentView.addSubview(tintOverlayView)
-        blurView.contentView.layer.addSublayer(borderGradientLayer)
-        blurView.contentView.addSubview(iconImageView)
-
-        updateAppearance()
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let w = bounds.width > 0 ? bounds.width : 42.0
-        let h = bounds.height > 0 ? bounds.height : 42.0
-        let currentBounds = CGRect(x: 0, y: 0, width: w, height: h)
-        let radius = w / 2.0
-
-        blurView.frame = currentBounds
-        blurView.layer.cornerRadius = radius
-        tintOverlayView.frame = currentBounds
-        tintOverlayView.layer.cornerRadius = radius
-        borderGradientLayer.frame = currentBounds
-        borderMaskLayer.path = UIBezierPath(ovalIn: currentBounds.insetBy(dx: 0.5, dy: 0.5)).cgPath
-        iconImageView.frame = currentBounds
-    }
-
-    func updateAppearance() {
-        let isDark = traitCollection.userInterfaceStyle == .dark
-        tintOverlayView.backgroundColor = isDark ? UIColor(white: 1.0, alpha: 0.12) : UIColor(white: 1.0, alpha: 0.45)
-        borderGradientLayer.colors = [
-            (isDark ? UIColor(white: 1.0, alpha: 0.70) : UIColor(white: 1.0, alpha: 0.90)).cgColor,
-            (isDark ? UIColor(white: 1.0, alpha: 0.15) : UIColor(white: 1.0, alpha: 0.30)).cgColor,
-            (isDark ? UIColor(white: 1.0, alpha: 0.05) : UIColor(white: 1.0, alpha: 0.10)).cgColor,
-            (isDark ? UIColor(white: 1.0, alpha: 0.40) : UIColor(white: 1.0, alpha: 0.55)).cgColor
-        ]
-    }
-
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        updateAppearance()
-    }
-}
-
 final class ButtonSpringAnimator: NSObject {
     static let shared = ButtonSpringAnimator()
 
@@ -345,40 +250,55 @@ final class ButtonSpringAnimator: NSObject {
 @_cdecl("eschool_style_liquid_glass_button")
 public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer) {
     let raw = Unmanaged<UIView>.fromOpaque(buttonPtr).takeUnretainedValue()
-    NSLog("[LiquidGlass] Styling button: %@", raw)
+    NSLog("[LiquidGlass] Styling button with canonical UIBackgroundConfiguration: %@", raw)
 
-    raw.isUserInteractionEnabled = true
-    raw.backgroundColor = .clear
-    raw.layer.backgroundColor = UIColor.clear.cgColor
-    raw.layer.cornerRadius = 22.0
-    raw.layer.masksToBounds = false
-    raw.clipsToBounds = false
+    guard let btn = raw as? UIButton else { return }
 
-    if let btn = raw as? UIButton {
-        btn.isUserInteractionEnabled = true
-        btn.setTitle(nil, for: .normal)
-        btn.setTitle(nil, for: .highlighted)
-        btn.configuration = nil
-        btn.titleLabel?.text = nil
-        btn.titleLabel?.alpha = 0.0
-        btn.backgroundColor = .clear
-        btn.layer.backgroundColor = UIColor.clear.cgColor
-
-        btn.addTarget(ButtonSpringAnimator.shared, action: #selector(ButtonSpringAnimator.touchDown(_:)), for: [.touchDown, .touchDragEnter])
-        btn.addTarget(ButtonSpringAnimator.shared, action: #selector(ButtonSpringAnimator.touchUp(_:)), for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
-    }
-
+    // Remove legacy subviews if any
     let tag = 99881
-    if let existing = raw.viewWithTag(tag) {
-        existing.removeFromSuperview()
-    }
+    btn.viewWithTag(tag)?.removeFromSuperview()
 
-    let size: CGFloat = 44.0
-    let glassView = LiquidGlassBackButtonView(size: size)
-    glassView.tag = tag
-    glassView.isUserInteractionEnabled = false
-    glassView.frame = CGRect(x: 0, y: 0, width: size, height: size)
-    raw.insertSubview(glassView, at: 0)
+    btn.isUserInteractionEnabled = true
+    btn.backgroundColor = .clear
+    btn.layer.backgroundColor = UIColor.clear.cgColor
+
+    // 1. Apple's canonical plain configuration
+    var config = UIButton.Configuration.plain()
+
+    // 2. SF Symbol chevron.backward icon with semibold weight
+    let symbolConfig = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
+    config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
+    config.imagePlacement = .all
+    config.baseForegroundColor = .label
+
+    // 3. Apple's official systemUltraThinMaterial background configuration
+    var background = UIBackgroundConfiguration.clear()
+    background.visualEffect = UIBlurEffect(style: .systemUltraThinMaterial)
+    background.cornerRadius = 22.0
+
+    let isDark = btn.traitCollection.userInterfaceStyle == .dark
+    // Translucent glass tint so it has visible liquid refraction depth on any background
+    background.backgroundColor = isDark ? UIColor(white: 1.0, alpha: 0.14) : UIColor(white: 1.0, alpha: 0.45)
+    // Specular border outline
+    background.strokeColor = isDark ? UIColor(white: 1.0, alpha: 0.28) : UIColor(white: 0.0, alpha: 0.12)
+    background.strokeWidth = 1.0
+
+    config.background = background
+    config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+
+    btn.configuration = config
+
+    // 4. Floating glass shadow for depth
+    btn.layer.shadowColor = UIColor.black.cgColor
+    btn.layer.shadowOpacity = isDark ? 0.25 : 0.08
+    btn.layer.shadowRadius = 8.0
+    btn.layer.shadowOffset = CGSize(width: 0.0, height: 2.0)
+    btn.layer.masksToBounds = false
+
+    // 5. Tactile spring interaction
+    btn.removeTarget(ButtonSpringAnimator.shared, action: nil, for: .allEvents)
+    btn.addTarget(ButtonSpringAnimator.shared, action: #selector(ButtonSpringAnimator.touchDown(_:)), for: [.touchDown, .touchDragEnter])
+    btn.addTarget(ButtonSpringAnimator.shared, action: #selector(ButtonSpringAnimator.touchUp(_:)), for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
 }
 
 // MARK: - Hardware-Synchronized Keyboard Button Gluer
