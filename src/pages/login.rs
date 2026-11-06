@@ -291,87 +291,24 @@ fn error_banner(error_local: Signal<String>, state: AppState) -> impl Piece {
     )
 }
 
-#[cfg(target_os = "ios")]
-unsafe extern "C" {
-    fn eschool_style_liquid_glass_button(button_ptr: *mut std::ffi::c_void);
-    fn eschool_glue_button_to_keyboard(button_ptr: *mut std::ffi::c_void);
-}
-
 fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
-    let act = std::rc::Rc::new(action);
-    let act_clone = act.clone();
-
-    #[cfg(target_os = "ios")]
-    {
-        button("")
-            .action(move || {
-                act_clone();
-            })
-            .uikit(|view, class, _mtm| {
-                crate::shared::nslog::nslog(&format!("[Auth] BackButton uikit called on class={class}"));
-                let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
-                unsafe {
-                    eschool_style_liquid_glass_button(ptr);
-                }
-            })
-            .frame(44.0, 44.0)
-            .id("liquid-glass-back-arrow")
-    }
-
-    #[cfg(not(target_os = "ios"))]
-    {
-        button("‹")
-            .frame(42.0, 42.0)
-            .corner_radius(21.0)
-            .glass_radius(21.0)
-            .background(move || {
-                if day::dark_mode() {
-                    Color::rgba(1.0, 1.0, 1.0, 0.16)
-                } else {
-                    Color::rgba(0.0, 0.0, 0.0, 0.08)
-                }
-            })
-            .action(move || {
-                act_clone();
-            })
-            .id("liquid-glass-back-arrow")
-    }
+    button("‹")
+        .bordered()
+        .action(action)
+        .id("liquid-glass-back-arrow")
 }
 
 fn auth_action_button(
     title: impl Fn() -> &'static str + 'static,
     action: impl Fn() + 'static,
 ) -> impl Piece {
-    #[cfg(target_os = "ios")]
-    {
-        button(title)
-            .prominent()
-            .uikit(|view, class, _mtm| {
-                crate::shared::nslog::nslog(&format!("[Auth] ActionButton uikit called on class={class}"));
-                let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
-                unsafe {
-                    eschool_glue_button_to_keyboard(ptr);
-                }
-            })
-            .frame(0.0, 50.0)
-            .grow_w()
-            .action(action)
-            .id("login-btn")
-            .log_pos("Auth:ActionButton")
-            .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
-    }
-
-    #[cfg(not(target_os = "ios"))]
-    {
-        button(title)
-            .prominent()
-            .frame(0.0, 50.0)
-            .grow_w()
-            .action(action)
-            .id("login-btn")
-            .log_pos("Auth:ActionButton")
-            .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
-    }
+    button(title)
+        .prominent()
+        .grow_w()
+        .action(action)
+        .id("login-btn")
+        .log_pos("Auth:ActionButton")
+        .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
 }
 
 fn prompt_login_confirmation(
@@ -543,12 +480,10 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                                 // with a SINGLE Face ID scan!
                                 text_field(password)
                                     .secure()
-                                    .frame(0.0, 44.0)
                                     .grow_w()
                                     .opacity(0.02),
                                 text_field(username)
                                     .focused(username_focused)
-                                    .frame(0.0, 44.0)
                                     .grow_w()
                                     .log_pos("Auth:UsernameField")
                                     .on_submit(move || {
@@ -648,7 +583,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                             text_field(password)
                                 .secure()
                                 .focused(password_focused)
-                                .frame(0.0, 44.0)
                                 .grow_w()
                                 .id("password-field")
                                 .log_pos("Auth:PasswordField")
@@ -811,7 +745,6 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                     .secondary(),
                 text_field(new_password)
                     .secure()
-                    .frame(0.0, 44.0)
                     .grow_w()
                     .log_pos("Setup:NewPasswordField")
                     .on_submit(move || {
@@ -839,7 +772,6 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                 text_field(confirm_password)
                     .secure()
                     .focused(confirm_focused)
-                    .frame(0.0, 44.0)
                     .grow_w()
                     .log_pos("Setup:ConfirmPasswordField")
                     .on_submit(move || {
@@ -893,8 +825,8 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             }
         })
         .prominent()
-        .frame(0.0, 50.0)
         .grow_w()
+        .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
         .log_pos("Setup:SubmitButton")
         .action(move || {
             if state.loading.get() { return; }
@@ -1025,7 +957,6 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         .secondary(),
                     text_field(old_password)
                         .secure()
-                        .frame(0.0, 44.0)
                         .grow_w()
                         .log_pos("ChangePwd:OldPasswordField"),
                 ))
@@ -1049,7 +980,6 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         .secondary(),
                     text_field(new_password)
                         .secure()
-                        .frame(0.0, 44.0)
                         .grow_w()
                         .log_pos("ChangePwd:NewPasswordField")
                         .on_submit(move || {
@@ -1077,7 +1007,6 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                     text_field(confirm_password)
                         .secure()
                         .focused(confirm_focused)
-                        .frame(0.0, 44.0)
                         .grow_w()
                         .log_pos("ChangePwd:ConfirmPasswordField"),
                 ))
@@ -1102,9 +1031,8 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                     }
                 })
                 .prominent()
-                .frame(0.0, 50.0)
                 .grow_w()
-                .corner_radius(25.0)
+                .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
                 .log_pos("ChangePwd:SubmitButton")
                 .action(move || {
                     if state.loading.get() { return; }
