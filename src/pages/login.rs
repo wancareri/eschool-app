@@ -4,6 +4,8 @@ use crate::shared::colors;
 use crate::shared::layout_diag::{debug_log_button, debug_log_overlay, PosLogExt};
 use crate::res;
 use day::prelude::*;
+#[cfg(target_os = "ios")]
+use day_uikit::UiKitExt;
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
