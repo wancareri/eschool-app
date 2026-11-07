@@ -26,6 +26,7 @@ fn build_lottie_html(json_data: &str) -> String {
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     width: 100%; height: 100%;
+    margin: 0; padding: 0;
     overflow: hidden;
     background: transparent !important;
     background-color: transparent !important;
@@ -41,9 +42,11 @@ fn build_lottie_html(json_data: &str) -> String {
     justify-content: center;
   }
   svg {
-    display: block;
+    display: block !important;
     width: 100% !important;
     height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
     margin: auto;
   }
 </style>
@@ -68,12 +71,30 @@ try {
     animationData: animData,
     rendererSettings: {
       preserveAspectRatio: 'xMidYMid meet',
+      viewBoxOnly: true,
       progressiveLoad: false,
       hideOnTransparent: false
     }
   });
   window.lottieAnim = anim;
+  var fixSvg = function() {
+    var svg = document.querySelector('svg');
+    if (svg) {
+      svg.removeAttribute('width');
+      svg.removeAttribute('height');
+      svg.style.width = '100%';
+      svg.style.height = '100%';
+      svg.style.maxWidth = '100%';
+      svg.style.maxHeight = '100%';
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    }
+  };
+  anim.addEventListener('DOMLoaded', fixSvg);
+  setTimeout(fixSvg, 20);
+  setTimeout(fixSvg, 100);
+  setTimeout(fixSvg, 500);
   window.addEventListener('resize', function() {
+    fixSvg();
     if (window.lottieAnim) window.lottieAnim.resize();
   });
   var keepPlaying = function() {
@@ -211,7 +232,6 @@ fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f6
         let clear_color = objc2_ui_kit::UIColor::clearColor();
         let _: () = objc2::msg_send![web_view, setBackgroundColor: &*clear_color];
         let _: () = objc2::msg_send![web_view, setUserInteractionEnabled: false];
-        let _: () = objc2::msg_send![web_view, setAutoresizingMask: 18usize];
 
         let scroll_view: *mut AnyObject = objc2::msg_send![web_view, scrollView];
         if !scroll_view.is_null() {
@@ -243,6 +263,29 @@ fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f6
         ];
 
         let _: () = objc2::msg_send![parent_view, addSubview: web_view];
+        let _: () = objc2::msg_send![web_view, setTranslatesAutoresizingMaskIntoConstraints: false];
+
+        // Pin all 4 edges with Auto Layout so WKWebView matches parent container frame perfectly
+        let top: *mut AnyObject = objc2::msg_send![web_view, topAnchor];
+        let p_top: *mut AnyObject = objc2::msg_send![parent_view, topAnchor];
+        let c_top: *mut AnyObject = objc2::msg_send![top, constraintEqualToAnchor: p_top];
+        let _: () = objc2::msg_send![c_top, setActive: true];
+
+        let bottom: *mut AnyObject = objc2::msg_send![web_view, bottomAnchor];
+        let p_bottom: *mut AnyObject = objc2::msg_send![parent_view, bottomAnchor];
+        let c_bottom: *mut AnyObject = objc2::msg_send![bottom, constraintEqualToAnchor: p_bottom];
+        let _: () = objc2::msg_send![c_bottom, setActive: true];
+
+        let leading: *mut AnyObject = objc2::msg_send![web_view, leadingAnchor];
+        let p_leading: *mut AnyObject = objc2::msg_send![parent_view, leadingAnchor];
+        let c_leading: *mut AnyObject = objc2::msg_send![leading, constraintEqualToAnchor: p_leading];
+        let _: () = objc2::msg_send![c_leading, setActive: true];
+
+        let trailing: *mut AnyObject = objc2::msg_send![web_view, trailingAnchor];
+        let p_trailing: *mut AnyObject = objc2::msg_send![parent_view, trailingAnchor];
+        let c_trailing: *mut AnyObject = objc2::msg_send![trailing, constraintEqualToAnchor: p_trailing];
+        let _: () = objc2::msg_send![c_trailing, setActive: true];
+
         let _: () = objc2::msg_send![parent_view, setBackgroundColor: &*clear_color];
         let _: () = objc2::msg_send![parent_view, setUserInteractionEnabled: false];
         let _: () = objc2::msg_send![parent_view, setClipsToBounds: true];

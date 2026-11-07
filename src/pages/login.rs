@@ -495,7 +495,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
     let proceed_username = {
         let username = username;
         let password_focused = password_focused;
-        let username_focused = username_focused;
         let error_local = error_local;
         let state = state;
         let path = path;
@@ -507,9 +506,27 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 error_local.set(String::new());
                 state.error_msg.set(String::new());
                 crate::shared::haptics::tick();
-                username_focused.set(false);
-                password_focused.set(true);
                 path.set(vec![AuthRoute::Login, AuthRoute::Password]);
+                #[cfg(target_os = "ios")]
+                {
+                    struct SendSignal(Signal<bool>);
+                    unsafe impl Send for SendSignal {}
+                    impl SendSignal {
+                        fn activate(self) {
+                            self.0.set(true);
+                        }
+                    }
+                    let pw_foc = SendSignal(password_focused);
+                    let when = dispatch2::DispatchTime::try_from(std::time::Duration::from_millis(350))
+                        .unwrap_or(dispatch2::DispatchTime::NOW);
+                    let _ = dispatch2::DispatchQueue::main().after(when, move || {
+                        pw_foc.activate();
+                    });
+                }
+                #[cfg(not(target_os = "ios"))]
+                {
+                    password_focused.set(true);
+                }
             }
         }
     };
