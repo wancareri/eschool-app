@@ -323,14 +323,39 @@ fn username_step_view(
     username_focused: Signal<bool>,
     on_submit: impl Fn() + 'static,
 ) -> impl Piece {
+    let kb_h = crate::shared::keyboard::keyboard_height_signal();
+    let is_kb = move || kb_h.get() > 50.0;
+
     column((
-        spacer().height(6.0),
-        row((
-            spacer().grow(),
-            crate::widgets::lottie_view::duck_login_animation(100.0),
-            spacer().grow(),
-        )),
-        spacer().height(6.0),
+        when(move || is_kb(), || spacer().height(4.0).any()),
+        when(move || !is_kb(), || spacer().height(12.0).any()),
+
+        when(
+            move || is_kb(),
+            move || {
+                row((
+                    spacer().grow(),
+                    crate::widgets::lottie_view::duck_login_animation(46.0),
+                    spacer().grow(),
+                ))
+                .any()
+            },
+        ),
+        when(
+            move || !is_kb(),
+            move || {
+                row((
+                    spacer().grow(),
+                    crate::widgets::lottie_view::duck_login_animation(110.0),
+                    spacer().grow(),
+                ))
+                .any()
+            },
+        ),
+
+        when(move || is_kb(), || spacer().height(4.0).any()),
+        when(move || !is_kb(), || spacer().height(10.0).any()),
+
         column((
             label("Введите логин ученика или пригласительный код родителя для доступа к дневнику")
                 .font(Font::Subheadline)
@@ -388,14 +413,39 @@ fn password_step_view(
     password_focused: Signal<bool>,
     on_submit: impl Fn() + 'static,
 ) -> impl Piece {
+    let kb_h = crate::shared::keyboard::keyboard_height_signal();
+    let is_kb = move || kb_h.get() > 50.0;
+
     column((
-        spacer().height(6.0),
-        row((
-            spacer().grow(),
-            crate::widgets::lottie_view::duck_password_animation(100.0),
-            spacer().grow(),
-        )),
-        spacer().height(6.0),
+        when(move || is_kb(), || spacer().height(4.0).any()),
+        when(move || !is_kb(), || spacer().height(12.0).any()),
+
+        when(
+            move || is_kb(),
+            move || {
+                row((
+                    spacer().grow(),
+                    crate::widgets::lottie_view::duck_password_animation(46.0),
+                    spacer().grow(),
+                ))
+                .any()
+            },
+        ),
+        when(
+            move || !is_kb(),
+            move || {
+                row((
+                    spacer().grow(),
+                    crate::widgets::lottie_view::duck_password_animation(110.0),
+                    spacer().grow(),
+                ))
+                .any()
+            },
+        ),
+
+        when(move || is_kb(), || spacer().height(4.0).any()),
+        when(move || !is_kb(), || spacer().height(10.0).any()),
+
         column((
             label("Введите пароль для входа в дневник")
                 .font(Font::Subheadline)

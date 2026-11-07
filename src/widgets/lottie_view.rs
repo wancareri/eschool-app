@@ -36,6 +36,8 @@ fn build_lottie_html(json_data: &str) -> String {
     display: block;
     width: 100% !important;
     height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
   }
 </style>
 </head>
@@ -82,11 +84,11 @@ pub fn duck_intro_animation(size: f64) -> impl Piece {
 }
 
 pub fn duck_login_animation(size: f64) -> impl Piece {
-    lottie_view_sticker(DUCK_LOGIN_JSON, size)
+    lottie_view_raw(DUCK_LOGIN_JSON, size)
 }
 
 pub fn duck_password_animation(size: f64) -> impl Piece {
-    lottie_view_sticker(DUCK_PASSWORD_JSON, size)
+    lottie_view_raw(DUCK_PASSWORD_JSON, size)
 }
 
 pub fn login_animation_view() -> impl Piece {
@@ -95,24 +97,6 @@ pub fn login_animation_view() -> impl Piece {
 
 pub fn login_animation_view_sized(size: f64) -> impl Piece {
     duck_intro_animation(size)
-}
-
-pub fn lottie_view_sticker(json_data: &'static str, size: f64) -> impl Piece {
-    #[cfg(target_os = "ios")]
-    {
-        use day_uikit::UiKitExt;
-        let html = build_lottie_html(json_data);
-        column(())
-            .uikit(move |view, _class, _mtm| {
-                mount_lottie_webview(view, &html, size);
-                crate::shared::keyboard::register_sticker_view(view);
-            })
-            .frame(size, size)
-    }
-    #[cfg(not(target_os = "ios"))]
-    {
-        column(()).frame(size, size)
-    }
 }
 
 pub fn lottie_view_raw(json_data: &'static str, size: f64) -> impl Piece {
@@ -201,6 +185,7 @@ fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f6
         let _: () = objc2::msg_send![parent_view, addSubview: web_view];
         let _: () = objc2::msg_send![parent_view, setBackgroundColor: &*clear_color];
         let _: () = objc2::msg_send![parent_view, setUserInteractionEnabled: false];
+        let _: () = objc2::msg_send![parent_view, setClipsToBounds: true];
         crate::shared::nslog::nslog(&format!("[Lottie] Successfully mounted Lottie animation view ({size}x{size})"));
     }
 }
