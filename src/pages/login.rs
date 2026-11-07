@@ -245,7 +245,8 @@ fn parse_auth_error(raw: &str) -> AuthErrorInfo {
 
 fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
     button("‹")
-        .bordered()
+        .glass()
+        .frame(44.0, 44.0)
         .action(action)
         .id("back-button")
 }
