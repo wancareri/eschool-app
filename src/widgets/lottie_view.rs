@@ -1,4 +1,5 @@
 use day::prelude::*;
+use std::sync::LazyLock;
 
 #[allow(dead_code)]
 static DUCK_INTRO_JSON: &str = include_str!("../../resource/animations/duck_intro.json");
@@ -8,6 +9,10 @@ static DUCK_LOGIN_JSON: &str = include_str!("../../resource/animations/duck_logi
 static DUCK_PASSWORD_JSON: &str = include_str!("../../resource/animations/duck_password.json");
 #[allow(dead_code)]
 static LOTTIE_JS: &str = include_str!("../../resource/animations/lottie_light.min.js");
+
+static DUCK_INTRO_HTML: LazyLock<String> = LazyLock::new(|| build_lottie_html(DUCK_INTRO_JSON));
+static DUCK_LOGIN_HTML: LazyLock<String> = LazyLock::new(|| build_lottie_html(DUCK_LOGIN_JSON));
+static DUCK_PASSWORD_HTML: LazyLock<String> = LazyLock::new(|| build_lottie_html(DUCK_PASSWORD_JSON));
 
 #[allow(dead_code)]
 fn build_lottie_html(json_data: &str) -> String {
@@ -31,13 +36,15 @@ fn build_lottie_html(json_data: &str) -> String {
   #anim {
     width: 100%;
     height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   svg {
     display: block;
     width: 100% !important;
     height: 100% !important;
-    max-width: 100% !important;
-    max-height: 100% !important;
+    margin: auto;
   }
 </style>
 </head>
@@ -58,9 +65,17 @@ try {
     renderer: 'svg',
     loop: true,
     autoplay: true,
-    animationData: animData
+    animationData: animData,
+    rendererSettings: {
+      preserveAspectRatio: 'xMidYMid meet',
+      progressiveLoad: false,
+      hideOnTransparent: false
+    }
   });
   window.lottieAnim = anim;
+  window.addEventListener('resize', function() {
+    if (window.lottieAnim) window.lottieAnim.resize();
+  });
   var keepPlaying = function() {
     if (window.lottieAnim && window.lottieAnim.isPaused) {
       window.lottieAnim.play();
@@ -80,15 +95,15 @@ try {
 }
 
 pub fn duck_intro_animation(size: f64) -> impl Piece {
-    lottie_view_raw(DUCK_INTRO_JSON, size)
+    lottie_view_cached(&DUCK_INTRO_HTML, size)
 }
 
 pub fn duck_login_animation(size: f64) -> impl Piece {
-    lottie_view_raw(DUCK_LOGIN_JSON, size)
+    lottie_view_cached(&DUCK_LOGIN_HTML, size)
 }
 
 pub fn duck_password_animation(size: f64) -> impl Piece {
-    lottie_view_raw(DUCK_PASSWORD_JSON, size)
+    lottie_view_cached(&DUCK_PASSWORD_HTML, size)
 }
 
 pub fn login_animation_view() -> impl Piece {
@@ -99,13 +114,28 @@ pub fn login_animation_view_sized(size: f64) -> impl Piece {
     duck_intro_animation(size)
 }
 
+pub fn lottie_view_cached(html: &'static str, size: f64) -> impl Piece {
+    #[cfg(target_os = "ios")]
+    {
+        use day_uikit::UiKitExt;
+        column(())
+            .uikit(move |view, _class, _mtm| {
+                mount_lottie_webview(view, html, size);
+            })
+            .frame(size, size)
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = html;
+        column(()).frame(size, size)
+    }
+}
+
 pub fn lottie_view_raw(json_data: &'static str, size: f64) -> impl Piece {
     #[cfg(target_os = "ios")]
     {
         use day_uikit::UiKitExt;
         let html = build_lottie_html(json_data);
-        // Note: the tweak sits on column(()) which allocates a real native UIView (CONTAINER).
-        // Frame wrapper is layout-only and cannot be tweaked directly.
         column(())
             .uikit(move |view, _class, _mtm| {
                 mount_lottie_webview(view, &html, size);
@@ -114,6 +144,7 @@ pub fn lottie_view_raw(json_data: &'static str, size: f64) -> impl Piece {
     }
     #[cfg(not(target_os = "ios"))]
     {
+        let _ = json_data;
         column(()).frame(size, size)
     }
 }
@@ -143,8 +174,34 @@ fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f6
             },
         };
 
-        let web_view: *mut AnyObject = objc2::msg_send![wk_class, alloc];
-        let web_view: *mut AnyObject = objc2::msg_send![web_view, initWithFrame: frame];
+        // Shared WKProcessPool so WebKit process is kept warm across screens
+        static POOL_PTR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let pool = {
+            let mut ptr = POOL_PTR.load(std::sync::atomic::Ordering::Relaxed);
+            if ptr == 0 {
+                if let Some(pool_cls) = AnyClass::get(c"WKProcessPool") {
+                    let p: *mut AnyObject = objc2::msg_send![pool_cls, alloc];
+                    let p: *mut AnyObject = objc2::msg_send![p, init];
+                    POOL_PTR.store(p as usize, std::sync::atomic::Ordering::Relaxed);
+                    ptr = p as usize;
+                }
+            }
+            ptr as *mut AnyObject
+        };
+
+        let web_view: *mut AnyObject = if let Some(cfg_cls) = AnyClass::get(c"WKWebViewConfiguration") {
+            let cfg: *mut AnyObject = objc2::msg_send![cfg_cls, alloc];
+            let cfg: *mut AnyObject = objc2::msg_send![cfg, init];
+            if !pool.is_null() {
+                let _: () = objc2::msg_send![cfg, setProcessPool: pool];
+            }
+            let wv: *mut AnyObject = objc2::msg_send![wk_class, alloc];
+            objc2::msg_send![wv, initWithFrame: frame, configuration: cfg]
+        } else {
+            let wv: *mut AnyObject = objc2::msg_send![wk_class, alloc];
+            objc2::msg_send![wv, initWithFrame: frame]
+        };
+
         if web_view.is_null() {
             crate::shared::nslog::nslog("[Lottie] ERROR: Failed to instantiate WKWebView");
             return;
@@ -161,6 +218,9 @@ fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f6
             let _: () = objc2::msg_send![scroll_view, setScrollEnabled: false];
             let _: () = objc2::msg_send![scroll_view, setBounces: false];
             let _: () = objc2::msg_send![scroll_view, setBackgroundColor: &*clear_color];
+            // Disable automatic safe-area insetting inside the WKWebView:
+            // Ensures the SVG stays 100% centered and scales to bounds without being pushed down!
+            let _: () = objc2::msg_send![scroll_view, setContentInsetAdjustmentBehavior: 2usize]; // UIScrollViewContentInsetAdjustmentNever
         }
 
         let ns_html = NSString::from_str(html);

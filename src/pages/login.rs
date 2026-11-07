@@ -323,39 +323,21 @@ fn username_step_view(
     username_focused: Signal<bool>,
     on_submit: impl Fn() + 'static,
 ) -> impl Piece {
-    let kb_h = crate::shared::keyboard::keyboard_height_signal();
-    let is_kb = move || kb_h.get() > 50.0;
+    let sticker = row((
+        spacer().grow(),
+        crate::widgets::lottie_view::duck_login_animation(110.0),
+        spacer().grow(),
+    ));
 
-    column((
-        when(move || is_kb(), || spacer().height(4.0).any()),
-        when(move || !is_kb(), || spacer().height(12.0).any()),
+    #[cfg(target_os = "ios")]
+    let sticker = {
+        use day_uikit::UiKitExt;
+        sticker.uikit(|view, _class, _mtm| {
+            crate::shared::keyboard::register_sticker_view(view);
+        })
+    };
 
-        when(
-            move || is_kb(),
-            move || {
-                row((
-                    spacer().grow(),
-                    crate::widgets::lottie_view::duck_login_animation(46.0),
-                    spacer().grow(),
-                ))
-                .any()
-            },
-        ),
-        when(
-            move || !is_kb(),
-            move || {
-                row((
-                    spacer().grow(),
-                    crate::widgets::lottie_view::duck_login_animation(110.0),
-                    spacer().grow(),
-                ))
-                .any()
-            },
-        ),
-
-        when(move || is_kb(), || spacer().height(4.0).any()),
-        when(move || !is_kb(), || spacer().height(10.0).any()),
-
+    let content = column((
         column((
             label("Введите логин ученика или пригласительный код родителя для доступа к дневнику")
                 .font(Font::Subheadline)
@@ -399,7 +381,21 @@ fn username_step_view(
         .align(VAlign::Center)
         .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 })
         .grow_w(),
+    ));
 
+    #[cfg(target_os = "ios")]
+    let content = {
+        use day_uikit::UiKitExt;
+        content.uikit(|view, _class, _mtm| {
+            crate::shared::keyboard::register_content_view(view);
+        })
+    };
+
+    column((
+        spacer().height(10.0),
+        sticker,
+        spacer().height(8.0),
+        content,
         spacer().grow(),
     ))
     .grow()
@@ -413,39 +409,21 @@ fn password_step_view(
     password_focused: Signal<bool>,
     on_submit: impl Fn() + 'static,
 ) -> impl Piece {
-    let kb_h = crate::shared::keyboard::keyboard_height_signal();
-    let is_kb = move || kb_h.get() > 50.0;
+    let sticker = row((
+        spacer().grow(),
+        crate::widgets::lottie_view::duck_password_animation(110.0),
+        spacer().grow(),
+    ));
 
-    column((
-        when(move || is_kb(), || spacer().height(4.0).any()),
-        when(move || !is_kb(), || spacer().height(12.0).any()),
+    #[cfg(target_os = "ios")]
+    let sticker = {
+        use day_uikit::UiKitExt;
+        sticker.uikit(|view, _class, _mtm| {
+            crate::shared::keyboard::register_sticker_view(view);
+        })
+    };
 
-        when(
-            move || is_kb(),
-            move || {
-                row((
-                    spacer().grow(),
-                    crate::widgets::lottie_view::duck_password_animation(46.0),
-                    spacer().grow(),
-                ))
-                .any()
-            },
-        ),
-        when(
-            move || !is_kb(),
-            move || {
-                row((
-                    spacer().grow(),
-                    crate::widgets::lottie_view::duck_password_animation(110.0),
-                    spacer().grow(),
-                ))
-                .any()
-            },
-        ),
-
-        when(move || is_kb(), || spacer().height(4.0).any()),
-        when(move || !is_kb(), || spacer().height(10.0).any()),
-
+    let content = column((
         column((
             label("Введите пароль для входа в дневник")
                 .font(Font::Subheadline)
@@ -480,7 +458,21 @@ fn password_step_view(
         .corner_radius(16.0)
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 10.0, trailing: 20.0 })
         .grow_w(),
+    ));
 
+    #[cfg(target_os = "ios")]
+    let content = {
+        use day_uikit::UiKitExt;
+        content.uikit(|view, _class, _mtm| {
+            crate::shared::keyboard::register_content_view(view);
+        })
+    };
+
+    column((
+        spacer().height(10.0),
+        sticker,
+        spacer().height(8.0),
+        content,
         spacer().grow(),
     ))
     .grow()
