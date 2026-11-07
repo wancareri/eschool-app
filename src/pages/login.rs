@@ -285,83 +285,6 @@ fn auth_action_button(
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
 }
 
-fn prompt_login_confirmation(
-    username: String,
-    on_confirm: impl Fn() + 'static,
-    on_edit: impl Fn() + 'static,
-) {
-    #[cfg(target_os = "ios")]
-    {
-        use objc2::MainThreadMarker;
-        use objc2_foundation::NSString;
-        use objc2_ui_kit::{
-            UIApplication, UIAlertAction, UIAlertActionStyle, UIAlertController, UIAlertControllerStyle,
-        };
-        use std::ptr::NonNull;
-
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        let app = UIApplication::sharedApplication(mtm);
-        #[allow(deprecated)]
-        let Some(window) = app.keyWindow() else { return };
-        let Some(root_vc) = window.rootViewController() else { return };
-
-        let mut top = root_vc;
-        while let Some(presented) = top.presentedViewController() {
-            top = presented;
-        }
-
-        let title = NSString::from_str(&username);
-        let message = NSString::from_str("Это верный логин?");
-
-        let alert = UIAlertController::alertControllerWithTitle_message_preferredStyle(
-            Some(&title),
-            Some(&message),
-            UIAlertControllerStyle::Alert,
-            mtm,
-        );
-
-        let on_edit_rc = std::rc::Rc::new(on_edit);
-        let on_edit_clone = on_edit_rc.clone();
-        let edit_action = {
-            let title_edit = NSString::from_str("Изменить");
-            let handler = block2::RcBlock::new(move |_: NonNull<UIAlertAction>| {
-                on_edit_clone();
-            });
-            UIAlertAction::actionWithTitle_style_handler(
-                Some(&title_edit),
-                UIAlertActionStyle::Cancel,
-                Some(&handler),
-                mtm,
-            )
-        };
-
-        let on_confirm_rc = std::rc::Rc::new(on_confirm);
-        let confirm_action = {
-            let title_yes = NSString::from_str("Да");
-            let handler = block2::RcBlock::new(move |_: NonNull<UIAlertAction>| {
-                on_confirm_rc();
-            });
-            UIAlertAction::actionWithTitle_style_handler(
-                Some(&title_yes),
-                UIAlertActionStyle::Default,
-                Some(&handler),
-                mtm,
-            )
-        };
-
-        alert.addAction(&edit_action);
-        alert.addAction(&confirm_action);
-        top.presentViewController_animated_completion(&alert, true, None);
-    }
-
-    #[cfg(not(target_os = "ios"))]
-    {
-        let _ = username;
-        let _ = on_edit;
-        on_confirm();
-    }
-}
-
 fn intro_view() -> impl Piece {
     column((
         spacer().grow(),
@@ -396,25 +319,24 @@ fn intro_view() -> impl Piece {
 
 fn username_step_view(
     username: Signal<String>,
-    password: Signal<String>,
     remember: Signal<bool>,
     username_focused: Signal<bool>,
     on_submit: impl Fn() + 'static,
 ) -> impl Piece {
     column((
-        spacer().height(8.0),
+        spacer().height(6.0),
         row((
             spacer().grow(),
-            crate::widgets::lottie_view::duck_login_animation(110.0),
+            crate::widgets::lottie_view::duck_login_animation(100.0),
             spacer().grow(),
         )),
-        spacer().height(10.0),
+        spacer().height(6.0),
         column((
             label("Введите логин ученика или пригласительный код родителя для доступа к дневнику")
                 .font(Font::Subheadline)
                 .secondary()
                 .align(TextAlign::Center)
-                .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 }),
+                .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 }),
         ))
         .grow_w(),
 
@@ -423,17 +345,11 @@ fn username_step_view(
                 .font(Font::Caption2)
                 .bold()
                 .secondary(),
-            zstack((
-                text_field(password)
-                    .secure()
-                    .grow_w()
-                    .opacity(0.02),
-                text_field(username)
-                    .focused(username_focused)
-                    .grow_w()
-                    .log_pos("Auth:UsernameField")
-                    .on_submit(on_submit),
-            )),
+            text_field(username)
+                .focused(username_focused)
+                .grow_w()
+                .log_pos("Auth:UsernameField")
+                .on_submit(on_submit),
         ))
         .spacing(4.0)
         .padding(Insets { top: 10.0, leading: 16.0, bottom: 10.0, trailing: 16.0 })
@@ -445,7 +361,7 @@ fn username_step_view(
             }
         })
         .corner_radius(16.0)
-        .padding(Insets { top: 0.0, leading: 20.0, bottom: 14.0, trailing: 20.0 })
+        .padding(Insets { top: 0.0, leading: 20.0, bottom: 10.0, trailing: 20.0 })
         .grow_w(),
 
         // Remember session toggle
@@ -456,7 +372,7 @@ fn username_step_view(
             toggle(remember),
         ))
         .align(VAlign::Center)
-        .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
+        .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 })
         .grow_w(),
 
         spacer().grow(),
@@ -473,19 +389,19 @@ fn password_step_view(
     on_submit: impl Fn() + 'static,
 ) -> impl Piece {
     column((
-        spacer().height(8.0),
+        spacer().height(6.0),
         row((
             spacer().grow(),
-            crate::widgets::lottie_view::duck_password_animation(110.0),
+            crate::widgets::lottie_view::duck_password_animation(100.0),
             spacer().grow(),
         )),
-        spacer().height(10.0),
+        spacer().height(6.0),
         column((
             label("Введите пароль для входа в дневник")
                 .font(Font::Subheadline)
                 .secondary()
                 .align(TextAlign::Center)
-                .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 }),
+                .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 }),
         ))
         .grow_w(),
 
@@ -549,20 +465,9 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 error_local.set(String::new());
                 state.error_msg.set(String::new());
                 crate::shared::haptics::tick();
-                let u_str = u.trim().to_string();
-                prompt_login_confirmation(
-                    u_str,
-                    move || {
-                        crate::shared::haptics::tick();
-                        username_focused.set(false);
-                        password_focused.set(true);
-                        path.set(vec![AuthRoute::Login, AuthRoute::Password]);
-                    },
-                    move || {
-                        crate::shared::haptics::tick();
-                        username_focused.set(true);
-                    },
-                );
+                username_focused.set(false);
+                password_focused.set(true);
+                path.set(vec![AuthRoute::Login, AuthRoute::Password]);
             }
         }
     };
@@ -599,7 +504,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             match route {
                 AuthRoute::Login => username_step_view(
                     username,
-                    password,
                     remember,
                     username_focused,
                     proceed_username_sub.clone(),

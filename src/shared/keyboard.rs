@@ -107,6 +107,14 @@ pub fn register_follower_view(view: &objc2::rc::Retained<objc2_ui_kit::UIView>) 
 pub fn register_follower_view(_view: &()) {}
 
 #[cfg(target_os = "ios")]
+pub fn register_sticker_view(view: &objc2::rc::Retained<objc2_ui_kit::UIView>) {
+    ios::register_sticker_view(view);
+}
+
+#[cfg(not(target_os = "ios"))]
+pub fn register_sticker_view(_view: &()) {}
+
+#[cfg(target_os = "ios")]
 mod ios {
     use objc2::rc::Retained;
     use objc2::runtime::{AnyClass, AnyObject, Imp, NSObject, NSObjectProtocol, Sel};
@@ -122,6 +130,7 @@ mod ios {
     thread_local! {
         static OBSERVER: Cell<Option<Retained<KeyboardObserver>>> = const { Cell::new(None) };
         static HARDWARE_FOLLOWER: RefCell<Option<Retained<objc2_ui_kit::UIView>>> = const { RefCell::new(None) };
+        static HARDWARE_STICKER: RefCell<Option<Retained<objc2_ui_kit::UIView>>> = const { RefCell::new(None) };
     }
 
     pub fn register_follower_view(view: &Retained<objc2_ui_kit::UIView>) {
@@ -129,6 +138,13 @@ mod ios {
             *c.borrow_mut() = Some(view.clone());
         });
         crate::shared::nslog::nslog("[Keyboard] Registered hardware follower view for instant 120fps keyboard tracking");
+    }
+
+    pub fn register_sticker_view(view: &Retained<objc2_ui_kit::UIView>) {
+        HARDWARE_STICKER.with(|c| {
+            *c.borrow_mut() = Some(view.clone());
+        });
+        crate::shared::nslog::nslog("[Keyboard] Registered hardware sticker view for responsive scaling");
     }
 
     define_class!(
@@ -191,8 +207,12 @@ mod ios {
             .unwrap_or(7);
 
         let safe_b = super::get_safe_area_bottom();
+        // Clamp lift to at most 340.0 pt. When iOS Password Manager / AutoFill modal sheet pops up,
+        // UIKeyboardFrameEndUserInfoKey reports a full-screen or massive height,
+        // which previously caused the button to shoot up to the very top of the screen.
+        let max_lift = 340.0;
         let lift = if visible_h > 0.0 {
-            (visible_h - safe_b).max(0.0)
+            (visible_h - safe_b).max(0.0).min(max_lift)
         } else {
             0.0
         };
@@ -220,6 +240,46 @@ mod ios {
                         };
                         unsafe {
                             let _: () = objc2::msg_send![&*follower_clone, setTransform: transform];
+                        }
+                    });
+                    if let Some(mtm) = MainThreadMarker::new() {
+                        objc2_ui_kit::UIView::animateWithDuration_delay_options_animations_completion(
+                            duration_sec,
+                            0.0,
+                            UIViewAnimationOptions(options),
+                            &animations,
+                            None,
+                            mtm,
+                        );
+                    }
+                }
+            }
+        });
+
+        // Hardware instant 120fps GPU sticker scaling:
+        // Shrinks sticker smoothly when keyboard appears so form content fits without overlapping!
+        HARDWARE_STICKER.with(|c| {
+            if let Some(sticker) = c.borrow().as_ref() {
+                if sticker.window().is_some() {
+                    let options = ((curve as usize) << 16) | (1usize << 1);
+                    let sticker_clone = sticker.clone();
+                    let animations = block2::RcBlock::new(move || {
+                        let transform = if lift > 0.0 {
+                            // Scale sticker down to 50% and shift slightly up towards top bar
+                            CGAffineTransform {
+                                a: 0.50, b: 0.0,
+                                c: 0.0, d: 0.50,
+                                tx: 0.0, ty: -20.0,
+                            }
+                        } else {
+                            CGAffineTransform {
+                                a: 1.0, b: 0.0,
+                                c: 0.0, d: 1.0,
+                                tx: 0.0, ty: 0.0,
+                            }
+                        };
+                        unsafe {
+                            let _: () = objc2::msg_send![&*sticker_clone, setTransform: transform];
                         }
                     });
                     if let Some(mtm) = MainThreadMarker::new() {

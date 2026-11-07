@@ -51,13 +51,23 @@ try {
   var animData = "#);
     html.push_str(json_data);
     html.push_str(r#";
-  lottie.loadAnimation({
+  var anim = lottie.loadAnimation({
     container: document.getElementById('anim'),
     renderer: 'svg',
     loop: true,
     autoplay: true,
     animationData: animData
   });
+  window.lottieAnim = anim;
+  var keepPlaying = function() {
+    if (window.lottieAnim && window.lottieAnim.isPaused) {
+      window.lottieAnim.play();
+    }
+  };
+  document.addEventListener('visibilitychange', keepPlaying);
+  window.addEventListener('focus', keepPlaying);
+  window.addEventListener('pageshow', keepPlaying);
+  setInterval(keepPlaying, 250);
 } catch(e) {
   console.error("Lottie error:", e);
 }
@@ -72,11 +82,11 @@ pub fn duck_intro_animation(size: f64) -> impl Piece {
 }
 
 pub fn duck_login_animation(size: f64) -> impl Piece {
-    lottie_view_raw(DUCK_LOGIN_JSON, size)
+    lottie_view_sticker(DUCK_LOGIN_JSON, size)
 }
 
 pub fn duck_password_animation(size: f64) -> impl Piece {
-    lottie_view_raw(DUCK_PASSWORD_JSON, size)
+    lottie_view_sticker(DUCK_PASSWORD_JSON, size)
 }
 
 pub fn login_animation_view() -> impl Piece {
@@ -85,6 +95,24 @@ pub fn login_animation_view() -> impl Piece {
 
 pub fn login_animation_view_sized(size: f64) -> impl Piece {
     duck_intro_animation(size)
+}
+
+pub fn lottie_view_sticker(json_data: &'static str, size: f64) -> impl Piece {
+    #[cfg(target_os = "ios")]
+    {
+        use day_uikit::UiKitExt;
+        let html = build_lottie_html(json_data);
+        column(())
+            .uikit(move |view, _class, _mtm| {
+                mount_lottie_webview(view, &html, size);
+                crate::shared::keyboard::register_sticker_view(view);
+            })
+            .frame(size, size)
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        column(()).frame(size, size)
+    }
 }
 
 pub fn lottie_view_raw(json_data: &'static str, size: f64) -> impl Piece {
