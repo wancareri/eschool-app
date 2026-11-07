@@ -245,42 +245,11 @@ fn parse_auth_error(raw: &str) -> AuthErrorInfo {
 }
 
 
-#[cfg(target_os = "ios")]
-unsafe extern "C" {
-    fn eschool_style_liquid_glass_button(button_ptr: *mut std::ffi::c_void);
-}
-
 fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
-    let act = std::rc::Rc::new(action);
-    let act_clone = act.clone();
-
-    #[cfg(target_os = "ios")]
-    {
-        button("")
-            .uikit(|view, class, _mtm| {
-                crate::shared::nslog::nslog(&format!("[Auth] BackButton uikit called on class={class}"));
-                let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
-                unsafe {
-                    eschool_style_liquid_glass_button(ptr);
-                }
-            })
-            .frame(44.0, 44.0)
-            .action(move || {
-                act_clone();
-            })
-            .id("liquid-glass-back-arrow")
-    }
-
-    #[cfg(not(target_os = "ios"))]
-    {
-        button("‹")
-            .bordered()
-            .frame(44.0, 44.0)
-            .action(move || {
-                act_clone();
-            })
-            .id("liquid-glass-back-arrow")
-    }
+    button("‹")
+        .bordered()
+        .action(action)
+        .id("back_button")
 }
 
 fn auth_action_button(
