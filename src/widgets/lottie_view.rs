@@ -1,31 +1,16 @@
 use day::prelude::*;
 
 #[allow(dead_code)]
-static DEFAULT_LOTTIE_JSON: &str = include_str!("../../resource/animations/login.json");
+static DUCK_INTRO_JSON: &str = include_str!("../../resource/animations/duck_intro.json");
+#[allow(dead_code)]
+static DUCK_LOGIN_JSON: &str = include_str!("../../resource/animations/duck_login.json");
+#[allow(dead_code)]
+static DUCK_PASSWORD_JSON: &str = include_str!("../../resource/animations/duck_password.json");
 #[allow(dead_code)]
 static LOTTIE_JS: &str = include_str!("../../resource/animations/lottie_light.min.js");
 
 #[allow(dead_code)]
-fn load_animation_json() -> String {
-    // 1. Try resource/login_animation.json
-    if let Ok(content) = std::fs::read_to_string("resource/login_animation.json") {
-        if !content.trim().is_empty() {
-            return content;
-        }
-    }
-    // 2. Try resource/animations/login.json
-    if let Ok(content) = std::fs::read_to_string("resource/animations/login.json") {
-        if !content.trim().is_empty() {
-            return content;
-        }
-    }
-    // 3. Fallback to embedded default
-    DEFAULT_LOTTIE_JSON.to_string()
-}
-
-#[allow(dead_code)]
-fn build_lottie_html() -> String {
-    let json_data = load_animation_json();
+fn build_lottie_html(json_data: &str) -> String {
     format!(
         r#"<!DOCTYPE html>
 <html>
@@ -78,15 +63,31 @@ try {{
     )
 }
 
+pub fn duck_intro_animation(size: f64) -> impl Piece {
+    lottie_view_raw(DUCK_INTRO_JSON, size)
+}
+
+pub fn duck_login_animation(size: f64) -> impl Piece {
+    lottie_view_raw(DUCK_LOGIN_JSON, size)
+}
+
+pub fn duck_password_animation(size: f64) -> impl Piece {
+    lottie_view_raw(DUCK_PASSWORD_JSON, size)
+}
+
 pub fn login_animation_view() -> impl Piece {
-    login_animation_view_sized(90.0)
+    duck_intro_animation(130.0)
 }
 
 pub fn login_animation_view_sized(size: f64) -> impl Piece {
+    duck_intro_animation(size)
+}
+
+pub fn lottie_view_raw(json_data: &'static str, size: f64) -> impl Piece {
     #[cfg(target_os = "ios")]
     {
         use day_uikit::UiKitExt;
-        let html = build_lottie_html();
+        let html = build_lottie_html(json_data);
         spacer()
             .frame(size, size)
             .uikit(move |view, _class, _mtm| {
@@ -135,6 +136,7 @@ fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f6
         let clear_color = objc2_ui_kit::UIColor::clearColor();
         let _: () = objc2::msg_send![web_view, setBackgroundColor: &*clear_color];
         let _: () = objc2::msg_send![web_view, setUserInteractionEnabled: false];
+        let _: () = objc2::msg_send![web_view, setAutoresizingMask: 18usize];
 
         let scroll_view: *mut AnyObject = objc2::msg_send![web_view, scrollView];
         if !scroll_view.is_null() {
@@ -151,6 +153,6 @@ fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f6
         ];
 
         let _: () = objc2::msg_send![parent_view, addSubview: web_view];
-        crate::shared::nslog::nslog("[Lottie] Successfully mounted Lottie animation view (110x110)");
+        crate::shared::nslog::nslog(&format!("[Lottie] Successfully mounted Lottie animation view ({size}x{size})"));
     }
 }

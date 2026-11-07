@@ -221,12 +221,30 @@ mod ios {
                 center.addObserver_selector_name_object(
                     &obs,
                     objc2::sel!(keyboardFrameChanged:),
+                    Some(objc2_ui_kit::UIKeyboardWillShowNotification),
+                    None,
+                );
+                center.addObserver_selector_name_object(
+                    &obs,
+                    objc2::sel!(keyboardFrameChanged:),
                     Some(objc2_ui_kit::UIKeyboardDidShowNotification),
+                    None,
+                );
+                center.addObserver_selector_name_object(
+                    &obs,
+                    objc2::sel!(keyboardFrameChanged:),
+                    Some(objc2_ui_kit::UIKeyboardWillHideNotification),
+                    None,
+                );
+                center.addObserver_selector_name_object(
+                    &obs,
+                    objc2::sel!(keyboardFrameChanged:),
+                    Some(objc2_ui_kit::UIKeyboardDidHideNotification),
                     None,
                 );
             }
             OBSERVER.with(|c| c.set(Some(obs)));
-            crate::shared::nslog::nslog("[Keyboard] Registered KeyboardObserver for WillChange, DidChange, and DidShow");
+            crate::shared::nslog::nslog("[Keyboard] Registered KeyboardObserver for all keyboard show/hide/change notifications");
         }
 
         // Swizzle UITextField setBorderStyle: to force UITextBorderStyleNone (0) so text fields have no native border/outline

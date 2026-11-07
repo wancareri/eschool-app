@@ -301,6 +301,7 @@ fn prompt_login_confirmation(
 
         let Some(mtm) = MainThreadMarker::new() else { return };
         let app = UIApplication::sharedApplication(mtm);
+        #[allow(deprecated)]
         let Some(window) = app.keyWindow() else { return };
         let Some(root_vc) = window.rootViewController() else { return };
 
@@ -312,18 +313,16 @@ fn prompt_login_confirmation(
         let title = NSString::from_str(&username);
         let message = NSString::from_str("Это верный логин?");
 
-        let alert = unsafe {
-            UIAlertController::alertControllerWithTitle_message_preferredStyle(
-                Some(&title),
-                Some(&message),
-                UIAlertControllerStyle::Alert,
-                mtm,
-            )
-        };
+        let alert = UIAlertController::alertControllerWithTitle_message_preferredStyle(
+            Some(&title),
+            Some(&message),
+            UIAlertControllerStyle::Alert,
+            mtm,
+        );
 
         let on_edit_rc = std::rc::Rc::new(on_edit);
         let on_edit_clone = on_edit_rc.clone();
-        let edit_action = unsafe {
+        let edit_action = {
             let title_edit = NSString::from_str("Изменить");
             let handler = block2::RcBlock::new(move |_: NonNull<UIAlertAction>| {
                 on_edit_clone();
@@ -337,7 +336,7 @@ fn prompt_login_confirmation(
         };
 
         let on_confirm_rc = std::rc::Rc::new(on_confirm);
-        let confirm_action = unsafe {
+        let confirm_action = {
             let title_yes = NSString::from_str("Да");
             let handler = block2::RcBlock::new(move |_: NonNull<UIAlertAction>| {
                 on_confirm_rc();
@@ -350,11 +349,9 @@ fn prompt_login_confirmation(
             )
         };
 
-        unsafe {
-            alert.addAction(&edit_action);
-            alert.addAction(&confirm_action);
-            top.presentViewController_animated_completion(&alert, true, None);
-        }
+        alert.addAction(&edit_action);
+        alert.addAction(&confirm_action);
+        top.presentViewController_animated_completion(&alert, true, None);
     }
 
     #[cfg(not(target_os = "ios"))]
@@ -365,15 +362,15 @@ fn prompt_login_confirmation(
     }
 }
 
-fn intro_view(path: Signal<Vec<AuthRoute>>) -> impl Piece {
+fn intro_view() -> impl Piece {
     column((
         spacer().grow(),
         row((
             spacer().grow(),
-            crate::widgets::lottie_view::login_animation_view_sized(130.0),
+            crate::widgets::lottie_view::duck_intro_animation(140.0),
             spacer().grow(),
         )),
-        spacer().height(24.0),
+        spacer().height(20.0),
         label("ESchool")
             .font(Font::LargeTitle)
             .bold()
@@ -390,14 +387,6 @@ fn intro_view(path: Signal<Vec<AuthRoute>>) -> impl Piece {
             .align(TextAlign::Center)
             .padding(Insets { top: 0.0, leading: 32.0, bottom: 0.0, trailing: 32.0 }),
         spacer().grow(),
-        auth_action_button(
-            || "Начать",
-            move || {
-                crate::shared::haptics::tick();
-                path.set(vec![AuthRoute::Login]);
-            },
-        ),
-        spacer().height(16.0),
     ))
     .grow()
     .on_tap(move || {
@@ -406,63 +395,26 @@ fn intro_view(path: Signal<Vec<AuthRoute>>) -> impl Piece {
 }
 
 fn username_step_view(
-    state: AppState,
-    path: Signal<Vec<AuthRoute>>,
     username: Signal<String>,
     password: Signal<String>,
     remember: Signal<bool>,
     username_focused: Signal<bool>,
-    password_focused: Signal<bool>,
-    error_local: Signal<String>,
-    kb_h: Signal<f64>,
+    on_submit: impl Fn() + 'static,
 ) -> impl Piece {
-    let proceed = move || {
-        let u = username.get_untracked();
-        if u.trim().is_empty() {
-            error_local.set("Введите логин".into());
-        } else {
-            error_local.set(String::new());
-            state.error_msg.set(String::new());
-            crate::shared::haptics::tick();
-            prompt_login_confirmation(
-                u.trim().to_string(),
-                move || {
-                    crate::shared::haptics::tick();
-                    username_focused.set(false);
-                    password_focused.set(true);
-                    path.set(vec![AuthRoute::Login, AuthRoute::Password]);
-                },
-                move || {
-                    crate::shared::haptics::tick();
-                    username_focused.set(true);
-                },
-            );
-        }
-    };
-    let proceed_submit = proceed.clone();
-
     column((
-        spacer().height(12.0),
+        spacer().height(8.0),
+        row((
+            spacer().grow(),
+            crate::widgets::lottie_view::duck_login_animation(110.0),
+            spacer().grow(),
+        )),
+        spacer().height(10.0),
         column((
-            label(move || {
-                let local_err = error_local.get();
-                let state_err = state.error_msg.get();
-                if !local_err.is_empty() {
-                    local_err
-                } else if !state_err.is_empty() {
-                    let err = parse_auth_error(&state_err);
-                    err.message
-                } else {
-                    "Введите логин ученика или пригласительный код родителя для доступа к дневнику".to_string()
-                }
-            })
-            .font(Font::Subheadline)
-            .color(move || {
-                let has_err = !error_local.get().is_empty() || !state.error_msg.get().is_empty();
-                if has_err { colors::ERROR } else { colors::SECONDARY }
-            })
-            .align(TextAlign::Center)
-            .padding(Insets { top: 4.0, leading: 24.0, bottom: 12.0, trailing: 24.0 }),
+            label("Введите логин ученика или пригласительный код родителя для доступа к дневнику")
+                .font(Font::Subheadline)
+                .secondary()
+                .align(TextAlign::Center)
+                .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 }),
         ))
         .grow_w(),
 
@@ -480,7 +432,7 @@ fn username_step_view(
                     .focused(username_focused)
                     .grow_w()
                     .log_pos("Auth:UsernameField")
-                    .on_submit(proceed_submit),
+                    .on_submit(on_submit),
             )),
         ))
         .spacing(4.0)
@@ -508,24 +460,6 @@ fn username_step_view(
         .grow_w(),
 
         spacer().grow(),
-
-        auth_action_button(
-            || "Продолжить",
-            proceed,
-        ),
-
-        dyn_piece(
-            move || {
-                let h = kb_h.get();
-                if h > 0.0 {
-                    let safe_b = crate::shared::keyboard::get_safe_area_bottom();
-                    (h - safe_b).max(0.0)
-                } else {
-                    0.0
-                }
-            },
-            move |lift| spacer().height(lift).animation(AnimSpec::ease_out(250)).any(),
-        ),
     ))
     .grow()
     .on_tap(move || {
@@ -534,53 +468,24 @@ fn username_step_view(
 }
 
 fn password_step_view(
-    state: AppState,
-    username: Signal<String>,
     password: Signal<String>,
-    remember: Signal<bool>,
     password_focused: Signal<bool>,
-    error_local: Signal<String>,
-    kb_h: Signal<f64>,
+    on_submit: impl Fn() + 'static,
 ) -> impl Piece {
-    let do_login = move || {
-        if state.loading.get() { return; }
-        let u = username.get_untracked();
-        let p = password.get_untracked();
-        let r = remember.get_untracked();
-        if p.is_empty() {
-            error_local.set("Введите пароль".into());
-            return;
-        }
-        error_local.set(String::new());
-        state.error_msg.set(String::new());
-        crate::shared::keyboard::dismiss();
-        crate::shared::haptics::pop();
-        features::auth::login(state, &u, &p, r);
-    };
-    let do_login_submit = do_login.clone();
-
     column((
-        spacer().height(12.0),
+        spacer().height(8.0),
+        row((
+            spacer().grow(),
+            crate::widgets::lottie_view::duck_password_animation(110.0),
+            spacer().grow(),
+        )),
+        spacer().height(10.0),
         column((
-            label(move || {
-                let local_err = error_local.get();
-                let state_err = state.error_msg.get();
-                if !local_err.is_empty() {
-                    local_err
-                } else if !state_err.is_empty() {
-                    let err = parse_auth_error(&state_err);
-                    err.message
-                } else {
-                    "Введите пароль для входа в дневник".to_string()
-                }
-            })
-            .font(Font::Subheadline)
-            .color(move || {
-                let has_err = !error_local.get().is_empty() || !state.error_msg.get().is_empty();
-                if has_err { colors::ERROR } else { colors::SECONDARY }
-            })
-            .align(TextAlign::Center)
-            .padding(Insets { top: 4.0, leading: 24.0, bottom: 12.0, trailing: 24.0 }),
+            label("Введите пароль для входа в дневник")
+                .font(Font::Subheadline)
+                .secondary()
+                .align(TextAlign::Center)
+                .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 }),
         ))
         .grow_w(),
 
@@ -595,7 +500,7 @@ fn password_step_view(
                 .grow_w()
                 .id("password-field")
                 .log_pos("Auth:PasswordField")
-                .on_submit(do_login_submit),
+                .on_submit(on_submit),
         ))
         .spacing(4.0)
         .padding(Insets { top: 10.0, leading: 16.0, bottom: 10.0, trailing: 16.0 })
@@ -611,30 +516,6 @@ fn password_step_view(
         .grow_w(),
 
         spacer().grow(),
-
-        auth_action_button(
-            move || {
-                if state.loading.get() {
-                    "Вход в систему…"
-                } else {
-                    "Войти"
-                }
-            },
-            do_login,
-        ),
-
-        dyn_piece(
-            move || {
-                let h = kb_h.get();
-                if h > 0.0 {
-                    let safe_b = crate::shared::keyboard::get_safe_area_bottom();
-                    (h - safe_b).max(0.0)
-                } else {
-                    0.0
-                }
-            },
-            move |lift| spacer().height(lift).animation(AnimSpec::ease_out(250)).any(),
-        ),
     ))
     .grow()
     .on_tap(move || {
@@ -652,41 +533,179 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
     let error_local = Signal::new(String::new());
     let kb_h = crate::shared::keyboard::keyboard_height_signal();
 
-    let root = intro_view(path);
+    let root = intro_view();
 
-    nav_stack(path, root)
+    let proceed_username = {
+        let username = username;
+        let password_focused = password_focused;
+        let username_focused = username_focused;
+        let error_local = error_local;
+        let state = state;
+        let path = path;
+        move || {
+            let u = username.get_untracked();
+            if u.trim().is_empty() {
+                error_local.set("Введите логин".into());
+            } else {
+                error_local.set(String::new());
+                state.error_msg.set(String::new());
+                crate::shared::haptics::tick();
+                let u_str = u.trim().to_string();
+                prompt_login_confirmation(
+                    u_str,
+                    move || {
+                        crate::shared::haptics::tick();
+                        username_focused.set(false);
+                        password_focused.set(true);
+                        path.set(vec![AuthRoute::Login, AuthRoute::Password]);
+                    },
+                    move || {
+                        crate::shared::haptics::tick();
+                        username_focused.set(true);
+                    },
+                );
+            }
+        }
+    };
+
+    let do_login = {
+        let username = username;
+        let password = password;
+        let remember = remember;
+        let error_local = error_local;
+        let state = state;
+        move || {
+            if state.loading.get() { return; }
+            let u = username.get_untracked();
+            let p = password.get_untracked();
+            let r = remember.get_untracked();
+            if p.is_empty() {
+                error_local.set("Введите пароль".into());
+                return;
+            }
+            error_local.set(String::new());
+            state.error_msg.set(String::new());
+            crate::shared::keyboard::dismiss();
+            crate::shared::haptics::pop();
+            features::auth::login(state, &u, &p, r);
+        }
+    };
+
+    let proceed_username_sub = proceed_username.clone();
+    let do_login_sub = do_login.clone();
+
+    let stack = nav_stack(path, root)
         .title("ESchool")
         .destination(move |route: &AuthRoute| {
             match route {
                 AuthRoute::Login => username_step_view(
-                    state,
-                    path,
                     username,
                     password,
                     remember,
                     username_focused,
-                    password_focused,
-                    error_local,
-                    kb_h,
+                    proceed_username_sub.clone(),
                 )
                 .any(),
                 AuthRoute::Password => password_step_view(
-                    state,
-                    username,
                     password,
-                    remember,
                     password_focused,
-                    error_local,
-                    kb_h,
+                    do_login_sub.clone(),
                 )
                 .any(),
             }
         })
         .on_back(move |_req| {
             crate::shared::keyboard::dismiss();
+            error_local.set(String::new());
             BackResponse::Proceed
         })
         .id("auth-stack")
+        .grow();
+
+    let on_main_action = move || {
+        let p = path.get();
+        if p.is_empty() {
+            crate::shared::haptics::tick();
+            error_local.set(String::new());
+            state.error_msg.set(String::new());
+            path.set(vec![AuthRoute::Login]);
+            username_focused.set(true);
+        } else if p == [AuthRoute::Login] {
+            proceed_username();
+        } else {
+            do_login();
+        }
+    };
+
+    column((
+        stack,
+
+        // Error message & Error code display at the bottom
+        when(
+            move || !error_local.get().is_empty() || !state.error_msg.get().is_empty(),
+            move || {
+                let local_err = error_local.get();
+                let state_err = state.error_msg.get();
+                let (code, msg) = if !local_err.is_empty() {
+                    let err = parse_auth_error(&local_err);
+                    (err.code, local_err)
+                } else {
+                    let err = parse_auth_error(&state_err);
+                    (err.code, err.message)
+                };
+                column((
+                    label(msg)
+                        .font(Font::Subheadline)
+                        .color(colors::ERROR)
+                        .align(TextAlign::Center),
+                    spacer().height(2.0),
+                    label(format!("Код ошибки: [{code}]"))
+                        .font(Font::Caption2)
+                        .bold()
+                        .color(colors::ERROR.with_alpha(0.8))
+                        .align(TextAlign::Center),
+                ))
+                .spacing(2.0)
+                .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 })
+                .grow_w()
+                .any()
+            },
+        ),
+
+        // Prominent action button pinned at the bottom
+        auth_action_button(
+            move || {
+                let p = path.get();
+                if p.is_empty() {
+                    "Начать"
+                } else if p == [AuthRoute::Login] {
+                    "Продолжить"
+                } else {
+                    if state.loading.get() {
+                        "Вход в систему…"
+                    } else {
+                        "Войти"
+                    }
+                }
+            },
+            on_main_action,
+        ),
+
+        // Hardware / reactive keyboard lift:
+        dyn_piece(
+            move || {
+                let h = kb_h.get();
+                if h > 0.0 {
+                    let safe_b = crate::shared::keyboard::get_safe_area_bottom();
+                    (h - safe_b).max(0.0)
+                } else {
+                    0.0
+                }
+            },
+            move |lift| spacer().height(lift).animation(AnimSpec::ease_out(250)).any(),
+        ),
+    ))
+    .grow()
 }
 
 fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
