@@ -243,11 +243,41 @@ fn parse_auth_error(raw: &str) -> AuthErrorInfo {
 }
 
 
+#[cfg(target_os = "ios")]
+unsafe extern "C" {
+    fn eschool_style_liquid_glass_button(button_ptr: *mut std::ffi::c_void);
+}
+
 fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
-    button("‹")
-        .bordered()
-        .action(action)
-        .id("back_button")
+    let act = std::rc::Rc::new(action);
+    let act_clone = act.clone();
+
+    #[cfg(target_os = "ios")]
+    {
+        button("")
+            .frame(44.0, 44.0)
+            .action(move || {
+                act_clone();
+            })
+            .uikit(|view, _class, _mtm| {
+                let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
+                unsafe {
+                    eschool_style_liquid_glass_button(ptr);
+                }
+            })
+            .id("liquid-glass-back-arrow")
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    {
+        button("‹")
+            .bordered()
+            .frame(44.0, 44.0)
+            .action(move || {
+                act_clone();
+            })
+            .id("liquid-glass-back-arrow")
+    }
 }
 
 fn auth_action_button(
@@ -403,7 +433,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                             }),
                             spacer().grow(),
                         ))
-                        .padding(Insets { top: 12.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
+                        .padding(Insets { top: 10.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
                         column((
                             label("Вход в аккаунт")
@@ -518,7 +548,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                             }),
                             spacer().grow(),
                         ))
-                        .padding(Insets { top: 12.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
+                        .padding(Insets { top: 10.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
                         column((
                             label("Введите пароль")

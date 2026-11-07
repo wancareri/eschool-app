@@ -227,93 +227,161 @@ public struct GlassNavBarView: View {
 #if canImport(UIKit)
 import UIKit
 
-// MARK: - Native Liquid Glass Back Button Styler
+// MARK: - Native Apple Liquid Glass Back Button Styler
+
+final class LiquidGlassButtonSpringHandler: NSObject {
+    static let shared = LiquidGlassButtonSpringHandler()
+
+    func attach(to button: UIButton) {
+        button.removeTarget(self, action: #selector(touchDown(_:)), for: [.touchDown, .touchDragEnter])
+        button.removeTarget(self, action: #selector(touchUp(_:)), for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
+
+        button.addTarget(self, action: #selector(touchDown(_:)), for: [.touchDown, .touchDragEnter])
+        button.addTarget(self, action: #selector(touchUp(_:)), for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
+    }
+
+    @objc private func touchDown(_ sender: UIButton) {
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+
+        UIView.animate(withDuration: 0.15, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
+            sender.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+            sender.alpha = 0.88
+        }
+    }
+
+    @objc private func touchUp(_ sender: UIButton) {
+        UIView.animate(
+            withDuration: 0.38,
+            delay: 0,
+            usingSpringWithDamping: 0.58,
+            initialSpringVelocity: 0.8,
+            options: [.beginFromCurrentState, .allowUserInteraction]
+        ) {
+            sender.transform = .identity
+            sender.alpha = 1.0
+        }
+    }
+}
+
+final class LiquidGlassBackgroundView: UIView {
+    let effectView: UIVisualEffectView
+    let tintLayer: UIView
+
+    override init(frame: CGRect) {
+        let blur = UIBlurEffect(style: .systemMaterial)
+        self.effectView = UIVisualEffectView(effect: blur)
+        self.tintLayer = UIView()
+        super.init(frame: frame)
+
+        isUserInteractionEnabled = false
+        clipsToBounds = true
+        autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+        effectView.frame = bounds
+        effectView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        effectView.isUserInteractionEnabled = false
+        addSubview(effectView)
+
+        tintLayer.frame = bounds
+        tintLayer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        tintLayer.isUserInteractionEnabled = false
+        effectView.contentView.addSubview(tintLayer)
+
+        updateColors()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func updateColors() {
+        let isDark = traitCollection.userInterfaceStyle == .dark
+        // Translucent refractive glass tint (never milky white paint)
+        tintLayer.backgroundColor = isDark ? UIColor(white: 1.0, alpha: 0.12) : UIColor(white: 1.0, alpha: 0.22)
+        // Specular cut-glass rim highlight
+        layer.borderWidth = 0.5
+        layer.borderColor = (isDark ? UIColor(white: 1.0, alpha: 0.28) : UIColor(white: 1.0, alpha: 0.65)).cgColor
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let radius = min(bounds.width, bounds.height) / 2.0
+        if radius > 0 {
+            layer.cornerRadius = radius
+            layer.cornerCurve = .continuous
+            effectView.layer.cornerRadius = radius
+            effectView.layer.cornerCurve = .continuous
+            tintLayer.layer.cornerRadius = radius
+            tintLayer.layer.cornerCurve = .continuous
+        }
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        updateColors()
+    }
+}
 
 @_cdecl("eschool_style_liquid_glass_button")
 public func eschool_style_liquid_glass_button(buttonPtr: UnsafeMutableRawPointer) {
     let raw = Unmanaged<UIView>.fromOpaque(buttonPtr).takeUnretainedValue()
     guard let btn = raw as? UIButton else { return }
 
-    // Убираем старые subviews/layers от предыдущих вызовов
-    btn.subviews.filter { $0.tag == 99881 || $0.tag == 99882 }.forEach { $0.removeFromSuperview() }
-    btn.layer.sublayers?.removeAll(where: { $0 is CAGradientLayer })
-    btn.layer.borderWidth = 0.0
-    btn.layer.shadowOpacity = 0.0
-    btn.transform = .identity
-    btn.alpha = 1.0
+    let glassTag = 99882
+    btn.subviews.filter { $0.tag == glassTag || $0.tag == 99881 }.forEach { $0.removeFromSuperview() }
 
     btn.isUserInteractionEnabled = true
     btn.clipsToBounds = false
     btn.backgroundColor = .clear
     btn.layer.backgroundColor = UIColor.clear.cgColor
+    btn.transform = .identity
+    btn.alpha = 1.0
 
-    if #available(iOS 26.0, *) {
-        // iOS 26+: UIVisualEffectView с UIGlassEffect.
-        // autoresizingMask + defer в main.async — потому что Day устанавливает
-        // .frame(44, 44) ПОСЛЕ uikit-коллбэка, bounds в момент вызова = 0×0.
-        let effect = UIGlassEffect()
-        effect.isInteractive = true  // даёт прозрачный liquid glass вместо серого матового
+    let glassBg = LiquidGlassBackgroundView(frame: btn.bounds)
+    glassBg.tag = glassTag
+    btn.insertSubview(glassBg, at: 0)
 
-        let glassView = UIVisualEffectView(effect: effect)
-        glassView.tag = 99882
-        glassView.isUserInteractionEnabled = false
-        glassView.clipsToBounds = true
-        glassView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        glassView.frame = btn.bounds  // пока 0×0, обновится ниже
-        btn.insertSubview(glassView, at: 0)
+    let updateButtonShadow: (UIButton) -> Void = { button in
+        let isDark = button.traitCollection.userInterfaceStyle == .dark
+        let radius = button.bounds.height > 0 ? button.bounds.height / 2.0 : 22.0
+        button.layer.cornerRadius = radius
+        button.layer.cornerCurve = .continuous
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOffset = CGSize(width: 0, height: 2.0)
+        button.layer.shadowRadius = 8.0
+        button.layer.shadowOpacity = isDark ? 0.25 : 0.10
+        button.layer.masksToBounds = false
+    }
 
-        // Откладываем на следующий runloop — к этому моменту Day уже
-        // применил .frame(44, 44) и мы получим реальный bounds
-        DispatchQueue.main.async {
-            glassView.frame = btn.bounds
-            let r = btn.bounds.height / 2
-            glassView.layer.cornerRadius = r
-            glassView.layer.cornerCurve = .continuous
+    // Centered Apple SF Symbol chevron.backward
+    var config = UIButton.Configuration.plain()
+    config.background = .clear()
+    config.title = nil
+    let symbolConfig = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
+    config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
+    config.imagePlacement = .all
+    config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: -1.5, bottom: 0, trailing: 0)
+    btn.configuration = config
+
+    btn.configurationUpdateHandler = { button in
+        var c = button.configuration ?? UIButton.Configuration.plain()
+        let isDark = button.traitCollection.userInterfaceStyle == .dark
+        c.baseForegroundColor = isDark ? .white : .label
+        button.configuration = c
+        updateButtonShadow(button)
+        if let g = button.viewWithTag(glassTag) as? LiquidGlassBackgroundView {
+            g.updateColors()
         }
+    }
+    btn.setNeedsUpdateConfiguration()
 
-        // Кнопка: только иконка, без своего фона
-        var config = UIButton.Configuration.plain()
-        config.background = .clear()
-        config.title = nil
-        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
-        config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
-        config.imagePlacement = .all
-        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: -1.0, bottom: 0, trailing: 0)
-        btn.configuration = config
-
-        btn.configurationUpdateHandler = { button in
-            var c = button.configuration ?? UIButton.Configuration.plain()
-            c.baseForegroundColor = button.traitCollection.userInterfaceStyle == .dark ? .white : .label
-            button.configuration = c
-        }
-        btn.setNeedsUpdateConfiguration()
-
-    } else {
-        // iOS < 26: fallback — ultraThinMaterial blur
-        let applyStyle: (UIButton) -> Void = { button in
-            let isDark = button.traitCollection.userInterfaceStyle == .dark
-
-            var config = UIButton.Configuration.plain()
-            var bg = UIBackgroundConfiguration.clear()
-            let blur = UIBlurEffect(style: .systemUltraThinMaterial)
-            bg.visualEffect = blur
-            bg.backgroundColor = isDark
-                ? UIColor(white: 1.0, alpha: 0.12)
-                : UIColor(white: 0.0, alpha: 0.06)
-            config.background = bg
-            config.cornerStyle = .capsule
-
-            let symbolConfig = UIImage.SymbolConfiguration(pointSize: 17.0, weight: .semibold)
-            config.image = UIImage(systemName: "chevron.backward", withConfiguration: symbolConfig)
-            config.imagePlacement = .all
-            config.title = nil
-            config.baseForegroundColor = isDark ? .white : .label
-            config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: -1.0, bottom: 0, trailing: 0)
-            button.configuration = config
-        }
-
-        btn.configurationUpdateHandler = { button in applyStyle(button) }
-        applyStyle(btn)
+    DispatchQueue.main.async {
+        glassBg.frame = btn.bounds
+        glassBg.setNeedsLayout()
+        glassBg.layoutIfNeeded()
+        updateButtonShadow(btn)
+        LiquidGlassButtonSpringHandler.shared.attach(to: btn)
     }
 }
 
