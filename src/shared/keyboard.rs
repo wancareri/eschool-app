@@ -99,19 +99,36 @@ pub fn init() {
 }
 
 #[cfg(target_os = "ios")]
+pub fn register_follower_view(view: &objc2::rc::Retained<objc2_ui_kit::UIView>) {
+    ios::register_follower_view(view);
+}
+
+#[cfg(not(target_os = "ios"))]
+pub fn register_follower_view(_view: &()) {}
+
+#[cfg(target_os = "ios")]
 mod ios {
     use objc2::rc::Retained;
     use objc2::runtime::{AnyClass, AnyObject, Imp, NSObject, NSObjectProtocol, Sel};
     use objc2::{define_class, MainThreadMarker, MainThreadOnly};
+    use objc2_core_foundation::{CGFloat, CGAffineTransform};
     use objc2_foundation::NSNotification;
-    use objc2_ui_kit::{NSValueUIGeometryExtensions, UIKeyboardFrameEndUserInfoKey};
-    use std::cell::Cell;
+    use objc2_ui_kit::{NSValueUIGeometryExtensions, UIKeyboardFrameEndUserInfoKey, UIViewAnimationOptions};
+    use std::cell::{Cell, RefCell};
     use std::sync::atomic::{AtomicBool, Ordering};
 
     static INSTALLED: AtomicBool = AtomicBool::new(false);
 
     thread_local! {
         static OBSERVER: Cell<Option<Retained<KeyboardObserver>>> = const { Cell::new(None) };
+        static HARDWARE_FOLLOWER: RefCell<Option<Retained<objc2_ui_kit::UIView>>> = const { RefCell::new(None) };
+    }
+
+    pub fn register_follower_view(view: &Retained<objc2_ui_kit::UIView>) {
+        HARDWARE_FOLLOWER.with(|c| {
+            *c.borrow_mut() = Some(view.clone());
+        });
+        crate::shared::nslog::nslog("[Keyboard] Registered hardware follower view for instant 120fps keyboard tracking");
     }
 
     define_class!(
@@ -159,11 +176,65 @@ mod ios {
         };
 
         let dur_key = objc2_foundation::NSString::from_str("UIKeyboardAnimationDurationUserInfoKey");
-        let duration_ms = info
+        let duration_sec = info
             .objectForKey(&dur_key)
             .and_then(|o| o.downcast::<objc2_foundation::NSNumber>().ok())
-            .map(|n| (n.as_f64() * 1000.0).round() as u32)
-            .unwrap_or(250);
+            .map(|n| n.as_f64())
+            .unwrap_or(0.25);
+        let duration_ms = (duration_sec * 1000.0).round() as u32;
+
+        let curve_key = objc2_foundation::NSString::from_str("UIKeyboardAnimationCurveUserInfoKey");
+        let curve = info
+            .objectForKey(&curve_key)
+            .and_then(|o| o.downcast::<objc2_foundation::NSNumber>().ok())
+            .map(|n| n.as_isize())
+            .unwrap_or(7);
+
+        let safe_b = super::get_safe_area_bottom();
+        let lift = if visible_h > 0.0 {
+            (visible_h - safe_b).max(0.0)
+        } else {
+            0.0
+        };
+
+        // Hardware instant 120fps GPU follower translation:
+        // Runs in the exact same CoreAnimation transaction as the keyboard!
+        HARDWARE_FOLLOWER.with(|c| {
+            if let Some(follower) = c.borrow().as_ref() {
+                if follower.window().is_some() {
+                    let options = ((curve as usize) << 16) | (1usize << 1); // UIViewAnimationOptionBeginFromCurrentState
+                    let follower_clone = follower.clone();
+                    let animations = block2::RcBlock::new(move || {
+                        let transform = if lift > 0.0 {
+                            CGAffineTransform {
+                                a: 1.0, b: 0.0,
+                                c: 0.0, d: 1.0,
+                                tx: 0.0, ty: -(lift as CGFloat),
+                            }
+                        } else {
+                            CGAffineTransform {
+                                a: 1.0, b: 0.0,
+                                c: 0.0, d: 1.0,
+                                tx: 0.0, ty: 0.0,
+                            }
+                        };
+                        unsafe {
+                            let _: () = objc2::msg_send![&*follower_clone, setTransform: transform];
+                        }
+                    });
+                    if let Some(mtm) = MainThreadMarker::new() {
+                        objc2_ui_kit::UIView::animateWithDuration_delay_options_animations_completion(
+                            duration_sec,
+                            0.0,
+                            UIViewAnimationOptions(options),
+                            &animations,
+                            None,
+                            mtm,
+                        );
+                    }
+                }
+            }
+        });
 
         super::set_keyboard_height_with_duration(visible_h, duration_ms);
     }

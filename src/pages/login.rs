@@ -277,12 +277,12 @@ fn auth_action_button(
 ) -> impl Piece {
     button(title)
         .prominent()
-        .height(50.0)
+        .height(52.0)
         .grow_w()
         .action(action)
         .id("login-btn")
         .log_pos("Auth:ActionButton")
-        .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
+        .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
 }
 
 fn prompt_login_confirmation(
@@ -531,7 +531,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
     let password_focused = Signal::new(false);
     let remember = Signal::new(true);
     let error_local = Signal::new(String::new());
-    let kb_h = crate::shared::keyboard::keyboard_height_signal();
 
     let root = intro_view();
 
@@ -637,9 +636,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
         }
     };
 
-    column((
-        stack,
-
+    let bottom_follower = column((
         // Error message & Error code display at the bottom
         when(
             move || !error_local.get().is_empty() || !state.error_msg.get().is_empty(),
@@ -648,7 +645,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 let state_err = state.error_msg.get();
                 let (code, msg) = if !local_err.is_empty() {
                     let err = parse_auth_error(&local_err);
-                    (err.code, local_err)
+                    (err.code, err.message)
                 } else {
                     let err = parse_auth_error(&state_err);
                     (err.code, err.message)
@@ -690,20 +687,20 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             },
             on_main_action,
         ),
+        spacer().height(8.0),
+    ));
 
-        // Hardware / reactive keyboard lift:
-        dyn_piece(
-            move || {
-                let h = kb_h.get();
-                if h > 0.0 {
-                    let safe_b = crate::shared::keyboard::get_safe_area_bottom();
-                    (h - safe_b).max(0.0)
-                } else {
-                    0.0
-                }
-            },
-            move |lift| spacer().height(lift).animation(AnimSpec::ease_out(250)).any(),
-        ),
+    #[cfg(target_os = "ios")]
+    let bottom_follower = {
+        use day_uikit::UiKitExt;
+        bottom_follower.uikit(|view, _class, _mtm| {
+            crate::shared::keyboard::register_follower_view(view);
+        })
+    };
+
+    column((
+        stack,
+        bottom_follower,
     ))
     .grow()
 }

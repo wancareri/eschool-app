@@ -11,15 +11,15 @@ static LOTTIE_JS: &str = include_str!("../../resource/animations/lottie_light.mi
 
 #[allow(dead_code)]
 fn build_lottie_html(json_data: &str) -> String {
-    format!(
-        r#"<!DOCTYPE html>
+    let mut html = String::with_capacity(LOTTIE_JS.len() + json_data.len() + 1024);
+    html.push_str(r#"<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
-  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  html, body {{
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
     width: 100%; height: 100%;
     overflow: hidden;
     background: transparent !important;
@@ -27,40 +27,44 @@ fn build_lottie_html(json_data: &str) -> String {
     display: flex;
     align-items: center;
     justify-content: center;
-  }}
-  #anim {{
+  }
+  #anim {
     width: 100%;
     height: 100%;
-  }}
-  svg {{
+  }
+  svg {
     display: block;
     width: 100% !important;
     height: 100% !important;
-  }}
+  }
 </style>
 </head>
 <body>
 <div id="anim"></div>
 <script>
-{LOTTIE_JS}
+"#);
+    html.push_str(LOTTIE_JS);
+    html.push_str(r#"
 </script>
 <script>
-try {{
-  var animData = {json_data};
-  lottie.loadAnimation({{
+try {
+  var animData = "#);
+    html.push_str(json_data);
+    html.push_str(r#";
+  lottie.loadAnimation({
     container: document.getElementById('anim'),
     renderer: 'svg',
     loop: true,
     autoplay: true,
     animationData: animData
-  }});
-}} catch (e) {{
-  console.error("Lottie load error:", e);
-}}
+  });
+} catch(e) {
+  console.error("Lottie error:", e);
+}
 </script>
 </body>
-</html>"#
-    )
+</html>"#);
+    html
 }
 
 pub fn duck_intro_animation(size: f64) -> impl Piece {
@@ -88,15 +92,17 @@ pub fn lottie_view_raw(json_data: &'static str, size: f64) -> impl Piece {
     {
         use day_uikit::UiKitExt;
         let html = build_lottie_html(json_data);
-        spacer()
-            .frame(size, size)
+        // Note: the tweak sits on column(()) which allocates a real native UIView (CONTAINER).
+        // Frame wrapper is layout-only and cannot be tweaked directly.
+        column(())
             .uikit(move |view, _class, _mtm| {
                 mount_lottie_webview(view, &html, size);
             })
+            .frame(size, size)
     }
     #[cfg(not(target_os = "ios"))]
     {
-        spacer().frame(size, size)
+        column(()).frame(size, size)
     }
 }
 
@@ -146,13 +152,27 @@ fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f6
         }
 
         let ns_html = NSString::from_str(html);
+        let bundle_class = AnyClass::get(c"NSBundle");
+        let base_url: *mut AnyObject = if let Some(b_cls) = bundle_class {
+            let main_bundle: *mut AnyObject = objc2::msg_send![b_cls, mainBundle];
+            if !main_bundle.is_null() {
+                objc2::msg_send![main_bundle, bundleURL]
+            } else {
+                std::ptr::null_mut()
+            }
+        } else {
+            std::ptr::null_mut()
+        };
+
         let _: () = objc2::msg_send![
             web_view,
             loadHTMLString: &*ns_html,
-            baseURL: std::ptr::null::<AnyObject>()
+            baseURL: base_url
         ];
 
         let _: () = objc2::msg_send![parent_view, addSubview: web_view];
+        let _: () = objc2::msg_send![parent_view, setBackgroundColor: &*clear_color];
+        let _: () = objc2::msg_send![parent_view, setUserInteractionEnabled: false];
         crate::shared::nslog::nslog(&format!("[Lottie] Successfully mounted Lottie animation view ({size}x{size})"));
     }
 }
