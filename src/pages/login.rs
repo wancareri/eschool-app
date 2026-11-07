@@ -256,16 +256,17 @@ fn liquid_glass_back_button(action: impl Fn() + 'static) -> impl Piece {
 
     #[cfg(target_os = "ios")]
     {
-        button("")
-            .frame(44.0, 44.0)
-            .action(move || {
-                act_clone();
-            })
-            .uikit(|view, _class, _mtm| {
+        button("‹")
+            .uikit(|view, class, _mtm| {
+                crate::shared::nslog::nslog(&format!("[Auth] BackButton uikit called on class={class}"));
                 let ptr = (&**view as *const objc2_ui_kit::UIView) as *mut std::ffi::c_void;
                 unsafe {
                     eschool_style_liquid_glass_button(ptr);
                 }
+            })
+            .frame(44.0, 44.0)
+            .action(move || {
+                act_clone();
             })
             .id("liquid-glass-back-arrow")
     }
@@ -435,7 +436,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                             }),
                             spacer().grow(),
                         ))
-                        .padding(Insets { top: 10.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
+                        .padding(Insets { top: 12.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
                         column((
                             label("Вход в аккаунт")
@@ -550,7 +551,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                             }),
                             spacer().grow(),
                         ))
-                        .padding(Insets { top: 10.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
+                        .padding(Insets { top: 12.0, leading: 20.0, bottom: 6.0, trailing: 20.0 }),
 
                         column((
                             label("Введите пароль")
