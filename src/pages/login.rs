@@ -265,8 +265,8 @@ impl Route for AuthRoute {
     }
     fn title(&self) -> String {
         match self {
-            AuthRoute::Login => "Вход".into(),
-            AuthRoute::Password => "Пароль".into(),
+            AuthRoute::Login => "Вход в аккаунт".into(),
+            AuthRoute::Password => "Введите пароль".into(),
         }
     }
 }
@@ -442,12 +442,8 @@ fn username_step_view(
     let proceed_submit = proceed.clone();
 
     column((
-        spacer().height(20.0),
+        spacer().height(12.0),
         column((
-            label("Вход в аккаунт")
-                .font(Font::Title)
-                .bold()
-                .align(TextAlign::Center),
             label(move || {
                 let local_err = error_local.get();
                 let state_err = state.error_msg.get();
@@ -564,12 +560,8 @@ fn password_step_view(
     let do_login_submit = do_login.clone();
 
     column((
-        spacer().height(20.0),
+        spacer().height(12.0),
         column((
-            label("Введите пароль")
-                .font(Font::Title)
-                .bold()
-                .align(TextAlign::Center),
             label(move || {
                 let local_err = error_local.get();
                 let state_err = state.error_msg.get();

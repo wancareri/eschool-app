@@ -53,12 +53,11 @@ pub fn apply_ios_tint(hex: u32) {
         let _: () = objc2::msg_send![&*tab_appearance, setStandardAppearance: &*tab_app];
         let _: () = objc2::msg_send![&*tab_appearance, setScrollEdgeAppearance: &*tab_app];
 
-        // UINavigationBarAppearance — liquid glass with transparent ground
+        // UINavigationBarAppearance — seamless transparent ground matching page background
         let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
         let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![nav_appearance_class, new];
         let _: () = objc2::msg_send![&*nav_app, configureWithTransparentBackground];
-        let _: () = objc2::msg_send![&*nav_app, setBackgroundEffect: Some(&*blur)];
         let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*clear];
         let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
 
@@ -154,11 +153,7 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
             let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
             let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
                 objc2::msg_send![nav_appearance_class, new];
-            let blur_class = objc2::class!(UIBlurEffect);
-            let blur: objc2::rc::Retained<objc2::runtime::AnyObject> =
-                objc2::msg_send![blur_class, effectWithStyle: 6isize];
             let _: () = objc2::msg_send![&*nav_app, configureWithTransparentBackground];
-            let _: () = objc2::msg_send![&*nav_app, setBackgroundEffect: Some(&*blur)];
             let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*clear];
             let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
 
