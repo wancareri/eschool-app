@@ -41,5 +41,6 @@ website/gallery-manifest.json
 dist/
 gh_artifacts*/
 *.ipa
+*.zip
+ios-ipa*
 .omo/
-dev.zip
