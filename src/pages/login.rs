@@ -287,12 +287,6 @@ fn auth_action_button(
 
 fn intro_view() -> impl Piece {
     column((
-        spacer().grow(),
-        row((
-            spacer().grow(),
-            crate::widgets::lottie_view::duck_intro_animation(140.0),
-            spacer().grow(),
-        )),
         spacer().height(20.0),
         label("ESchool")
             .font(Font::LargeTitle)
@@ -310,6 +304,12 @@ fn intro_view() -> impl Piece {
             .align(TextAlign::Center)
             .padding(Insets { top: 0.0, leading: 32.0, bottom: 0.0, trailing: 32.0 }),
         spacer().grow(),
+        row((
+            spacer().grow(),
+            crate::widgets::lottie_view::duck_intro_animation(210.0),
+            spacer().grow(),
+        )),
+        spacer().height(24.0),
     ))
     .grow()
     .on_tap(move || {
@@ -325,7 +325,7 @@ fn username_step_view(
 ) -> impl Piece {
     let sticker = row((
         spacer().grow(),
-        crate::widgets::lottie_view::duck_login_animation(110.0),
+        crate::widgets::lottie_view::duck_login_animation(160.0),
         spacer().grow(),
     ));
 
@@ -392,11 +392,11 @@ fn username_step_view(
     };
 
     column((
-        spacer().height(10.0),
-        sticker,
-        spacer().height(8.0),
-        content,
         spacer().grow(),
+        sticker,
+        spacer().grow(),
+        content,
+        spacer().height(8.0),
     ))
     .grow()
     .on_tap(move || {
@@ -411,7 +411,7 @@ fn password_step_view(
 ) -> impl Piece {
     let sticker = row((
         spacer().grow(),
-        crate::widgets::lottie_view::duck_password_animation(110.0),
+        crate::widgets::lottie_view::duck_password_animation(160.0),
         spacer().grow(),
     ));
 
@@ -469,11 +469,11 @@ fn password_step_view(
     };
 
     column((
-        spacer().height(10.0),
-        sticker,
-        spacer().height(8.0),
-        content,
         spacer().grow(),
+        sticker,
+        spacer().grow(),
+        content,
+        spacer().height(8.0),
     ))
     .grow()
     .on_tap(move || {

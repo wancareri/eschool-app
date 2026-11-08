@@ -140,9 +140,21 @@ mod ios {
         static HARDWARE_FOLLOWER: RefCell<Option<Retained<objc2_ui_kit::UIView>>> = const { RefCell::new(None) };
         static HARDWARE_STICKER: RefCell<Option<Retained<objc2_ui_kit::UIView>>> = const { RefCell::new(None) };
         static HARDWARE_CONTENT: RefCell<Option<Retained<objc2_ui_kit::UIView>>> = const { RefCell::new(None) };
+        static CURRENT_LIFT: Cell<CGFloat> = const { Cell::new(0.0) };
     }
 
     pub fn register_follower_view(view: &Retained<objc2_ui_kit::UIView>) {
+        let lift = CURRENT_LIFT.with(|l| l.get());
+        if lift > 0.0 {
+            let transform = CGAffineTransform {
+                a: 1.0, b: 0.0,
+                c: 0.0, d: 1.0,
+                tx: 0.0, ty: -lift,
+            };
+            unsafe {
+                let _: () = objc2::msg_send![&**view, setTransform: transform];
+            }
+        }
         HARDWARE_FOLLOWER.with(|c| {
             *c.borrow_mut() = Some(view.clone());
         });
@@ -150,6 +162,17 @@ mod ios {
     }
 
     pub fn register_sticker_view(view: &Retained<objc2_ui_kit::UIView>) {
+        let lift = CURRENT_LIFT.with(|l| l.get());
+        if lift > 0.0 {
+            let transform = CGAffineTransform {
+                a: 0.48, b: 0.0,
+                c: 0.0, d: 0.48,
+                tx: 0.0, ty: -(lift * 0.50),
+            };
+            unsafe {
+                let _: () = objc2::msg_send![&**view, setTransform: transform];
+            }
+        }
         HARDWARE_STICKER.with(|c| {
             *c.borrow_mut() = Some(view.clone());
         });
@@ -157,6 +180,17 @@ mod ios {
     }
 
     pub fn register_content_view(view: &Retained<objc2_ui_kit::UIView>) {
+        let lift = CURRENT_LIFT.with(|l| l.get());
+        if lift > 0.0 {
+            let transform = CGAffineTransform {
+                a: 1.0, b: 0.0,
+                c: 0.0, d: 1.0,
+                tx: 0.0, ty: -lift,
+            };
+            unsafe {
+                let _: () = objc2::msg_send![&**view, setTransform: transform];
+            }
+        }
         HARDWARE_CONTENT.with(|c| {
             *c.borrow_mut() = Some(view.clone());
         });
@@ -233,6 +267,8 @@ mod ios {
             0.0
         };
 
+        CURRENT_LIFT.with(|l| l.set(lift as CGFloat));
+
         // Hardware instant 120fps GPU follower translation:
         // Runs in the exact same CoreAnimation transaction as the keyboard!
         HARDWARE_FOLLOWER.with(|c| {
@@ -280,11 +316,13 @@ mod ios {
                     let sticker_clone = sticker.clone();
                     let animations = block2::RcBlock::new(move || {
                         let transform = if lift > 0.0 {
-                            // Scale down smoothly to ~50% and shift up towards top bar
+                            // Scale down smoothly to ~48% and shift up towards top bar:
+                            // Centers the duck in the remaining space above the content!
+                            let ty = -((lift * 0.50) as CGFloat);
                             CGAffineTransform {
-                                a: 0.50, b: 0.0,
-                                c: 0.0, d: 0.50,
-                                tx: 0.0, ty: -16.0,
+                                a: 0.48, b: 0.0,
+                                c: 0.0, d: 0.48,
+                                tx: 0.0, ty,
                             }
                         } else {
                             CGAffineTransform {
@@ -312,7 +350,7 @@ mod ios {
         });
 
         // Hardware smooth 120fps GPU content follower:
-        // Moves the form fields up smoothly with the sticker!
+        // Pinned to the bottom! Moves up in exact 1:1 sync with the button and keyboard!
         HARDWARE_CONTENT.with(|c| {
             if let Some(content) = c.borrow().as_ref() {
                 if content.window().is_some() {
@@ -323,7 +361,7 @@ mod ios {
                             CGAffineTransform {
                                 a: 1.0, b: 0.0,
                                 c: 0.0, d: 1.0,
-                                tx: 0.0, ty: -54.0,
+                                tx: 0.0, ty: -(lift as CGFloat),
                             }
                         } else {
                             CGAffineTransform {
