@@ -10,12 +10,12 @@ static DUCK_PASSWORD_JSON: &str = include_str!("../../resource/animations/duck_p
 #[allow(dead_code)]
 static LOTTIE_JS: &str = include_str!("../../resource/animations/lottie_light.min.js");
 
-static DUCK_INTRO_HTML: LazyLock<String> = LazyLock::new(|| build_lottie_html(DUCK_INTRO_JSON));
-static DUCK_LOGIN_HTML: LazyLock<String> = LazyLock::new(|| build_lottie_html(DUCK_LOGIN_JSON));
-static DUCK_PASSWORD_HTML: LazyLock<String> = LazyLock::new(|| build_lottie_html(DUCK_PASSWORD_JSON));
+static DUCK_INTRO_HTML: LazyLock<String> = LazyLock::new(|| build_lottie_html(DUCK_INTRO_JSON, Some("-45 115 475 295")));
+static DUCK_LOGIN_HTML: LazyLock<String> = LazyLock::new(|| build_lottie_html(DUCK_LOGIN_JSON, Some("55 95 400 320")));
+static DUCK_PASSWORD_HTML: LazyLock<String> = LazyLock::new(|| build_lottie_html(DUCK_PASSWORD_JSON, Some("70 45 360 425")));
 
 #[allow(dead_code)]
-fn build_lottie_html(json_data: &str) -> String {
+fn build_lottie_html(json_data: &str, initial_viewbox: Option<&str>) -> String {
     let mut html = String::with_capacity(LOTTIE_JS.len() + json_data.len() + 1024);
     html.push_str(r#"<!DOCTYPE html>
 <html>
@@ -63,6 +63,15 @@ try {
   var animData = "#);
     html.push_str(json_data);
     html.push_str(r#";
+  var vb = "#);
+    if let Some(vb) = initial_viewbox {
+        html.push('"');
+        html.push_str(vb);
+        html.push('"');
+    } else {
+        html.push_str("null");
+    }
+    html.push_str(r#";
   var anim = lottie.loadAnimation({
     container: document.getElementById('anim'),
     renderer: 'svg',
@@ -71,6 +80,7 @@ try {
     animationData: animData,
     rendererSettings: {
       preserveAspectRatio: 'xMidYMid meet',
+      viewBoxSize: vb,
       viewBoxOnly: true,
       progressiveLoad: false,
       hideOnTransparent: false
@@ -79,15 +89,29 @@ try {
   window.lottieAnim = anim;
   var fixSvg = function() {
     var svg = document.querySelector('svg');
-    if (svg) {
-      svg.removeAttribute('width');
-      svg.removeAttribute('height');
-      svg.style.width = '100%';
-      svg.style.height = '100%';
-      svg.style.maxWidth = '100%';
-      svg.style.maxHeight = '100%';
-      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    }
+    if (!svg) return;
+    svg.removeAttribute('width');
+    svg.removeAttribute('height');
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+    svg.style.maxWidth = '100%';
+    svg.style.maxHeight = '100%';
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+    try {
+      var g = svg.querySelector('g');
+      if (g && typeof g.getBBox === 'function') {
+        var bbox = g.getBBox();
+        if (bbox && bbox.width > 30 && bbox.height > 30 && bbox.width < 1200) {
+          var pad = Math.max(bbox.width, bbox.height) * 0.04;
+          var vx = (bbox.x - pad).toFixed(1);
+          var vy = (bbox.y - pad).toFixed(1);
+          var vw = (bbox.width + pad * 2).toFixed(1);
+          var vh = (bbox.height + pad * 2).toFixed(1);
+          svg.setAttribute('viewBox', vx + ' ' + vy + ' ' + vw + ' ' + vh);
+        }
+      }
+    } catch(err) {}
   };
   anim.addEventListener('DOMLoaded', fixSvg);
   setTimeout(fixSvg, 20);
@@ -156,7 +180,7 @@ pub fn lottie_view_raw(json_data: &'static str, size: f64) -> impl Piece {
     #[cfg(target_os = "ios")]
     {
         use day_uikit::UiKitExt;
-        let html = build_lottie_html(json_data);
+        let html = build_lottie_html(json_data, None);
         column(())
             .uikit(move |view, _class, _mtm| {
                 mount_lottie_webview(view, &html, size);

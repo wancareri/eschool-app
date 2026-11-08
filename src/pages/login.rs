@@ -306,10 +306,10 @@ fn intro_view() -> impl Piece {
         spacer().grow(),
         row((
             spacer().grow(),
-            crate::widgets::lottie_view::duck_intro_animation(210.0),
+            crate::widgets::lottie_view::duck_intro_animation(230.0),
             spacer().grow(),
         )),
-        spacer().height(24.0),
+        spacer().grow(),
     ))
     .grow()
     .on_tap(move || {
@@ -325,7 +325,7 @@ fn username_step_view(
 ) -> impl Piece {
     let sticker = row((
         spacer().grow(),
-        crate::widgets::lottie_view::duck_login_animation(160.0),
+        crate::widgets::lottie_view::duck_login_animation(170.0),
         spacer().grow(),
     ));
 
@@ -411,7 +411,7 @@ fn password_step_view(
 ) -> impl Piece {
     let sticker = row((
         spacer().grow(),
-        crate::widgets::lottie_view::duck_password_animation(160.0),
+        crate::widgets::lottie_view::duck_password_animation(170.0),
         spacer().grow(),
     ));
 
