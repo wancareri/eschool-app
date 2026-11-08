@@ -1,6 +1,5 @@
 use crate::app::AppState;
 use crate::features;
-use crate::widgets;
 use crate::res;
 use crate::shared::{biometric, colors, haptics, nslog, pin};
 use day::prelude::*;
@@ -108,24 +107,15 @@ pub fn render() -> impl Piece {
     }
 
     let rd = restore_done.clone();
-    zstack((
+    let piece = zstack((
         scroll(column((
-            zstack((
-                column((
-                    label(move || res::str::settings_title().format())
-                        .font(Font::LargeTitle)
-                        .bold(),
-                    label("Настройки").font(Font::Subheadline).secondary(),
-                ))
-                .grow_w(),
-
-                row((
-                    spacer().grow(),
-                    widgets::conn_status::render(),
-                ))
-                .align(VAlign::Center)
-                .grow_w(),
+            column((
+                label(move || res::str::settings_title().format())
+                    .font(Font::LargeTitle)
+                    .bold(),
+                label("Настройки").font(Font::Subheadline).secondary(),
             ))
+            .grow_w()
             .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
 
             picker(
@@ -191,7 +181,25 @@ pub fn render() -> impl Piece {
         .grow(),
     ))
     .align(Alignment::TopLeading)
-    .grow()
+    .grow();
+
+    #[cfg(target_os = "ios")]
+    let piece = {
+        use day_uikit::UiKitExt;
+        piece.uikit(move |view, _class, _mtm| {
+            let ptr = objc2::rc::Retained::as_ptr(view) as usize;
+            struct SendPtr(usize);
+            unsafe impl Send for SendPtr {}
+            let sp = SendPtr(ptr);
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                let state = AppState::ambient();
+                let v = unsafe { &*(sp.0 as *const objc2_ui_kit::UIView) };
+                crate::widgets::conn_status::setup_status_nav_bar(v, state);
+            });
+        })
+    };
+
+    piece
 }
 
 fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piece {

@@ -101,24 +101,15 @@ pub fn render() -> impl Piece {
     let show_summary = Signal::new(false);
     let refreshing = Signal::new(false);
 
-    zstack((
+    let piece = zstack((
         pull_to_refresh(refreshing, scroll(column((
-                zstack((
-                    column((
-                        label(move || res::str::diary_title().format())
-                            .font(Font::LargeTitle)
-                            .bold(),
-                        child_switcher(state),
-                    ))
-                    .grow_w(),
-
-                    row((
-                        spacer().grow(),
-                        widgets::conn_status::render(),
-                    ))
-                    .align(VAlign::Center)
-                    .grow_w(),
+                column((
+                    label(move || res::str::diary_title().format())
+                        .font(Font::LargeTitle)
+                        .bold(),
+                    child_switcher(state),
                 ))
+                .grow_w()
                 .padding(Insets { top: 8.0, leading: PAD, bottom: 4.0, trailing: PAD }),
 
                 sub_tabs(state, show_summary),
@@ -146,7 +137,25 @@ pub fn render() -> impl Piece {
             .grow(),
     ))
     .align(Alignment::TopLeading)
-    .grow()
+    .grow();
+
+    #[cfg(target_os = "ios")]
+    let piece = {
+        use day_uikit::UiKitExt;
+        piece.uikit(move |view, _class, _mtm| {
+            let ptr = objc2::rc::Retained::as_ptr(view) as usize;
+            struct SendPtr(usize);
+            unsafe impl Send for SendPtr {}
+            let sp = SendPtr(ptr);
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                let state = AppState::ambient();
+                let v = unsafe { &*(sp.0 as *const objc2_ui_kit::UIView) };
+                crate::widgets::conn_status::setup_status_nav_bar(v, state);
+            });
+        })
+    };
+
+    piece
 }
 
 fn child_switcher(state: AppState) -> impl Piece {

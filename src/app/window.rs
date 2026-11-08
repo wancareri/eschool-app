@@ -251,6 +251,26 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
     .grow()
 }
 
+fn diary_tab() -> impl Piece {
+    let path = Signal::new(Vec::<String>::new());
+    nav_stack(path, pages::diary::render())
+}
+
+fn schedule_tab() -> impl Piece {
+    let path = Signal::new(Vec::<String>::new());
+    nav_stack(path, pages::schedule::render())
+}
+
+fn teachers_tab() -> impl Piece {
+    let path = Signal::new(Vec::<String>::new());
+    nav_stack(path, pages::teachers::render())
+}
+
+fn settings_tab() -> impl Piece {
+    let path = Signal::new(Vec::<String>::new());
+    nav_stack(path, pages::settings::render())
+}
+
 fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
     let section = state.current_section;
     #[cfg(target_os = "ios")]
@@ -270,25 +290,25 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
             crate::Section::Diary,
             res::str::nav_diary(),
             res::vectors::tab_diary,
-            pages::diary::render,
+            diary_tab,
         )
         .item_icon(
             crate::Section::Schedule,
             res::str::nav_schedule(),
             res::vectors::tab_schedule,
-            pages::schedule::render,
+            schedule_tab,
         )
         .item_icon(
             crate::Section::Teachers,
             res::str::nav_teachers(),
             res::vectors::tab_teachers,
-            pages::teachers::render,
+            teachers_tab,
         )
         .item_icon(
             crate::Section::Settings,
             res::str::nav_settings(),
             res::vectors::tab_settings,
-            pages::settings::render,
+            settings_tab,
         );
 
     if primary {
