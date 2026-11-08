@@ -285,284 +285,304 @@ fn auth_action_button(
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
 }
 
-#[allow(dead_code)]
-#[cfg(not(target_os = "ios"))]
-fn setup_login_nav_bar(_view: &()) {}
-
 #[cfg(target_os = "ios")]
-fn setup_login_nav_bar(view: &objc2_ui_kit::UIView) {
-    use objc2::rc::Retained;
+pub fn show_theme_sheet() {
     use objc2::MainThreadMarker;
-    use objc2::MainThreadOnly;
-    use objc2::Message;
-    use objc2_foundation::{NSString, NSArray};
-    use objc2_core_foundation::{CGRect, CGSize, CGPoint};
+    use objc2_foundation::NSString;
     use objc2_ui_kit::{
-        UIBarButtonItem, UIButton, UIColor, UIImage, UIViewController,
+        UIAlertAction, UIAlertActionStyle, UIAlertController, UIAlertControllerStyle,
+        UIApplication,
     };
-
-    let Some(mtm) = MainThreadMarker::new() else { return };
-
-    let mut next = view.nextResponder();
-    let mut target_vc: Option<Retained<UIViewController>> = None;
-    while let Some(responder) = next {
-        if let Some(vc) = responder.downcast_ref::<UIViewController>() {
-            target_vc = Some(vc.retain());
-            break;
-        }
-        next = responder.nextResponder();
-    }
-
-    let Some(vc) = target_vc else { return };
-    let nav_item = vc.navigationItem();
-
-    if let Some(items) = nav_item.rightBarButtonItems() {
-        if !items.is_empty() {
-            return;
-        }
-    }
-
-    // 1. Liquid Glass Theme Button
-    let theme_btn = unsafe {
-        let b = UIButton::new(mtm);
-        b.setFrame(CGRect {
-            origin: CGPoint { x: 0.0, y: 0.0 },
-            size: CGSize { width: 36.0, height: 36.0 },
-        });
-        b.layer().setCornerRadius(18.0);
-        b.layer().setMasksToBounds(true);
-        // Liquid glass styling: translucent fill with blur-like feel
-        let bg_color = UIColor::colorWithWhite_alpha(1.0, 0.18);
-        b.setBackgroundColor(Some(&bg_color));
-        let tint = UIColor::labelColor();
-        b.setTintColor(Some(&tint));
-
-        let icon = UIImage::systemImageNamed(&NSString::from_str("circle.lefthalf.filled"));
-        b.setImage_forState(icon.as_deref(), objc2_ui_kit::UIControlState::Normal);
-        b
-    };
-
-    attach_theme_menu(mtm, &theme_btn);
-
-    // 2. Liquid Glass Language Button
-    let lang_btn = unsafe {
-        let b = UIButton::new(mtm);
-        b.setFrame(CGRect {
-            origin: CGPoint { x: 0.0, y: 0.0 },
-            size: CGSize { width: 44.0, height: 36.0 },
-        });
-        b.layer().setCornerRadius(18.0);
-        b.layer().setMasksToBounds(true);
-        let bg_color = UIColor::colorWithWhite_alpha(1.0, 0.18);
-        b.setBackgroundColor(Some(&bg_color));
-        let tint = UIColor::labelColor();
-        b.setTintColor(Some(&tint));
-        b.setTitleColor_forState(Some(&tint), objc2_ui_kit::UIControlState::Normal);
-        b
-    };
-
-    attach_lang_menu(mtm, &lang_btn);
-
-    let theme_bar_item: Retained<UIBarButtonItem> = unsafe {
-        objc2::msg_send![UIBarButtonItem::alloc(mtm), initWithCustomView: &*theme_btn]
-    };
-    let lang_bar_item: Retained<UIBarButtonItem> = unsafe {
-        objc2::msg_send![UIBarButtonItem::alloc(mtm), initWithCustomView: &*lang_btn]
-    };
-
-    let items = NSArray::from_retained_slice(&[lang_bar_item, theme_bar_item]);
-    nav_item.setRightBarButtonItems(Some(&items));
-}
-
-#[cfg(target_os = "ios")]
-fn attach_theme_menu(mtm: objc2::MainThreadMarker, btn: &objc2_ui_kit::UIButton) {
-    use objc2::rc::Retained;
-    use objc2::Message;
     use block2::RcBlock;
-    use objc2_foundation::{NSString, NSArray};
-    use objc2_ui_kit::{UIAction, UIMenu, UIMenuElement, UIMenuElementState};
+    use core::ptr::NonNull;
 
-    let cur_theme = day::prefs::get(crate::THEME_KEY);
-    let selected = match cur_theme.as_deref() {
-        Some("light") => 1,
-        Some("dark") => 2,
-        _ => 0,
-    };
+    let Some(mtm) = MainThreadMarker::new() else { return; };
+    let app = UIApplication::sharedApplication(mtm);
+    #[allow(deprecated)]
+    let Some(window) = app.keyWindow() else { return; };
+    let Some(mut top_vc) = window.rootViewController() else { return; };
+    while let Some(presented) = top_vc.presentedViewController() {
+        top_vc = presented;
+    }
 
-    let btn_clone = btn.retain();
-    let h_sys = RcBlock::new(move |_action: core::ptr::NonNull<UIAction>| {
+    let alert = UIAlertController::alertControllerWithTitle_message_preferredStyle(
+        Some(&NSString::from_str("Оформление")),
+        None,
+        UIAlertControllerStyle::ActionSheet,
+        mtm,
+    );
+
+    let h_sys = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
         day::prefs::remove(crate::THEME_KEY);
         day::set_appearance(None);
         crate::shared::haptics::tick();
-        attach_theme_menu(mtm, &btn_clone);
     });
+    let a_sys = UIAlertAction::actionWithTitle_style_handler(
+        Some(&NSString::from_str("Системная")),
+        UIAlertActionStyle::Default,
+        Some(&*h_sys),
+        mtm,
+    );
 
-    let btn_clone2 = btn.retain();
-    let h_light = RcBlock::new(move |_action: core::ptr::NonNull<UIAction>| {
+    let h_light = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
         day::prefs::set(crate::THEME_KEY, "light");
         day::set_appearance(Some(false));
         crate::shared::haptics::tick();
-        attach_theme_menu(mtm, &btn_clone2);
     });
+    let a_light = UIAlertAction::actionWithTitle_style_handler(
+        Some(&NSString::from_str("Светлая ☀️")),
+        UIAlertActionStyle::Default,
+        Some(&*h_light),
+        mtm,
+    );
 
-    let btn_clone3 = btn.retain();
-    let h_dark = RcBlock::new(move |_action: core::ptr::NonNull<UIAction>| {
+    let h_dark = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
         day::prefs::set(crate::THEME_KEY, "dark");
         day::set_appearance(Some(true));
         crate::shared::haptics::tick();
-        attach_theme_menu(mtm, &btn_clone3);
     });
+    let a_dark = UIAlertAction::actionWithTitle_style_handler(
+        Some(&NSString::from_str("Тёмная 🌙")),
+        UIAlertActionStyle::Default,
+        Some(&*h_dark),
+        mtm,
+    );
 
-    let a_sys = unsafe {
-        UIAction::actionWithTitle_image_identifier_handler(
-            &NSString::from_str("Системная"),
-            None,
-            None,
-            RcBlock::as_ptr(&h_sys),
-            mtm,
-        )
-    };
-    if selected == 0 { a_sys.setState(UIMenuElementState::On); }
+    let a_cancel = UIAlertAction::actionWithTitle_style_handler(
+        Some(&NSString::from_str("Отмена")),
+        UIAlertActionStyle::Cancel,
+        None,
+        mtm,
+    );
 
-    let a_light = unsafe {
-        UIAction::actionWithTitle_image_identifier_handler(
-            &NSString::from_str("Светлая ☀️"),
-            None,
-            None,
-            RcBlock::as_ptr(&h_light),
-            mtm,
-        )
-    };
-    if selected == 1 { a_light.setState(UIMenuElementState::On); }
+    alert.addAction(&a_sys);
+    alert.addAction(&a_light);
+    alert.addAction(&a_dark);
+    alert.addAction(&a_cancel);
 
-    let a_dark = unsafe {
-        UIAction::actionWithTitle_image_identifier_handler(
-            &NSString::from_str("Тёмная 🌙"),
-            None,
-            None,
-            RcBlock::as_ptr(&h_dark),
-            mtm,
-        )
-    };
-    if selected == 2 { a_dark.setState(UIMenuElementState::On); }
+    if let Some(popover) = alert.popoverPresentationController() {
+        popover.setSourceView(Some(&window));
+        let bounds = window.bounds();
+        popover.setSourceRect(objc2_core_foundation::CGRect {
+            origin: objc2_core_foundation::CGPoint { x: bounds.size.width - 60.0, y: 60.0 },
+            size: objc2_core_foundation::CGSize { width: 1.0, height: 1.0 },
+        });
+    }
 
-    let elems: Vec<Retained<UIMenuElement>> = vec![
-        Retained::from(<UIAction as AsRef<UIMenuElement>>::as_ref(&a_sys)),
-        Retained::from(<UIAction as AsRef<UIMenuElement>>::as_ref(&a_light)),
-        Retained::from(<UIAction as AsRef<UIMenuElement>>::as_ref(&a_dark)),
-    ];
-    let arr = NSArray::from_retained_slice(&elems);
-    let menu = UIMenu::menuWithTitle_children(&NSString::from_str("Тема"), &arr, mtm);
-    btn.setMenu(Some(&menu));
-    btn.setShowsMenuAsPrimaryAction(true);
+    top_vc.presentViewController_animated_completion(&alert, true, None);
+}
+
+#[cfg(not(target_os = "ios"))]
+pub fn show_theme_sheet() {
+    let cur = day::prefs::get(crate::THEME_KEY);
+    match cur.as_deref() {
+        None => {
+            day::prefs::set(crate::THEME_KEY, "light");
+            day::set_appearance(Some(false));
+        }
+        Some("light") => {
+            day::prefs::set(crate::THEME_KEY, "dark");
+            day::set_appearance(Some(true));
+        }
+        _ => {
+            day::prefs::remove(crate::THEME_KEY);
+            day::set_appearance(None);
+        }
+    }
 }
 
 #[cfg(target_os = "ios")]
-fn attach_lang_menu(mtm: objc2::MainThreadMarker, btn: &objc2_ui_kit::UIButton) {
-    use objc2::rc::Retained;
-    use objc2::Message;
+pub fn show_lang_sheet() {
+    use objc2::MainThreadMarker;
+    use objc2_foundation::NSString;
+    use objc2_ui_kit::{
+        UIAlertAction, UIAlertActionStyle, UIAlertController, UIAlertControllerStyle,
+        UIApplication,
+    };
     use block2::RcBlock;
-    use objc2_foundation::{NSString, NSArray};
-    use objc2_ui_kit::{UIAction, UIMenu, UIMenuElement, UIMenuElementState, UIControlState};
+    use core::ptr::NonNull;
 
-    let cur_locale = day::locale().get_untracked();
-    let cur_tag = cur_locale.to_lowercase();
-    let selected = if cur_tag.starts_with("be") {
-        1
-    } else if cur_tag.starts_with("en") {
-        2
-    } else {
-        0
-    };
+    let Some(mtm) = MainThreadMarker::new() else { return; };
+    let app = UIApplication::sharedApplication(mtm);
+    #[allow(deprecated)]
+    let Some(window) = app.keyWindow() else { return; };
+    let Some(mut top_vc) = window.rootViewController() else { return; };
+    while let Some(presented) = top_vc.presentedViewController() {
+        top_vc = presented;
+    }
 
-    let title_str = match selected {
-        1 => "BE",
-        2 => "EN",
-        _ => "RU",
-    };
-    btn.setTitle_forState(Some(&NSString::from_str(title_str)), UIControlState::Normal);
+    let alert = UIAlertController::alertControllerWithTitle_message_preferredStyle(
+        Some(&NSString::from_str("Язык")),
+        None,
+        UIAlertControllerStyle::ActionSheet,
+        mtm,
+    );
 
-    let btn_clone = btn.retain();
-    let h_ru = RcBlock::new(move |_action: core::ptr::NonNull<UIAction>| {
+    let h_ru = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
         day::prefs::set(crate::LOCALE_KEY, "ru");
         set_locale("ru");
         crate::shared::haptics::tick();
-        attach_lang_menu(mtm, &btn_clone);
     });
+    let a_ru = UIAlertAction::actionWithTitle_style_handler(
+        Some(&NSString::from_str("Русский (RU)")),
+        UIAlertActionStyle::Default,
+        Some(&*h_ru),
+        mtm,
+    );
 
-    let btn_clone2 = btn.retain();
-    let h_be = RcBlock::new(move |_action: core::ptr::NonNull<UIAction>| {
+    let h_be = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
         day::prefs::set(crate::LOCALE_KEY, "be");
         set_locale("be");
         crate::shared::haptics::tick();
-        attach_lang_menu(mtm, &btn_clone2);
     });
+    let a_be = UIAlertAction::actionWithTitle_style_handler(
+        Some(&NSString::from_str("Беларуская (BE)")),
+        UIAlertActionStyle::Default,
+        Some(&*h_be),
+        mtm,
+    );
 
-    let btn_clone3 = btn.retain();
-    let h_en = RcBlock::new(move |_action: core::ptr::NonNull<UIAction>| {
+    let h_en = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
         day::prefs::set(crate::LOCALE_KEY, "en");
         set_locale("en");
         crate::shared::haptics::tick();
-        attach_lang_menu(mtm, &btn_clone3);
     });
+    let a_en = UIAlertAction::actionWithTitle_style_handler(
+        Some(&NSString::from_str("English (EN)")),
+        UIAlertActionStyle::Default,
+        Some(&*h_en),
+        mtm,
+    );
 
-    let a_ru = unsafe {
-        UIAction::actionWithTitle_image_identifier_handler(
-            &NSString::from_str("Русский"),
-            None,
-            None,
-            RcBlock::as_ptr(&h_ru),
-            mtm,
-        )
+    let a_cancel = UIAlertAction::actionWithTitle_style_handler(
+        Some(&NSString::from_str("Отмена")),
+        UIAlertActionStyle::Cancel,
+        None,
+        mtm,
+    );
+
+    alert.addAction(&a_ru);
+    alert.addAction(&a_be);
+    alert.addAction(&a_en);
+    alert.addAction(&a_cancel);
+
+    if let Some(popover) = alert.popoverPresentationController() {
+        popover.setSourceView(Some(&window));
+        let bounds = window.bounds();
+        popover.setSourceRect(objc2_core_foundation::CGRect {
+            origin: objc2_core_foundation::CGPoint { x: bounds.size.width - 120.0, y: 60.0 },
+            size: objc2_core_foundation::CGSize { width: 1.0, height: 1.0 },
+        });
+    }
+
+    top_vc.presentViewController_animated_completion(&alert, true, None);
+}
+
+#[cfg(not(target_os = "ios"))]
+pub fn show_lang_sheet() {
+    let cur = day::locale().get_untracked();
+    if cur.starts_with("ru") {
+        day::prefs::set(crate::LOCALE_KEY, "be");
+        set_locale("be");
+    } else if cur.starts_with("be") {
+        day::prefs::set(crate::LOCALE_KEY, "en");
+        set_locale("en");
+    } else {
+        day::prefs::set(crate::LOCALE_KEY, "ru");
+        set_locale("ru");
+    }
+}
+
+fn glass_lang_button() -> impl Piece {
+    let lang_str = move || {
+        let cur = day::locale().get();
+        let lower = cur.to_lowercase();
+        if lower.starts_with("be") {
+            "🌐 BE"
+        } else if lower.starts_with("en") {
+            "🌐 EN"
+        } else {
+            "🌐 RU"
+        }
     };
-    if selected == 0 { a_ru.setState(UIMenuElementState::On); }
 
-    let a_be = unsafe {
-        UIAction::actionWithTitle_image_identifier_handler(
-            &NSString::from_str("Беларуская"),
-            None,
-            None,
-            RcBlock::as_ptr(&h_be),
-            mtm,
-        )
+    row((
+        label(lang_str)
+            .font(Font::Subheadline)
+            .bold(),
+    ))
+    .align(VAlign::Center)
+    .padding(Insets { top: 7.0, leading: 12.0, bottom: 7.0, trailing: 12.0 })
+    .background(move || {
+        if day::dark_mode() {
+            Color::rgba(1.0, 1.0, 1.0, 0.12)
+        } else {
+            Color::rgba(0.0, 0.0, 0.0, 0.07)
+        }
+    })
+    .glass_radius(18.0)
+    .on_tap(move || {
+        crate::shared::haptics::tick();
+        show_lang_sheet();
+    })
+}
+
+fn glass_theme_button() -> impl Piece {
+    let theme_icon = move || {
+        let cur = day::prefs::get(crate::THEME_KEY);
+        match cur.as_deref() {
+            Some("light") => "☀️",
+            Some("dark") => "🌙",
+            _ => if day::dark_mode() { "🌙" } else { "☀️" },
+        }
     };
-    if selected == 1 { a_be.setState(UIMenuElementState::On); }
 
-    let a_en = unsafe {
-        UIAction::actionWithTitle_image_identifier_handler(
-            &NSString::from_str("English"),
-            None,
-            None,
-            RcBlock::as_ptr(&h_en),
-            mtm,
-        )
-    };
-    if selected == 2 { a_en.setState(UIMenuElementState::On); }
+    row((
+        label(theme_icon)
+            .font(Font::Headline),
+    ))
+    .align(VAlign::Center)
+    .frame(36.0, 36.0)
+    .background(move || {
+        if day::dark_mode() {
+            Color::rgba(1.0, 1.0, 1.0, 0.12)
+        } else {
+            Color::rgba(0.0, 0.0, 0.0, 0.07)
+        }
+    })
+    .glass_radius(18.0)
+    .on_tap(move || {
+        crate::shared::haptics::tick();
+        show_theme_sheet();
+    })
+}
 
-    let elems: Vec<Retained<UIMenuElement>> = vec![
-        Retained::from(<UIAction as AsRef<UIMenuElement>>::as_ref(&a_ru)),
-        Retained::from(<UIAction as AsRef<UIMenuElement>>::as_ref(&a_be)),
-        Retained::from(<UIAction as AsRef<UIMenuElement>>::as_ref(&a_en)),
-    ];
-    let arr = NSArray::from_retained_slice(&elems);
-    let menu = UIMenu::menuWithTitle_children(&NSString::from_str("Язык"), &arr, mtm);
-    btn.setMenu(Some(&menu));
-    btn.setShowsMenuAsPrimaryAction(true);
+fn login_header() -> impl Piece {
+    row((
+        spacer().grow(),
+        glass_lang_button(),
+        spacer().width(8.0),
+        glass_theme_button(),
+    ))
+    .align(VAlign::Center)
+    .padding(Insets { top: 4.0, leading: 16.0, bottom: 4.0, trailing: 16.0 })
+    .grow_w()
 }
 
 fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
-    let piece = column((
-        spacer().height(20.0),
+    column((
+        login_header(),
+        spacer().height(16.0),
         label("ESchool")
             .font(Font::LargeTitle)
             .bold()
             .align(TextAlign::Center),
-        spacer().height(8.0),
+        spacer().height(6.0),
         label("Электронный дневник")
             .font(Font::Headline)
             .secondary()
             .align(TextAlign::Center),
-        spacer().height(12.0),
+        spacer().height(10.0),
         label("Быстрый и удобный доступ к расписанию,\nоценкам и домашним заданиям")
             .font(Font::Subheadline)
             .secondary()
@@ -581,17 +601,7 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
     .grow()
     .on_tap(move || {
         crate::shared::keyboard::dismiss();
-    });
-
-    #[cfg(target_os = "ios")]
-    let piece = {
-        use day_uikit::UiKitExt;
-        piece.uikit(|view, _class, _mtm| {
-            setup_login_nav_bar(view);
-        })
-    };
-
-    piece
+    })
 }
 
 fn username_step_view(
@@ -627,34 +637,79 @@ fn username_step_view(
 
     let on_sub = on_submit.clone();
     let input_field = text_field(username)
-        .placeholder("Логин")
+        .placeholder("Логин или код")
         .focused(username_focused)
         .grow_w()
         .log_pos("Auth:UsernameField")
         .on_submit(on_sub);
 
-    let content = column((
-        column((
-            label("Логин")
-                .font(Font::Subheadline)
-                .secondary(),
-            spacer().height(6.0),
-            row((
-                input_field,
-                companion_pw,
-            ))
-            .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
-            .background(move || {
-                if day::dark_mode() {
-                    Color::rgba(1.0, 1.0, 1.0, 0.08)
+    let clear_btn = when(
+        move || !username.get().is_empty(),
+        {
+            let username = username;
+            move || {
+                row((
+                    label("✕")
+                        .font(Font::Caption2)
+                        .secondary(),
+                ))
+                .align(VAlign::Center)
+                .frame(22.0, 22.0)
+                .background(move || {
+                    if day::dark_mode() {
+                        Color::rgba(1.0, 1.0, 1.0, 0.16)
+                    } else {
+                        Color::rgba(0.0, 0.0, 0.0, 0.10)
+                    }
+                })
+                .corner_radius(11.0)
+                .on_tap(move || {
+                    crate::shared::haptics::tick();
+                    username.set(String::new());
+                })
+                .any()
+            }
+        },
+    );
+
+    let input_card = row((
+        vector(res::vectors::tab_login)
+            .frame(20.0, 20.0)
+            .tint(move || {
+                if username_focused.get() {
+                    Color::hex(state.accent_color.get())
                 } else {
-                    Color::rgba(0.0, 0.0, 0.0, 0.05)
+                    Color::hex(0x8E8E93)
                 }
-            })
-            .corner_radius(16.0),
-        ))
-        .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-        .grow_w(),
+            }),
+        spacer().width(12.0),
+        input_field,
+        companion_pw,
+        clear_btn,
+    ))
+    .align(VAlign::Center)
+    .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
+    .background(move || {
+        if day::dark_mode() {
+            if username_focused.get() {
+                Color::rgba(1.0, 1.0, 1.0, 0.12)
+            } else {
+                Color::rgba(1.0, 1.0, 1.0, 0.07)
+            }
+        } else {
+            if username_focused.get() {
+                Color::rgba(0.0, 0.0, 0.0, 0.06)
+            } else {
+                Color::rgba(0.0, 0.0, 0.0, 0.035)
+            }
+        }
+    })
+    .glass_radius(16.0);
+
+    let content = column((
+        input_card
+            .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
+            .grow_w(),
 
         // Minimalist native session remember toggle
         row((
@@ -715,7 +770,8 @@ fn username_step_view(
         })
     };
 
-    let piece = column((
+    column((
+        login_header(),
         spacer().grow(),
         sticker,
         spacer().grow(),
@@ -724,17 +780,7 @@ fn username_step_view(
     .grow()
     .on_tap(move || {
         crate::shared::keyboard::dismiss();
-    });
-
-    #[cfg(target_os = "ios")]
-    let piece = {
-        use day_uikit::UiKitExt;
-        piece.uikit(|view, _class, _mtm| {
-            setup_login_nav_bar(view);
-        })
-    };
-
-    piece
+    })
 }
 
 fn password_step_view(
@@ -758,35 +804,95 @@ fn password_step_view(
         })
     };
 
-    let on_sub = on_submit.clone();
-    let input_field = text_field(password)
-        .secure()
-        .placeholder("Пароль")
-        .focused(password_focused)
-        .grow_w()
-        .id("password-field")
-        .log_pos("Auth:PasswordField")
-        .on_submit(on_sub);
+    let show_password = Signal::new(false);
+
+    let toggle_eye = row((
+        when(
+            move || show_password.get(),
+            || vector(res::vectors::eye_off).frame(20.0, 20.0).tint(Color::hex(0x8E8E93)).any(),
+        )
+        .otherwise(|| vector(res::vectors::eye).frame(20.0, 20.0).tint(Color::hex(0x8E8E93)).any()),
+    ))
+    .align(VAlign::Center)
+    .frame(36.0, 36.0)
+    .on_tap({
+        let show_password = show_password;
+        move || {
+            crate::shared::haptics::tick();
+            show_password.set(!show_password.get());
+        }
+    });
+
+    let on_sub_plain = on_submit.clone();
+    let on_sub_sec = on_submit.clone();
+
+    let input_card = row((
+        vector(res::vectors::lock)
+            .frame(20.0, 20.0)
+            .tint(move || {
+                if password_focused.get() {
+                    Color::hex(state.accent_color.get())
+                } else {
+                    Color::hex(0x8E8E93)
+                }
+            }),
+        spacer().width(12.0),
+        when(
+            move || show_password.get(),
+            {
+                let on_sub = on_sub_plain.clone();
+                move || {
+                    text_field(password)
+                        .placeholder("Пароль")
+                        .focused(password_focused)
+                        .grow_w()
+                        .id("password-field-plain")
+                        .log_pos("Auth:PasswordField")
+                        .on_submit(on_sub.clone())
+                        .any()
+                }
+            },
+        )
+        .otherwise({
+            let on_sub = on_sub_sec.clone();
+            move || {
+                text_field(password)
+                    .secure()
+                    .placeholder("Пароль")
+                    .focused(password_focused)
+                    .grow_w()
+                    .id("password-field")
+                    .log_pos("Auth:PasswordField")
+                    .on_submit(on_sub.clone())
+                    .any()
+            }
+        })
+        .grow(),
+        toggle_eye,
+    ))
+    .align(VAlign::Center)
+    .padding(Insets { top: 6.0, leading: 16.0, bottom: 6.0, trailing: 10.0 })
+    .background(move || {
+        if day::dark_mode() {
+            if password_focused.get() {
+                Color::rgba(1.0, 1.0, 1.0, 0.12)
+            } else {
+                Color::rgba(1.0, 1.0, 1.0, 0.07)
+            }
+        } else {
+            if password_focused.get() {
+                Color::rgba(0.0, 0.0, 0.0, 0.06)
+            } else {
+                Color::rgba(0.0, 0.0, 0.0, 0.035)
+            }
+        }
+    })
+    .glass_radius(16.0);
 
     let content = column((
-        column((
-            label("Пароль")
-                .font(Font::Subheadline)
-                .secondary(),
-            spacer().height(6.0),
-            input_field
-                .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
-                .background(move || {
-                    if day::dark_mode() {
-                        Color::rgba(1.0, 1.0, 1.0, 0.08)
-                    } else {
-                        Color::rgba(0.0, 0.0, 0.0, 0.05)
-                    }
-                })
-                .corner_radius(16.0),
-        ))
-        .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
-        .grow_w(),
+        input_card
+            .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
+            .grow_w(),
     ));
 
     let err_display = when(
@@ -843,7 +949,8 @@ fn password_step_view(
         })
     };
 
-    let piece = column((
+    column((
+        login_header(),
         spacer().grow(),
         sticker,
         spacer().grow(),
@@ -852,17 +959,7 @@ fn password_step_view(
     .grow()
     .on_tap(move || {
         crate::shared::keyboard::dismiss();
-    });
-
-    #[cfg(target_os = "ios")]
-    let piece = {
-        use day_uikit::UiKitExt;
-        piece.uikit(|view, _class, _mtm| {
-            setup_login_nav_bar(view);
-        })
-    };
-
-    piece
+    })
 }
 
 fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
@@ -944,7 +1041,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             }
             error_local.set(String::new());
             state.error_msg.set(String::new());
-            crate::shared::keyboard::dismiss();
             crate::shared::haptics::pop();
             features::auth::login(state, &u, &p, r);
         }
@@ -977,15 +1073,17 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 .any(),
             }
         })
-        .on_back(move |_req| {
-            error_local.set(String::new());
-            let p = path.get();
-            if p.len() <= 1 {
-                // Only dismiss keyboard when popping back to the intro/welcome screen
+        .on_back({
+            let error_local = error_local;
+            let username_focused = username_focused;
+            let password_focused = password_focused;
+            move |_req| {
+                error_local.set(String::new());
+                username_focused.set(false);
+                password_focused.set(false);
                 crate::shared::keyboard::dismiss();
+                BackResponse::Proceed
             }
-            // Going back from Password to Login preserves keyboard and button smoothly!
-            BackResponse::Proceed
         })
         .id("auth-stack")
         .grow();

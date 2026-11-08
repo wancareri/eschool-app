@@ -110,17 +110,22 @@ pub fn render() -> impl Piece {
     let rd = restore_done.clone();
     zstack((
         scroll(column((
-            row((
+            zstack((
                 column((
                     label(move || res::str::settings_title().format())
                         .font(Font::LargeTitle)
                         .bold(),
                     label("Настройки").font(Font::Subheadline).secondary(),
                 ))
-                .grow(),
-                widgets::conn_status::render(),
+                .grow_w(),
+
+                row((
+                    spacer().grow(),
+                    widgets::conn_status::render(),
+                ))
+                .align(VAlign::Center)
+                .grow_w(),
             ))
-            .align(VAlign::Center)
             .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
 
             picker(

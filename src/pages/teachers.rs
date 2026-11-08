@@ -14,7 +14,7 @@ pub fn render() -> impl Piece {
 
     zstack((
         pull_to_refresh(refreshing, scroll(column((
-            row((
+            zstack((
                 column((
                     label(move || res::str::teachers_title().format())
                         .font(Font::LargeTitle)
@@ -23,10 +23,15 @@ pub fn render() -> impl Piece {
                         .font(Font::Subheadline)
                         .secondary(),
                 ))
-                .grow(),
-                widgets::conn_status::render(),
+                .grow_w(),
+
+                row((
+                    spacer().grow(),
+                    widgets::conn_status::render(),
+                ))
+                .align(VAlign::Center)
+                .grow_w(),
             ))
-            .align(VAlign::Center)
             .padding(Insets { top: 8.0, leading: PAD, bottom: 12.0, trailing: PAD }),
             when(
                 move || !state.is_authenticated.get(),

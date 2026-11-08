@@ -103,17 +103,22 @@ pub fn render() -> impl Piece {
 
     zstack((
         pull_to_refresh(refreshing, scroll(column((
-                row((
+                zstack((
                     column((
                         label(move || res::str::diary_title().format())
                             .font(Font::LargeTitle)
                             .bold(),
                         child_switcher(state),
                     ))
-                    .grow(),
-                    widgets::conn_status::render(),
+                    .grow_w(),
+
+                    row((
+                        spacer().grow(),
+                        widgets::conn_status::render(),
+                    ))
+                    .align(VAlign::Center)
+                    .grow_w(),
                 ))
-                .align(VAlign::Center)
                 .padding(Insets { top: 8.0, leading: PAD, bottom: 4.0, trailing: PAD }),
 
                 sub_tabs(state, show_summary),
