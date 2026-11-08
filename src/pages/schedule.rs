@@ -23,16 +23,19 @@ pub fn render() -> impl Piece {
 
     zstack((
         pull_to_refresh(refreshing, scroll(column((
-                    column((
-                        label(move || res::str::schedule_title().format())
-                            .font(Font::LargeTitle)
-                            .align(TextAlign::Center),
-                        label("Уроки дня")
-                            .font(Font::Subheadline)
-                            .secondary()
-                            .align(TextAlign::Center),
+                    row((
+                        column((
+                            label(move || res::str::schedule_title().format())
+                                .font(Font::LargeTitle)
+                                .bold(),
+                            label("Уроки дня")
+                                .font(Font::Subheadline)
+                                .secondary(),
+                        ))
+                        .grow(),
+                        widgets::conn_status::render(),
                     ))
-                    .spacing(6.0)
+                    .align(VAlign::Center)
                     .padding(Insets { top: 8.0, leading: PAD, bottom: 12.0, trailing: PAD }),
 
                     when(
@@ -70,8 +73,6 @@ pub fn render() -> impl Piece {
                     done.set(false);
                 })
                 .grow(),
-
-        widgets::conn_status::page_overlay(),
     ))
     .align(Alignment::TopLeading)
     .grow()

@@ -110,12 +110,17 @@ pub fn render() -> impl Piece {
     let rd = restore_done.clone();
     zstack((
         scroll(column((
-            column((
-                label(move || res::str::settings_title().format())
-                    .font(Font::LargeTitle).align(TextAlign::Center),
-                label("Настройки").font(Font::Subheadline).secondary().align(TextAlign::Center),
+            row((
+                column((
+                    label(move || res::str::settings_title().format())
+                        .font(Font::LargeTitle)
+                        .bold(),
+                    label("Настройки").font(Font::Subheadline).secondary(),
+                ))
+                .grow(),
+                widgets::conn_status::render(),
             ))
-            .spacing(6.0)
+            .align(VAlign::Center)
             .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
 
             picker(
@@ -179,9 +184,6 @@ pub fn render() -> impl Piece {
             .grow()
         )))
         .grow(),
-
-        // Sticky status indicator in top-left corner
-        widgets::conn_status::page_overlay(),
     ))
     .align(Alignment::TopLeading)
     .grow()

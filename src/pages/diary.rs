@@ -103,13 +103,17 @@ pub fn render() -> impl Piece {
 
     zstack((
         pull_to_refresh(refreshing, scroll(column((
-                column((
-                    label(move || res::str::diary_title().format())
-                        .font(Font::LargeTitle)
-                        .align(TextAlign::Center),
-                    child_switcher(state),
+                row((
+                    column((
+                        label(move || res::str::diary_title().format())
+                            .font(Font::LargeTitle)
+                            .bold(),
+                        child_switcher(state),
+                    ))
+                    .grow(),
+                    widgets::conn_status::render(),
                 ))
-                .spacing(6.0)
+                .align(VAlign::Center)
                 .padding(Insets { top: 8.0, leading: PAD, bottom: 4.0, trailing: PAD }),
 
                 sub_tabs(state, show_summary),
@@ -135,8 +139,6 @@ pub fn render() -> impl Piece {
                 }
             })
             .grow(),
-
-        widgets::conn_status::page_overlay(),
     ))
     .align(Alignment::TopLeading)
     .grow()

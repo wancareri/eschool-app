@@ -285,8 +285,273 @@ fn auth_action_button(
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
 }
 
-fn intro_view() -> impl Piece {
-    column((
+#[allow(dead_code)]
+#[cfg(not(target_os = "ios"))]
+fn setup_login_nav_bar(_view: &()) {}
+
+#[cfg(target_os = "ios")]
+fn setup_login_nav_bar(view: &objc2_ui_kit::UIView) {
+    use objc2::rc::Retained;
+    use objc2::MainThreadMarker;
+    use objc2::MainThreadOnly;
+    use objc2::Message;
+    use objc2_foundation::{NSString, NSArray};
+    use objc2_core_foundation::{CGRect, CGSize, CGPoint};
+    use objc2_ui_kit::{
+        UIBarButtonItem, UIButton, UIColor, UIImage, UIViewController,
+    };
+
+    let Some(mtm) = MainThreadMarker::new() else { return };
+
+    let mut next = view.nextResponder();
+    let mut target_vc: Option<Retained<UIViewController>> = None;
+    while let Some(responder) = next {
+        if let Some(vc) = responder.downcast_ref::<UIViewController>() {
+            target_vc = Some(vc.retain());
+            break;
+        }
+        next = responder.nextResponder();
+    }
+
+    let Some(vc) = target_vc else { return };
+    let nav_item = vc.navigationItem();
+
+    if let Some(items) = nav_item.rightBarButtonItems() {
+        if !items.is_empty() {
+            return;
+        }
+    }
+
+    // 1. Liquid Glass Theme Button
+    let theme_btn = unsafe {
+        let b = UIButton::new(mtm);
+        b.setFrame(CGRect {
+            origin: CGPoint { x: 0.0, y: 0.0 },
+            size: CGSize { width: 36.0, height: 36.0 },
+        });
+        b.layer().setCornerRadius(18.0);
+        b.layer().setMasksToBounds(true);
+        // Liquid glass styling: translucent fill with blur-like feel
+        let bg_color = UIColor::colorWithWhite_alpha(1.0, 0.18);
+        b.setBackgroundColor(Some(&bg_color));
+        let tint = UIColor::labelColor();
+        b.setTintColor(Some(&tint));
+
+        let icon = UIImage::systemImageNamed(&NSString::from_str("circle.lefthalf.filled"));
+        b.setImage_forState(icon.as_deref(), objc2_ui_kit::UIControlState::Normal);
+        b
+    };
+
+    attach_theme_menu(mtm, &theme_btn);
+
+    // 2. Liquid Glass Language Button
+    let lang_btn = unsafe {
+        let b = UIButton::new(mtm);
+        b.setFrame(CGRect {
+            origin: CGPoint { x: 0.0, y: 0.0 },
+            size: CGSize { width: 44.0, height: 36.0 },
+        });
+        b.layer().setCornerRadius(18.0);
+        b.layer().setMasksToBounds(true);
+        let bg_color = UIColor::colorWithWhite_alpha(1.0, 0.18);
+        b.setBackgroundColor(Some(&bg_color));
+        let tint = UIColor::labelColor();
+        b.setTintColor(Some(&tint));
+        b.setTitleColor_forState(Some(&tint), objc2_ui_kit::UIControlState::Normal);
+        b
+    };
+
+    attach_lang_menu(mtm, &lang_btn);
+
+    let theme_bar_item: Retained<UIBarButtonItem> = unsafe {
+        objc2::msg_send![UIBarButtonItem::alloc(mtm), initWithCustomView: &*theme_btn]
+    };
+    let lang_bar_item: Retained<UIBarButtonItem> = unsafe {
+        objc2::msg_send![UIBarButtonItem::alloc(mtm), initWithCustomView: &*lang_btn]
+    };
+
+    let items = NSArray::from_retained_slice(&[lang_bar_item, theme_bar_item]);
+    nav_item.setRightBarButtonItems(Some(&items));
+}
+
+#[cfg(target_os = "ios")]
+fn attach_theme_menu(mtm: objc2::MainThreadMarker, btn: &objc2_ui_kit::UIButton) {
+    use objc2::rc::Retained;
+    use objc2::Message;
+    use block2::RcBlock;
+    use objc2_foundation::{NSString, NSArray};
+    use objc2_ui_kit::{UIAction, UIMenu, UIMenuElement, UIMenuElementState};
+
+    let cur_theme = day::prefs::get(crate::THEME_KEY);
+    let selected = match cur_theme.as_deref() {
+        Some("light") => 1,
+        Some("dark") => 2,
+        _ => 0,
+    };
+
+    let btn_clone = btn.retain();
+    let h_sys = RcBlock::new(move |_action: core::ptr::NonNull<UIAction>| {
+        day::prefs::remove(crate::THEME_KEY);
+        day::set_appearance(None);
+        crate::shared::haptics::tick();
+        attach_theme_menu(mtm, &btn_clone);
+    });
+
+    let btn_clone2 = btn.retain();
+    let h_light = RcBlock::new(move |_action: core::ptr::NonNull<UIAction>| {
+        day::prefs::set(crate::THEME_KEY, "light");
+        day::set_appearance(Some(false));
+        crate::shared::haptics::tick();
+        attach_theme_menu(mtm, &btn_clone2);
+    });
+
+    let btn_clone3 = btn.retain();
+    let h_dark = RcBlock::new(move |_action: core::ptr::NonNull<UIAction>| {
+        day::prefs::set(crate::THEME_KEY, "dark");
+        day::set_appearance(Some(true));
+        crate::shared::haptics::tick();
+        attach_theme_menu(mtm, &btn_clone3);
+    });
+
+    let a_sys = unsafe {
+        UIAction::actionWithTitle_image_identifier_handler(
+            &NSString::from_str("Системная"),
+            None,
+            None,
+            RcBlock::as_ptr(&h_sys),
+            mtm,
+        )
+    };
+    if selected == 0 { a_sys.setState(UIMenuElementState::On); }
+
+    let a_light = unsafe {
+        UIAction::actionWithTitle_image_identifier_handler(
+            &NSString::from_str("Светлая ☀️"),
+            None,
+            None,
+            RcBlock::as_ptr(&h_light),
+            mtm,
+        )
+    };
+    if selected == 1 { a_light.setState(UIMenuElementState::On); }
+
+    let a_dark = unsafe {
+        UIAction::actionWithTitle_image_identifier_handler(
+            &NSString::from_str("Тёмная 🌙"),
+            None,
+            None,
+            RcBlock::as_ptr(&h_dark),
+            mtm,
+        )
+    };
+    if selected == 2 { a_dark.setState(UIMenuElementState::On); }
+
+    let elems: Vec<Retained<UIMenuElement>> = vec![
+        Retained::from(<UIAction as AsRef<UIMenuElement>>::as_ref(&a_sys)),
+        Retained::from(<UIAction as AsRef<UIMenuElement>>::as_ref(&a_light)),
+        Retained::from(<UIAction as AsRef<UIMenuElement>>::as_ref(&a_dark)),
+    ];
+    let arr = NSArray::from_retained_slice(&elems);
+    let menu = UIMenu::menuWithTitle_children(&NSString::from_str("Тема"), &arr, mtm);
+    btn.setMenu(Some(&menu));
+    btn.setShowsMenuAsPrimaryAction(true);
+}
+
+#[cfg(target_os = "ios")]
+fn attach_lang_menu(mtm: objc2::MainThreadMarker, btn: &objc2_ui_kit::UIButton) {
+    use objc2::rc::Retained;
+    use objc2::Message;
+    use block2::RcBlock;
+    use objc2_foundation::{NSString, NSArray};
+    use objc2_ui_kit::{UIAction, UIMenu, UIMenuElement, UIMenuElementState, UIControlState};
+
+    let cur_locale = day::locale().get_untracked();
+    let cur_tag = cur_locale.to_lowercase();
+    let selected = if cur_tag.starts_with("be") {
+        1
+    } else if cur_tag.starts_with("en") {
+        2
+    } else {
+        0
+    };
+
+    let title_str = match selected {
+        1 => "BE",
+        2 => "EN",
+        _ => "RU",
+    };
+    btn.setTitle_forState(Some(&NSString::from_str(title_str)), UIControlState::Normal);
+
+    let btn_clone = btn.retain();
+    let h_ru = RcBlock::new(move |_action: core::ptr::NonNull<UIAction>| {
+        day::prefs::set(crate::LOCALE_KEY, "ru");
+        set_locale("ru");
+        crate::shared::haptics::tick();
+        attach_lang_menu(mtm, &btn_clone);
+    });
+
+    let btn_clone2 = btn.retain();
+    let h_be = RcBlock::new(move |_action: core::ptr::NonNull<UIAction>| {
+        day::prefs::set(crate::LOCALE_KEY, "be");
+        set_locale("be");
+        crate::shared::haptics::tick();
+        attach_lang_menu(mtm, &btn_clone2);
+    });
+
+    let btn_clone3 = btn.retain();
+    let h_en = RcBlock::new(move |_action: core::ptr::NonNull<UIAction>| {
+        day::prefs::set(crate::LOCALE_KEY, "en");
+        set_locale("en");
+        crate::shared::haptics::tick();
+        attach_lang_menu(mtm, &btn_clone3);
+    });
+
+    let a_ru = unsafe {
+        UIAction::actionWithTitle_image_identifier_handler(
+            &NSString::from_str("Русский"),
+            None,
+            None,
+            RcBlock::as_ptr(&h_ru),
+            mtm,
+        )
+    };
+    if selected == 0 { a_ru.setState(UIMenuElementState::On); }
+
+    let a_be = unsafe {
+        UIAction::actionWithTitle_image_identifier_handler(
+            &NSString::from_str("Беларуская"),
+            None,
+            None,
+            RcBlock::as_ptr(&h_be),
+            mtm,
+        )
+    };
+    if selected == 1 { a_be.setState(UIMenuElementState::On); }
+
+    let a_en = unsafe {
+        UIAction::actionWithTitle_image_identifier_handler(
+            &NSString::from_str("English"),
+            None,
+            None,
+            RcBlock::as_ptr(&h_en),
+            mtm,
+        )
+    };
+    if selected == 2 { a_en.setState(UIMenuElementState::On); }
+
+    let elems: Vec<Retained<UIMenuElement>> = vec![
+        Retained::from(<UIAction as AsRef<UIMenuElement>>::as_ref(&a_ru)),
+        Retained::from(<UIAction as AsRef<UIMenuElement>>::as_ref(&a_be)),
+        Retained::from(<UIAction as AsRef<UIMenuElement>>::as_ref(&a_en)),
+    ];
+    let arr = NSArray::from_retained_slice(&elems);
+    let menu = UIMenu::menuWithTitle_children(&NSString::from_str("Язык"), &arr, mtm);
+    btn.setMenu(Some(&menu));
+    btn.setShowsMenuAsPrimaryAction(true);
+}
+
+fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
+    let piece = column((
         spacer().height(20.0),
         label("ESchool")
             .font(Font::LargeTitle)
@@ -310,11 +575,23 @@ fn intro_view() -> impl Piece {
             spacer().grow(),
         )),
         spacer().grow(),
+        auth_action_button(|| "Начать", on_start),
+        spacer().height(8.0),
     ))
     .grow()
     .on_tap(move || {
         crate::shared::keyboard::dismiss();
-    })
+    });
+
+    #[cfg(target_os = "ios")]
+    let piece = {
+        use day_uikit::UiKitExt;
+        piece.uikit(|view, _class, _mtm| {
+            setup_login_nav_bar(view);
+        })
+    };
+
+    piece
 }
 
 fn username_step_view(
@@ -322,7 +599,9 @@ fn username_step_view(
     password: Signal<String>,
     remember: Signal<bool>,
     username_focused: Signal<bool>,
-    on_submit: impl Fn() + 'static,
+    error_local: Signal<String>,
+    state: AppState,
+    on_submit: impl Fn() + Clone + 'static,
 ) -> impl Piece {
     let sticker = row((
         spacer().grow(),
@@ -346,12 +625,13 @@ fn username_step_view(
         .frame(1.0, 1.0)
         .opacity(0.01);
 
+    let on_sub = on_submit.clone();
     let input_field = text_field(username)
         .placeholder("Логин")
         .focused(username_focused)
         .grow_w()
         .log_pos("Auth:UsernameField")
-        .on_submit(on_submit);
+        .on_submit(on_sub);
 
     let content = column((
         column((
@@ -389,31 +669,80 @@ fn username_step_view(
         .grow_w(),
     ));
 
+    let err_display = when(
+        move || !error_local.get().is_empty() || !state.error_msg.get().is_empty(),
+        move || {
+            let local_err = error_local.get();
+            let state_err = state.error_msg.get();
+            let (code, msg) = if !local_err.is_empty() {
+                let err = parse_auth_error(&local_err);
+                (err.code, err.message)
+            } else {
+                let err = parse_auth_error(&state_err);
+                (err.code, err.message)
+            };
+            column((
+                label(msg)
+                    .font(Font::Subheadline)
+                    .color(colors::ERROR)
+                    .align(TextAlign::Center),
+                spacer().height(2.0),
+                label(format!("Код ошибки: [{code}]"))
+                    .font(Font::Caption2)
+                    .bold()
+                    .color(colors::ERROR.with_alpha(0.8))
+                    .align(TextAlign::Center),
+            ))
+            .spacing(2.0)
+            .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 })
+            .grow_w()
+            .any()
+        },
+    );
+
+    let bottom_section = column((
+        content,
+        err_display,
+        auth_action_button(|| "Продолжить", on_submit),
+        spacer().height(8.0),
+    ));
+
     #[cfg(target_os = "ios")]
-    let content = {
+    let bottom_section = {
         use day_uikit::UiKitExt;
-        content.uikit(|view, _class, _mtm| {
+        bottom_section.uikit(|view, _class, _mtm| {
             crate::shared::keyboard::register_content_view(view);
         })
     };
 
-    column((
+    let piece = column((
         spacer().grow(),
         sticker,
         spacer().grow(),
-        content,
-        spacer().height(8.0),
+        bottom_section,
     ))
     .grow()
     .on_tap(move || {
         crate::shared::keyboard::dismiss();
-    })
+    });
+
+    #[cfg(target_os = "ios")]
+    let piece = {
+        use day_uikit::UiKitExt;
+        piece.uikit(|view, _class, _mtm| {
+            setup_login_nav_bar(view);
+        })
+    };
+
+    piece
 }
 
 fn password_step_view(
     password: Signal<String>,
     password_focused: Signal<bool>,
-    on_submit: impl Fn() + 'static,
+    error_local: Signal<String>,
+    state: AppState,
+    on_submit: impl Fn() + Clone + 'static,
 ) -> impl Piece {
     let sticker = row((
         spacer().grow(),
@@ -429,6 +758,7 @@ fn password_step_view(
         })
     };
 
+    let on_sub = on_submit.clone();
     let input_field = text_field(password)
         .secure()
         .placeholder("Пароль")
@@ -436,7 +766,7 @@ fn password_step_view(
         .grow_w()
         .id("password-field")
         .log_pos("Auth:PasswordField")
-        .on_submit(on_submit);
+        .on_submit(on_sub);
 
     let content = column((
         column((
@@ -459,25 +789,80 @@ fn password_step_view(
         .grow_w(),
     ));
 
+    let err_display = when(
+        move || !error_local.get().is_empty() || !state.error_msg.get().is_empty(),
+        move || {
+            let local_err = error_local.get();
+            let state_err = state.error_msg.get();
+            let (code, msg) = if !local_err.is_empty() {
+                let err = parse_auth_error(&local_err);
+                (err.code, err.message)
+            } else {
+                let err = parse_auth_error(&state_err);
+                (err.code, err.message)
+            };
+            column((
+                label(msg)
+                    .font(Font::Subheadline)
+                    .color(colors::ERROR)
+                    .align(TextAlign::Center),
+                spacer().height(2.0),
+                label(format!("Код ошибки: [{code}]"))
+                    .font(Font::Caption2)
+                    .bold()
+                    .color(colors::ERROR.with_alpha(0.8))
+                    .align(TextAlign::Center),
+            ))
+            .spacing(2.0)
+            .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 })
+            .grow_w()
+            .any()
+        },
+    );
+
+    let btn_title = move || {
+        if state.loading.get() {
+            "Вход в систему…"
+        } else {
+            "Войти"
+        }
+    };
+
+    let bottom_section = column((
+        content,
+        err_display,
+        auth_action_button(btn_title, on_submit),
+        spacer().height(8.0),
+    ));
+
     #[cfg(target_os = "ios")]
-    let content = {
+    let bottom_section = {
         use day_uikit::UiKitExt;
-        content.uikit(|view, _class, _mtm| {
+        bottom_section.uikit(|view, _class, _mtm| {
             crate::shared::keyboard::register_content_view(view);
         })
     };
 
-    column((
+    let piece = column((
         spacer().grow(),
         sticker,
         spacer().grow(),
-        content,
-        spacer().height(8.0),
+        bottom_section,
     ))
     .grow()
     .on_tap(move || {
         crate::shared::keyboard::dismiss();
-    })
+    });
+
+    #[cfg(target_os = "ios")]
+    let piece = {
+        use day_uikit::UiKitExt;
+        piece.uikit(|view, _class, _mtm| {
+            setup_login_nav_bar(view);
+        })
+    };
+
+    piece
 }
 
 fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
@@ -489,7 +874,19 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
     let remember = Signal::new(true);
     let error_local = Signal::new(String::new());
 
-    let root = intro_view();
+    let root = intro_view({
+        let path = path;
+        let error_local = error_local;
+        let state = state;
+        let username_focused = username_focused;
+        move || {
+            crate::shared::haptics::tick();
+            error_local.set(String::new());
+            state.error_msg.set(String::new());
+            path.set(vec![AuthRoute::Login]);
+            username_focused.set(true);
+        }
+    });
 
     let proceed_username = {
         let username = username;
@@ -565,12 +962,16 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                     password,
                     remember,
                     username_focused,
+                    error_local,
+                    state,
                     proceed_username_sub.clone(),
                 )
                 .any(),
                 AuthRoute::Password => password_step_view(
                     password,
                     password_focused,
+                    error_local,
+                    state,
                     do_login_sub.clone(),
                 )
                 .any(),
@@ -589,88 +990,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
         .id("auth-stack")
         .grow();
 
-    let on_main_action = move || {
-        let p = path.get();
-        if p.is_empty() {
-            crate::shared::haptics::tick();
-            error_local.set(String::new());
-            state.error_msg.set(String::new());
-            path.set(vec![AuthRoute::Login]);
-            username_focused.set(true);
-        } else if p == [AuthRoute::Login] {
-            proceed_username();
-        } else {
-            do_login();
-        }
-    };
-
-    let bottom_follower = column((
-        // Error message & Error code display at the bottom
-        when(
-            move || !error_local.get().is_empty() || !state.error_msg.get().is_empty(),
-            move || {
-                let local_err = error_local.get();
-                let state_err = state.error_msg.get();
-                let (code, msg) = if !local_err.is_empty() {
-                    let err = parse_auth_error(&local_err);
-                    (err.code, err.message)
-                } else {
-                    let err = parse_auth_error(&state_err);
-                    (err.code, err.message)
-                };
-                column((
-                    label(msg)
-                        .font(Font::Subheadline)
-                        .color(colors::ERROR)
-                        .align(TextAlign::Center),
-                    spacer().height(2.0),
-                    label(format!("Код ошибки: [{code}]"))
-                        .font(Font::Caption2)
-                        .bold()
-                        .color(colors::ERROR.with_alpha(0.8))
-                        .align(TextAlign::Center),
-                ))
-                .spacing(2.0)
-                .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 })
-                .grow_w()
-                .any()
-            },
-        ),
-
-        // Prominent action button pinned at the bottom
-        auth_action_button(
-            move || {
-                let p = path.get();
-                if p.is_empty() {
-                    "Начать"
-                } else if p == [AuthRoute::Login] {
-                    "Продолжить"
-                } else {
-                    if state.loading.get() {
-                        "Вход в систему…"
-                    } else {
-                        "Войти"
-                    }
-                }
-            },
-            on_main_action,
-        ),
-        spacer().height(8.0),
-    ));
-
-    #[cfg(target_os = "ios")]
-    let bottom_follower = {
-        use day_uikit::UiKitExt;
-        bottom_follower.uikit(|view, _class, _mtm| {
-            crate::shared::keyboard::register_follower_view(view);
-        })
-    };
-
-    column((
-        stack,
-        bottom_follower,
-    ))
-    .grow()
+    stack
 }
 
 fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
