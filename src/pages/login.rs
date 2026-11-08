@@ -306,7 +306,7 @@ fn intro_view() -> impl Piece {
         spacer().grow(),
         row((
             spacer().grow(),
-            crate::widgets::lottie_view::duck_intro_animation(230.0),
+            crate::widgets::lottie_view::duck_intro_animation(240.0),
             spacer().grow(),
         )),
         spacer().grow(),
@@ -319,13 +319,14 @@ fn intro_view() -> impl Piece {
 
 fn username_step_view(
     username: Signal<String>,
+    password: Signal<String>,
     remember: Signal<bool>,
     username_focused: Signal<bool>,
     on_submit: impl Fn() + 'static,
 ) -> impl Piece {
     let sticker = row((
         spacer().grow(),
-        crate::widgets::lottie_view::duck_login_animation(170.0),
+        crate::widgets::lottie_view::duck_login_animation(230.0),
         spacer().grow(),
     ));
 
@@ -337,44 +338,43 @@ fn username_step_view(
         })
     };
 
-    let content = column((
-        column((
-            label("Введите логин ученика или пригласительный код родителя для доступа к дневнику")
-                .font(Font::Subheadline)
-                .secondary()
-                .align(TextAlign::Center)
-                .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 }),
-        ))
-        .grow_w(),
+    // Companion password field: enables iOS AutoFill to associate username + password,
+    // keeping the "Passwords" key icon visible across all keyboard languages (EN, RU, etc.)
+    // and populating password simultaneously when user picks a credential!
+    let companion_pw = text_field(password)
+        .secure()
+        .frame(1.0, 1.0)
+        .opacity(0.01);
 
-        column((
-            label("ЛОГИН ИЛИ ПРИГЛАСИТЕЛЬНЫЙ КОД")
-                .font(Font::Caption2)
-                .bold()
-                .secondary(),
-            text_field(username)
-                .focused(username_focused)
-                .grow_w()
-                .log_pos("Auth:UsernameField")
-                .on_submit(on_submit),
+    let input_field = text_field(username)
+        .placeholder("Логин")
+        .focused(username_focused)
+        .grow_w()
+        .log_pos("Auth:UsernameField")
+        .on_submit(on_submit);
+
+    let content = column((
+        row((
+            input_field,
+            companion_pw,
         ))
-        .spacing(4.0)
-        .padding(Insets { top: 10.0, leading: 16.0, bottom: 10.0, trailing: 16.0 })
+        .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
         .background(move || {
             if day::dark_mode() {
-                Color::rgba(1.0, 1.0, 1.0, 0.07)
+                Color::rgba(1.0, 1.0, 1.0, 0.08)
             } else {
-                Color::rgba(0.0, 0.0, 0.0, 0.04)
+                Color::rgba(0.0, 0.0, 0.0, 0.05)
             }
         })
         .corner_radius(16.0)
-        .padding(Insets { top: 0.0, leading: 20.0, bottom: 10.0, trailing: 20.0 })
+        .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
         .grow_w(),
 
-        // Remember session toggle
+        // Minimalist native session remember toggle
         row((
-            label("Сохранить сессию на устройстве")
+            label("Запомнить вход")
                 .font(Font::Subheadline)
+                .secondary()
                 .grow(),
             toggle(remember),
         ))
@@ -411,7 +411,7 @@ fn password_step_view(
 ) -> impl Piece {
     let sticker = row((
         spacer().grow(),
-        crate::widgets::lottie_view::duck_password_animation(170.0),
+        crate::widgets::lottie_view::duck_password_animation(230.0),
         spacer().grow(),
     ));
 
@@ -423,41 +423,28 @@ fn password_step_view(
         })
     };
 
-    let content = column((
-        column((
-            label("Введите пароль для входа в дневник")
-                .font(Font::Subheadline)
-                .secondary()
-                .align(TextAlign::Center)
-                .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 }),
-        ))
-        .grow_w(),
+    let input_field = text_field(password)
+        .secure()
+        .placeholder("Пароль")
+        .focused(password_focused)
+        .grow_w()
+        .id("password-field")
+        .log_pos("Auth:PasswordField")
+        .on_submit(on_submit);
 
-        column((
-            label("ПАРОЛЬ")
-                .font(Font::Caption2)
-                .bold()
-                .secondary(),
-            text_field(password)
-                .secure()
-                .focused(password_focused)
-                .grow_w()
-                .id("password-field")
-                .log_pos("Auth:PasswordField")
-                .on_submit(on_submit),
-        ))
-        .spacing(4.0)
-        .padding(Insets { top: 10.0, leading: 16.0, bottom: 10.0, trailing: 16.0 })
-        .background(move || {
-            if day::dark_mode() {
-                Color::rgba(1.0, 1.0, 1.0, 0.07)
-            } else {
-                Color::rgba(0.0, 0.0, 0.0, 0.04)
-            }
-        })
-        .corner_radius(16.0)
-        .padding(Insets { top: 0.0, leading: 20.0, bottom: 10.0, trailing: 20.0 })
-        .grow_w(),
+    let content = column((
+        input_field
+            .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
+            .background(move || {
+                if day::dark_mode() {
+                    Color::rgba(1.0, 1.0, 1.0, 0.08)
+                } else {
+                    Color::rgba(0.0, 0.0, 0.0, 0.05)
+                }
+            })
+            .corner_radius(16.0)
+            .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
+            .grow_w(),
     ));
 
     #[cfg(target_os = "ios")]
@@ -563,6 +550,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             match route {
                 AuthRoute::Login => username_step_view(
                     username,
+                    password,
                     remember,
                     username_focused,
                     proceed_username_sub.clone(),
