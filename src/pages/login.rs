@@ -354,19 +354,25 @@ fn username_step_view(
         .on_submit(on_submit);
 
     let content = column((
-        row((
-            input_field,
-            companion_pw,
+        column((
+            label("Логин")
+                .font(Font::Subheadline)
+                .secondary(),
+            spacer().height(6.0),
+            row((
+                input_field,
+                companion_pw,
+            ))
+            .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
+            .background(move || {
+                if day::dark_mode() {
+                    Color::rgba(1.0, 1.0, 1.0, 0.08)
+                } else {
+                    Color::rgba(0.0, 0.0, 0.0, 0.05)
+                }
+            })
+            .corner_radius(16.0),
         ))
-        .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
-        .background(move || {
-            if day::dark_mode() {
-                Color::rgba(1.0, 1.0, 1.0, 0.08)
-            } else {
-                Color::rgba(0.0, 0.0, 0.0, 0.05)
-            }
-        })
-        .corner_radius(16.0)
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
         .grow_w(),
 
@@ -433,18 +439,24 @@ fn password_step_view(
         .on_submit(on_submit);
 
     let content = column((
-        input_field
-            .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
-            .background(move || {
-                if day::dark_mode() {
-                    Color::rgba(1.0, 1.0, 1.0, 0.08)
-                } else {
-                    Color::rgba(0.0, 0.0, 0.0, 0.05)
-                }
-            })
-            .corner_radius(16.0)
-            .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
-            .grow_w(),
+        column((
+            label("Пароль")
+                .font(Font::Subheadline)
+                .secondary(),
+            spacer().height(6.0),
+            input_field
+                .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
+                .background(move || {
+                    if day::dark_mode() {
+                        Color::rgba(1.0, 1.0, 1.0, 0.08)
+                    } else {
+                        Color::rgba(0.0, 0.0, 0.0, 0.05)
+                    }
+                })
+                .corner_radius(16.0),
+        ))
+        .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
+        .grow_w(),
     ));
 
     #[cfg(target_os = "ios")]
@@ -565,8 +577,13 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             }
         })
         .on_back(move |_req| {
-            crate::shared::keyboard::dismiss();
             error_local.set(String::new());
+            let p = path.get();
+            if p.len() <= 1 {
+                // Only dismiss keyboard when popping back to the intro/welcome screen
+                crate::shared::keyboard::dismiss();
+            }
+            // Going back from Password to Login preserves keyboard and button smoothly!
             BackResponse::Proceed
         })
         .id("auth-stack")
