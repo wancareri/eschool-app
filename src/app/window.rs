@@ -201,13 +201,32 @@ fn window_shell(primary: bool) -> impl Piece {
             day::reactive::on_main_delayed(800, move || {
                 crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
             });
+            for delay in [0, 30, 100, 300] {
+                day::reactive::on_main_delayed(delay, || {
+                    let st = AppState::ambient();
+                    if st.is_authenticated.get() {
+                        crate::shared::ios_nav::ios_impl::setup_status_nav_bar(None, st);
+                    } else {
+                        crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
+                    }
+                });
+            }
+            day::reactive::watch(
+                move || state.conn_status.get(),
+                move |_, _| {
+                    day::reactive::on_main_delayed(20, || {
+                        let st = AppState::ambient();
+                        crate::shared::ios_nav::ios_impl::setup_status_nav_bar(None, st);
+                    });
+                },
+            );
             day::reactive::watch(
                 move || state.current_section.get(),
                 move |_, _| {
                     day::reactive::on_main_delayed(100, move || {
                         crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
                     });
-                    for delay in [60, 200, 450, 800] {
+                    for delay in [0, 60, 180, 450] {
                         day::reactive::on_main_delayed(delay, || {
                             let st = AppState::ambient();
                             crate::shared::ios_nav::ios_impl::setup_status_nav_bar(None, st);
@@ -255,6 +274,13 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
         .any()
     })
     .grow()
+    .background(move || {
+        if day::dark_mode() {
+            Color::hex(0x000000)
+        } else {
+            Color::hex(0xFFFFFF)
+        }
+    })
 }
 
 fn diary_tab() -> impl Piece {

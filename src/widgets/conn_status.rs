@@ -72,8 +72,8 @@ pub fn page_overlay() -> impl Piece {
 pub fn setup_status_nav_bar(_view: &(), _state: AppState) {}
 
 #[cfg(target_os = "ios")]
-pub fn setup_status_nav_bar(view: &objc2_ui_kit::UIView, state: AppState) {
-    crate::shared::ios_nav::ios_impl::schedule_status_nav_bar(view, state);
+pub fn setup_status_nav_bar(view: &objc2_ui_kit::UIView, _state: AppState) {
+    crate::shared::ios_nav::ios_impl::schedule_status_nav_bar(view);
 }
 
 

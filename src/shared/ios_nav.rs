@@ -13,6 +13,7 @@ pub mod ios_impl {
     };
     use block2::RcBlock;
     use core::ptr::NonNull;
+    use std::collections::VecDeque;
 
     /// Find the topmost visible `UINavigationItem` in the current UI hierarchy.
     pub fn find_active_nav_item(view: Option<&UIView>) -> Option<Retained<objc2_ui_kit::UINavigationItem>> {
@@ -38,12 +39,22 @@ pub mod ios_impl {
             wins.firstObject()
         })?;
 
-        // 3. Search view controller tree
+        // Ensure window has system background color (prevents black screen in light mode)
+        window.setBackgroundColor(Some(&UIColor::systemBackgroundColor()));
+        if let Some(rvc) = window.rootViewController() {
+            if let Some(v) = rvc.view() {
+                v.setBackgroundColor(Some(&UIColor::systemBackgroundColor()));
+            }
+        }
+
+        // 3. Search view controller tree with BFS for instant match
         let root = window.rootViewController()?;
-        let mut stack = vec![root];
-        while let Some(c) = stack.pop() {
+        let mut queue = VecDeque::new();
+        queue.push_back(root);
+
+        while let Some(c) = queue.pop_front() {
             if let Some(nav) = c.downcast_ref::<UINavigationController>() {
-                unsafe { nav.setNavigationBarHidden_animated(false, false); }
+                nav.setNavigationBarHidden_animated(false, false);
                 if let Some(top) = nav.topViewController() {
                     nslog("[ios_nav] Found topViewController via UINavigationController");
                     return Some(top.navigationItem());
@@ -52,11 +63,15 @@ pub mod ios_impl {
                     nslog("[ios_nav] Found visibleViewController via UINavigationController");
                     return Some(vis.navigationItem());
                 }
+                if let Some(first) = nav.viewControllers().firstObject() {
+                    nslog("[ios_nav] Found firstViewController via UINavigationController");
+                    return Some(first.navigationItem());
+                }
             }
             if let Some(tab) = c.downcast_ref::<UITabBarController>() {
                 if let Some(sel) = unsafe { tab.selectedViewController() } {
                     if let Some(nav) = sel.downcast_ref::<UINavigationController>() {
-                        unsafe { nav.setNavigationBarHidden_animated(false, false); }
+                        nav.setNavigationBarHidden_animated(false, false);
                         if let Some(top) = nav.topViewController() {
                             nslog("[ios_nav] Found topViewController via UITabBarController");
                             return Some(top.navigationItem());
@@ -67,10 +82,10 @@ pub mod ios_impl {
                 }
             }
             if let Some(pres) = c.presentedViewController() {
-                stack.push(pres);
+                queue.push_back(pres);
             }
             for ch in c.childViewControllers().iter() {
-                stack.push(ch);
+                queue.push_back(ch);
             }
         }
 
@@ -79,6 +94,7 @@ pub mod ios_impl {
     }
 
     /// Attach bar button items to both rightBarButtonItems and trailingItemGroups (iOS 16+)
+    /// Each item is in its OWN UIBarButtonItemGroup to prevent fusing into one capsule.
     pub fn attach_nav_items(
         nav_item: &objc2_ui_kit::UINavigationItem,
         items: &[Retained<UIBarButtonItem>],
@@ -89,13 +105,19 @@ pub mod ios_impl {
         let arr = NSArray::from_retained_slice(items);
         nav_item.setRightBarButtonItems(Some(&arr));
 
-        let group = UIBarButtonItemGroup::fixedGroupWithRepresentativeItem_items(None, &arr, mtm);
-        let group_arr = NSArray::from_retained_slice(&[group]);
+        let groups: Vec<Retained<UIBarButtonItemGroup>> = items
+            .iter()
+            .map(|item| {
+                let single = NSArray::from_retained_slice(&[item.clone()]);
+                UIBarButtonItemGroup::fixedGroupWithRepresentativeItem_items(None, &single, mtm)
+            })
+            .collect();
+        let group_arr = NSArray::from_retained_slice(&groups);
         nav_item.setTrailingItemGroups(&group_arr);
-        nslog(&format!("[ios_nav] Successfully attached {} bar items", items.len()));
+        nslog(&format!("[ios_nav] Successfully attached {} separate bar items", items.len()));
     }
 
-    /// Build Theme button
+    /// Build Theme button with native SF Symbol (sun.max.fill / moon.stars.fill)
     pub fn build_theme_button(mtm: MainThreadMarker) -> (Retained<UIButton>, Retained<UIBarButtonItem>) {
         let b = UIButton::new(mtm);
         b.setTranslatesAutoresizingMaskIntoConstraints(false);
@@ -106,12 +128,17 @@ pub mod ios_impl {
         b.setBackgroundColor(Some(&UIColor::tertiarySystemFillColor()));
 
         let cur = day::prefs::get(crate::THEME_KEY);
-        let icon = match cur.as_deref() {
-            Some("light") => "☀️",
-            Some("dark") => "🌙",
-            _ => if day::dark_mode() { "🌙" } else { "☀️" },
+        let icon_name = match cur.as_deref() {
+            Some("light") => "sun.max.fill",
+            Some("dark") => "moon.stars.fill",
+            _ => if day::dark_mode() { "moon.stars.fill" } else { "sun.max.fill" },
         };
-        b.setTitle_forState(Some(&NSString::from_str(icon)), UIControlState::Normal);
+        let icon = UIImage::systemImageNamed(&NSString::from_str(icon_name));
+        b.setImage_forState(icon.as_deref(), UIControlState::Normal);
+        b.setTitle_forState(None, UIControlState::Normal);
+        unsafe {
+            b.setTintColor(Some(&UIColor::labelColor()));
+        }
 
         let action_block = RcBlock::new(move |_act: NonNull<UIAction>| {
             crate::shared::haptics::tick();
@@ -132,11 +159,11 @@ pub mod ios_impl {
         (b, item)
     }
 
-    /// Build Language button
+    /// Build Language button with native SF Symbol globe + clean code (" RU", " BE", " EN")
     pub fn build_lang_button(mtm: MainThreadMarker) -> (Retained<UIButton>, Retained<UIBarButtonItem>) {
         let b = UIButton::new(mtm);
         b.setTranslatesAutoresizingMaskIntoConstraints(false);
-        b.widthAnchor().constraintEqualToConstant(64.0).setActive(true);
+        b.widthAnchor().constraintEqualToConstant(68.0).setActive(true);
         b.heightAnchor().constraintEqualToConstant(36.0).setActive(true);
         b.layer().setCornerRadius(18.0);
         b.layer().setMasksToBounds(true);
@@ -144,15 +171,26 @@ pub mod ios_impl {
 
         let cur = day::locale().get_untracked();
         let lower = cur.to_lowercase();
-        let title = if lower.starts_with("be") {
-            "🌐 BE"
+        let code = if lower.starts_with("be") {
+            "BE"
         } else if lower.starts_with("en") {
-            "🌐 EN"
+            "EN"
         } else {
-            "🌐 RU"
+            "RU"
         };
-        b.setTitle_forState(Some(&NSString::from_str(title)), UIControlState::Normal);
+
+        let globe = UIImage::systemImageNamed(&NSString::from_str("globe"));
+        b.setImage_forState(globe.as_deref(), UIControlState::Normal);
+        b.setTitle_forState(Some(&NSString::from_str(&format!(" {}", code))), UIControlState::Normal);
         b.setTitleColor_forState(Some(&UIColor::labelColor()), UIControlState::Normal);
+        unsafe {
+            b.setTintColor(Some(&UIColor::labelColor()));
+        }
+        if let Some(lbl) = b.titleLabel() {
+            unsafe {
+                lbl.setFont(Some(&objc2_ui_kit::UIFont::boldSystemFontOfSize(13.0)));
+            }
+        }
 
         let action_block = RcBlock::new(move |_act: NonNull<UIAction>| {
             crate::shared::haptics::tick();
@@ -175,57 +213,27 @@ pub mod ios_impl {
 
     /// Setup Login navigation bar (Theme + Language)
     pub fn setup_login_nav_bar(view: Option<&UIView>) {
+        let state = AppState::ambient();
+        if state.is_authenticated.get() {
+            return;
+        }
         let Some(mtm) = MainThreadMarker::new() else { return };
         let Some(nav_item) = find_active_nav_item(view) else { return };
 
-        let (t_btn, t_item) = build_theme_button(mtm);
-        let (l_btn, l_item) = build_lang_button(mtm);
+        let (_t_btn, t_item) = build_theme_button(mtm);
+        let (_l_btn, l_item) = build_lang_button(mtm);
 
         // Right to left: theme on right, lang on left
         attach_nav_items(&nav_item, &[t_item, l_item]);
-
-        // Watch theme & locale changes
-        let t_ptr = Retained::as_ptr(&t_btn) as usize;
-        let l_ptr = Retained::as_ptr(&l_btn) as usize;
-        struct SendBtns(usize, usize);
-        unsafe impl Send for SendBtns {}
-        let sb = SendBtns(t_ptr, l_ptr);
-
-        day::reactive::watch(
-            move || (day::locale().get(), day::dark_mode()),
-            move |(loc, dark), _| {
-                let Some(_mtm) = MainThreadMarker::new() else { return };
-                let t = unsafe { &*(sb.0 as *const UIButton) };
-                let l = unsafe { &*(sb.1 as *const UIButton) };
-
-                let cur = day::prefs::get(crate::THEME_KEY);
-                let icon = match cur.as_deref() {
-                    Some("light") => "☀️",
-                    Some("dark") => "🌙",
-                    _ => if *dark { "🌙" } else { "☀️" },
-                };
-                t.setTitle_forState(Some(&NSString::from_str(icon)), UIControlState::Normal);
-
-                let lower = loc.to_lowercase();
-                let title = if lower.starts_with("be") {
-                    "🌐 BE"
-                } else if lower.starts_with("en") {
-                    "🌐 EN"
-                } else {
-                    "🌐 RU"
-                };
-                l.setTitle_forState(Some(&NSString::from_str(title)), UIControlState::Normal);
-            },
-        );
     }
 
-    /// Schedule retries for login nav bar to guarantee attachment regardless of mount timing
+    /// Schedule retries for login nav bar to guarantee instantaneous attachment
     pub fn schedule_login_nav_bar(view: &UIView) {
         let ptr = view as *const UIView as usize;
         struct SendPtr(usize);
         unsafe impl Send for SendPtr {}
 
-        for delay in [0, 80, 200, 500, 1000] {
+        for delay in [0, 20, 60, 150, 400] {
             let sp = SendPtr(ptr);
             day::reactive::on_main_delayed(delay, move || {
                 let v = unsafe { &*(sp.0 as *const UIView) };
@@ -283,49 +291,23 @@ pub mod ios_impl {
 
     /// Setup Status navigation bar
     pub fn setup_status_nav_bar(view: Option<&UIView>, state: AppState) {
+        if !state.is_authenticated.get() {
+            return;
+        }
         let Some(mtm) = MainThreadMarker::new() else { return };
         let Some(nav_item) = find_active_nav_item(view) else { return };
 
-        let (b, item) = build_status_button(mtm, state);
+        let (_b, item) = build_status_button(mtm, state);
         attach_nav_items(&nav_item, &[item]);
-
-        let b_ptr = Retained::as_ptr(&b) as usize;
-        struct SendBtn(usize);
-        unsafe impl Send for SendBtn {}
-        let sb = SendBtn(b_ptr);
-
-        day::reactive::watch(
-            move || state.conn_status.get(),
-            move |&status, _| {
-                let Some(_mtm) = MainThreadMarker::new() else { return };
-                let btn = unsafe { &*(sb.0 as *const UIButton) };
-                let icon_name = match status {
-                    ConnStatus::Connecting => "arrow.triangle.2.circlepath",
-                    ConnStatus::Offline => "wifi.slash",
-                    ConnStatus::Error => "exclamationmark.triangle.fill",
-                    _ => "checkmark.circle.fill",
-                };
-                let icon = UIImage::systemImageNamed(&NSString::from_str(icon_name));
-                btn.setImage_forState(icon.as_deref(), UIControlState::Normal);
-                let tint = match status {
-                    ConnStatus::Offline => UIColor::systemGrayColor(),
-                    ConnStatus::Error => UIColor::systemRedColor(),
-                    _ => UIColor::labelColor(),
-                };
-                unsafe {
-                    btn.setTintColor(Some(&tint));
-                }
-            },
-        );
     }
 
     /// Schedule retries for status nav bar
-    pub fn schedule_status_nav_bar(view: &UIView, state: AppState) {
+    pub fn schedule_status_nav_bar(view: &UIView) {
         let ptr = view as *const UIView as usize;
         struct SendPtr(usize);
         unsafe impl Send for SendPtr {}
 
-        for delay in [0, 80, 200, 500, 1000] {
+        for delay in [0, 60, 180, 450] {
             let sp = SendPtr(ptr);
             day::reactive::on_main_delayed(delay, move || {
                 let v = unsafe { &*(sp.0 as *const UIView) };

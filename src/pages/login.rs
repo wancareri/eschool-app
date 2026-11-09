@@ -28,6 +28,13 @@ pub fn render() -> impl Piece {
         ),
     ))
     .grow()
+    .background(move || {
+        if day::dark_mode() {
+            Color::hex(0x000000)
+        } else {
+            Color::hex(0xFFFFFF)
+        }
+    })
 }
 
 fn profile_view(state: AppState) -> impl Piece {
@@ -330,7 +337,7 @@ pub fn show_theme_sheet() {
         crate::shared::haptics::tick();
     });
     let a_light = UIAlertAction::actionWithTitle_style_handler(
-        Some(&NSString::from_str("Светлая ☀️")),
+        Some(&NSString::from_str("Светлая")),
         UIAlertActionStyle::Default,
         Some(&*h_light),
         mtm,
@@ -342,7 +349,7 @@ pub fn show_theme_sheet() {
         crate::shared::haptics::tick();
     });
     let a_dark = UIAlertAction::actionWithTitle_style_handler(
-        Some(&NSString::from_str("Тёмная 🌙")),
+        Some(&NSString::from_str("Тёмная")),
         UIAlertActionStyle::Default,
         Some(&*h_dark),
         mtm,
@@ -593,6 +600,13 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
         spacer().height(8.0),
     ))
     .grow()
+    .background(move || {
+        if day::dark_mode() {
+            Color::hex(0x000000)
+        } else {
+            Color::hex(0xFFFFFF)
+        }
+    })
     .on_tap(move || {
         crate::shared::keyboard::dismiss();
     });
@@ -601,14 +615,11 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
     let piece = {
         use day_uikit::UiKitExt;
         piece.uikit(move |view, _class, _mtm| {
-            let ptr = objc2::rc::Retained::as_ptr(view) as usize;
-            struct SendPtr(usize);
-            unsafe impl Send for SendPtr {}
-            let sp = SendPtr(ptr);
-            dispatch2::DispatchQueue::main().exec_async(move || {
-                let v = unsafe { &*(sp.0 as *const objc2_ui_kit::UIView) };
-                setup_login_nav_bar(v);
-            });
+            view.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
+            if let Some(w) = view.window() {
+                w.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
+            }
+            crate::shared::ios_nav::ios_impl::schedule_login_nav_bar(view);
         })
     };
 
@@ -788,6 +799,13 @@ fn username_step_view(
         bottom_section,
     ))
     .grow()
+    .background(move || {
+        if day::dark_mode() {
+            Color::hex(0x000000)
+        } else {
+            Color::hex(0xFFFFFF)
+        }
+    })
     .on_tap(move || {
         crate::shared::keyboard::dismiss();
     });
@@ -796,14 +814,11 @@ fn username_step_view(
     let piece = {
         use day_uikit::UiKitExt;
         piece.uikit(move |view, _class, _mtm| {
-            let ptr = objc2::rc::Retained::as_ptr(view) as usize;
-            struct SendPtr(usize);
-            unsafe impl Send for SendPtr {}
-            let sp = SendPtr(ptr);
-            dispatch2::DispatchQueue::main().exec_async(move || {
-                let v = unsafe { &*(sp.0 as *const objc2_ui_kit::UIView) };
-                setup_login_nav_bar(v);
-            });
+            view.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
+            if let Some(w) = view.window() {
+                w.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
+            }
+            crate::shared::ios_nav::ios_impl::schedule_login_nav_bar(view);
         })
     };
 
@@ -983,6 +998,13 @@ fn password_step_view(
         bottom_section,
     ))
     .grow()
+    .background(move || {
+        if day::dark_mode() {
+            Color::hex(0x000000)
+        } else {
+            Color::hex(0xFFFFFF)
+        }
+    })
     .on_tap(move || {
         crate::shared::keyboard::dismiss();
     });
@@ -991,14 +1013,11 @@ fn password_step_view(
     let piece = {
         use day_uikit::UiKitExt;
         piece.uikit(move |view, _class, _mtm| {
-            let ptr = objc2::rc::Retained::as_ptr(view) as usize;
-            struct SendPtr(usize);
-            unsafe impl Send for SendPtr {}
-            let sp = SendPtr(ptr);
-            dispatch2::DispatchQueue::main().exec_async(move || {
-                let v = unsafe { &*(sp.0 as *const objc2_ui_kit::UIView) };
-                setup_login_nav_bar(v);
-            });
+            view.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
+            if let Some(w) = view.window() {
+                w.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
+            }
+            crate::shared::ios_nav::ios_impl::schedule_login_nav_bar(view);
         })
     };
 
@@ -1129,18 +1148,40 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             }
         })
         .id("auth-stack")
-        .grow();
+        .grow()
+        .background(move || {
+            if day::dark_mode() {
+                Color::hex(0x000000)
+            } else {
+                Color::hex(0xFFFFFF)
+            }
+        });
 
     #[cfg(target_os = "ios")]
     {
+        for delay in [0, 20, 60, 150, 400] {
+            day::reactive::on_main_delayed(delay, || {
+                crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
+            });
+        }
+
         day::reactive::watch(
             move || path.get(),
             move |_, _| {
-                for delay in [60, 200, 450, 800] {
+                for delay in [20, 100, 300] {
                     day::reactive::on_main_delayed(delay, || {
                         crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
                     });
                 }
+            },
+        );
+
+        day::reactive::watch(
+            move || (day::locale().get(), day::dark_mode()),
+            move |_, _| {
+                day::reactive::on_main_delayed(20, || {
+                    crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
+                });
             },
         );
     }
