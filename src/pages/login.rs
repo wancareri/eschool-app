@@ -505,21 +505,30 @@ pub fn show_lang_sheet() {
     }
 }
 
-#[allow(dead_code)]
-fn glass_lang_button() -> impl Piece {
+pub fn glass_lang_button() -> impl Piece {
     let lang_str = move || {
         let cur = day::locale().get();
         let lower = cur.to_lowercase();
         if lower.starts_with("be") {
-            "🌐 BE"
+            "BE"
         } else if lower.starts_with("en") {
-            "🌐 EN"
+            "EN"
         } else {
-            "🌐 RU"
+            "RU"
         }
     };
 
     row((
+        vector(res::vectors::globe)
+            .frame(16.0, 16.0)
+            .tint(move || {
+                if day::dark_mode() {
+                    Color::hex(0xFFFFFF)
+                } else {
+                    Color::hex(0x000000)
+                }
+            }),
+        spacer().width(6.0),
         label(lang_str)
             .font(Font::Subheadline)
             .bold(),
@@ -540,20 +549,29 @@ fn glass_lang_button() -> impl Piece {
     })
 }
 
-#[allow(dead_code)]
-fn glass_theme_button() -> impl Piece {
-    let theme_icon = move || {
+pub fn glass_theme_button() -> impl Piece {
+    let is_dark = move || {
         let cur = day::prefs::get(crate::THEME_KEY);
         match cur.as_deref() {
-            Some("light") => "☀️",
-            Some("dark") => "🌙",
-            _ => if day::dark_mode() { "🌙" } else { "☀️" },
+            Some("light") => false,
+            Some("dark") => true,
+            _ => day::dark_mode(),
         }
     };
 
     row((
-        label(theme_icon)
-            .font(Font::Headline),
+        when(is_dark, || {
+            vector(res::vectors::moon)
+                .frame(18.0, 18.0)
+                .tint(Color::hex(0xFFFFFF))
+                .any()
+        })
+        .otherwise(|| {
+            vector(res::vectors::sun)
+                .frame(18.0, 18.0)
+                .tint(Color::hex(0x000000))
+                .any()
+        }),
     ))
     .align(VAlign::Center)
     .frame(36.0, 36.0)
@@ -571,6 +589,17 @@ fn glass_theme_button() -> impl Piece {
     })
 }
 
+pub fn login_header_bar() -> impl Piece {
+    row((
+        spacer().grow(),
+        glass_lang_button(),
+        spacer().width(10.0),
+        glass_theme_button(),
+    ))
+    .align(VAlign::Center)
+    .padding(Insets { top: 12.0, leading: 16.0, bottom: 4.0, trailing: 16.0 })
+}
+
 #[cfg(target_os = "ios")]
 pub fn setup_login_nav_bar(view: &objc2_ui_kit::UIView) {
     crate::shared::ios_nav::ios_impl::schedule_login_nav_bar(view);
@@ -578,7 +607,8 @@ pub fn setup_login_nav_bar(view: &objc2_ui_kit::UIView) {
 
 fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
     let piece = column((
-        spacer().height(16.0),
+        login_header_bar(),
+        spacer().height(8.0),
         label("ESchool")
             .font(Font::LargeTitle)
             .bold()
@@ -679,35 +709,6 @@ fn username_step_view(
         .log_pos("Auth:UsernameField")
         .on_submit(on_sub);
 
-    let clear_btn = when(
-        move || !username.get().is_empty(),
-        {
-            let username = username;
-            move || {
-                row((
-                    label("✕")
-                        .font(Font::Caption2)
-                        .secondary(),
-                ))
-                .align(VAlign::Center)
-                .frame(22.0, 22.0)
-                .background(move || {
-                    if day::dark_mode() {
-                        Color::rgba(1.0, 1.0, 1.0, 0.16)
-                    } else {
-                        Color::rgba(0.0, 0.0, 0.0, 0.10)
-                    }
-                })
-                .corner_radius(11.0)
-                .on_tap(move || {
-                    crate::shared::haptics::tick();
-                    username.set(String::new());
-                })
-                .any()
-            }
-        },
-    );
-
     let field_stack = zstack((
         companion_pw,
         input_field,
@@ -726,7 +727,6 @@ fn username_step_view(
             }),
         spacer().width(12.0),
         field_stack,
-        clear_btn,
     ))
     .align(VAlign::Center)
     .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
@@ -1120,7 +1120,10 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             error_local.set(String::new());
             state.error_msg.set(String::new());
             path.set(vec![AuthRoute::Login]);
-            username_focused.set(true);
+            let set_un_foc = username_focused.setter();
+            day::reactive::on_main_delayed(350, move || {
+                set_un_foc.set(true);
+            });
         }
     });
 
@@ -1201,11 +1204,23 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             let error_local = error_local;
             let username_focused = username_focused;
             let password_focused = password_focused;
+            let path = path;
             move |_req| {
                 error_local.set(String::new());
-                username_focused.set(false);
-                password_focused.set(false);
-                crate::shared::keyboard::dismiss();
+                let p = path.get_untracked();
+                if p.len() > 1 {
+                    // Popping from Password to Login: keep keyboard up, focus username!
+                    password_focused.set(false);
+                    let set_un_foc = username_focused.setter();
+                    day::reactive::on_main_delayed(50, move || {
+                        set_un_foc.set(true);
+                    });
+                } else {
+                    // Popping from Login to Intro: dismiss keyboard
+                    username_focused.set(false);
+                    password_focused.set(false);
+                    crate::shared::keyboard::dismiss();
+                }
                 BackResponse::Proceed
             }
         })

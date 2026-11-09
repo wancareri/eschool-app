@@ -100,16 +100,25 @@ pub mod ios_impl {
         None
     }
 
-    /// Attach bar button items reliably to rightBarButtonItems.
+    /// Attach bar button items reliably to rightBarButtonItems and trailingItemGroups.
     pub fn attach_nav_items(
         nav_item: &objc2_ui_kit::UINavigationItem,
         items: &[Retained<UIBarButtonItem>],
     ) {
         if items.is_empty() { return; }
 
+        let Some(mtm) = MainThreadMarker::new() else { return };
         let arr = NSArray::from_retained_slice(items);
+
+        // In iOS 16+, day-uikit calls setTrailingItemGroups on page reconciliation,
+        // which causes UIKit to ignore rightBarButtonItems.
+        // By wrapping items into fixedGroupWithRepresentativeItem_items(None, ...),
+        // we satisfy trailingItemGroups without representativeItem crash!
+        let fixed_group = UIBarButtonItemGroup::fixedGroupWithRepresentativeItem_items(None, &arr, mtm);
+        let groups = NSArray::from_retained_slice(&[fixed_group]);
+        nav_item.setTrailingItemGroups(&groups);
         nav_item.setRightBarButtonItems(Some(&arr));
-        nslog(&format!("[ios_nav] Successfully attached {} bar items", items.len()));
+        nslog(&format!("[ios_nav] Successfully attached {} bar items (trailing + right)", items.len()));
     }
 
     /// Build Theme button with native SF Symbol (sun.max.fill / moon.stars.fill)

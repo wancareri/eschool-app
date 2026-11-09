@@ -274,9 +274,7 @@ mod ios {
         HARDWARE_FOLLOWER.with(|c| {
             if let Some(follower) = c.borrow().as_ref() {
                 if follower.window().is_some() {
-                    let options = ((curve as usize) << 16) | (1usize << 1); // UIViewAnimationOptionBeginFromCurrentState
-                    let follower_clone = follower.clone();
-                    let animations = block2::RcBlock::new(move || {
+                    if let Some(mtm) = MainThreadMarker::new() {
                         let transform = if lift > 0.0 {
                             CGAffineTransform {
                                 a: 1.0, b: 0.0,
@@ -290,19 +288,27 @@ mod ios {
                                 tx: 0.0, ty: 0.0,
                             }
                         };
-                        unsafe {
-                            let _: () = objc2::msg_send![&*follower_clone, setTransform: transform];
+                        if duration_sec > 0.0 {
+                            let options = ((curve as usize) << 16) | (1usize << 1);
+                            let follower_clone = follower.clone();
+                            let anim = block2::RcBlock::new(move || {
+                                unsafe {
+                                    let _: () = objc2::msg_send![&*follower_clone, setTransform: transform];
+                                }
+                            });
+                            objc2_ui_kit::UIView::animateWithDuration_delay_options_animations_completion(
+                                duration_sec,
+                                0.0,
+                                UIViewAnimationOptions(options),
+                                &anim,
+                                None,
+                                mtm,
+                            );
+                        } else {
+                            unsafe {
+                                let _: () = objc2::msg_send![&**follower, setTransform: transform];
+                            }
                         }
-                    });
-                    if let Some(mtm) = MainThreadMarker::new() {
-                        objc2_ui_kit::UIView::animateWithDuration_delay_options_animations_completion(
-                            duration_sec,
-                            0.0,
-                            UIViewAnimationOptions(options),
-                            &animations,
-                            None,
-                            mtm,
-                        );
                     }
                 }
             }
@@ -312,9 +318,7 @@ mod ios {
         HARDWARE_STICKER.with(|c| {
             if let Some(sticker) = c.borrow().as_ref() {
                 if sticker.window().is_some() {
-                    let options = ((curve as usize) << 16) | (1usize << 1);
-                    let sticker_clone = sticker.clone();
-                    let animations = block2::RcBlock::new(move || {
+                    if let Some(mtm) = MainThreadMarker::new() {
                         let transform = if lift > 0.0 {
                             // Scale down smoothly to ~48% and shift up towards top bar:
                             // Centers the duck in the remaining space above the content!
@@ -331,19 +335,27 @@ mod ios {
                                 tx: 0.0, ty: 0.0,
                             }
                         };
-                        unsafe {
-                            let _: () = objc2::msg_send![&*sticker_clone, setTransform: transform];
+                        if duration_sec > 0.0 {
+                            let options = ((curve as usize) << 16) | (1usize << 1);
+                            let sticker_clone = sticker.clone();
+                            let anim = block2::RcBlock::new(move || {
+                                unsafe {
+                                    let _: () = objc2::msg_send![&*sticker_clone, setTransform: transform];
+                                }
+                            });
+                            objc2_ui_kit::UIView::animateWithDuration_delay_options_animations_completion(
+                                duration_sec,
+                                0.0,
+                                UIViewAnimationOptions(options),
+                                &anim,
+                                None,
+                                mtm,
+                            );
+                        } else {
+                            unsafe {
+                                let _: () = objc2::msg_send![&**sticker, setTransform: transform];
+                            }
                         }
-                    });
-                    if let Some(mtm) = MainThreadMarker::new() {
-                        objc2_ui_kit::UIView::animateWithDuration_delay_options_animations_completion(
-                            duration_sec,
-                            0.0,
-                            UIViewAnimationOptions(options),
-                            &animations,
-                            None,
-                            mtm,
-                        );
                     }
                 }
             }
@@ -354,9 +366,7 @@ mod ios {
         HARDWARE_CONTENT.with(|c| {
             if let Some(content) = c.borrow().as_ref() {
                 if content.window().is_some() {
-                    let options = ((curve as usize) << 16) | (1usize << 1);
-                    let content_clone = content.clone();
-                    let animations = block2::RcBlock::new(move || {
+                    if let Some(mtm) = MainThreadMarker::new() {
                         let transform = if lift > 0.0 {
                             CGAffineTransform {
                                 a: 1.0, b: 0.0,
@@ -370,19 +380,27 @@ mod ios {
                                 tx: 0.0, ty: 0.0,
                             }
                         };
-                        unsafe {
-                            let _: () = objc2::msg_send![&*content_clone, setTransform: transform];
+                        if duration_sec > 0.0 {
+                            let options = ((curve as usize) << 16) | (1usize << 1);
+                            let content_clone = content.clone();
+                            let anim = block2::RcBlock::new(move || {
+                                unsafe {
+                                    let _: () = objc2::msg_send![&*content_clone, setTransform: transform];
+                                }
+                            });
+                            objc2_ui_kit::UIView::animateWithDuration_delay_options_animations_completion(
+                                duration_sec,
+                                0.0,
+                                UIViewAnimationOptions(options),
+                                &anim,
+                                None,
+                                mtm,
+                            );
+                        } else {
+                            unsafe {
+                                let _: () = objc2::msg_send![&**content, setTransform: transform];
+                            }
                         }
-                    });
-                    if let Some(mtm) = MainThreadMarker::new() {
-                        objc2_ui_kit::UIView::animateWithDuration_delay_options_animations_completion(
-                            duration_sec,
-                            0.0,
-                            UIViewAnimationOptions(options),
-                            &animations,
-                            None,
-                            mtm,
-                        );
                     }
                 }
             }
@@ -422,9 +440,9 @@ mod ios {
             crate::shared::nslog::nslog("[Keyboard] WARNING: DayAppDelegate class not found");
         }
 
-        // Register dedicated observer for all keyboard frame notifications
-        // (willChange, didChange, didShow) so accessory bars (e.g. QuickType Passwords)
-        // dynamically adjust the keyboard height even after initial presentation.
+        // Register single dedicated observer for UIKeyboardWillChangeFrameNotification.
+        // This is the canonical master notification that covers show, hide, orientation,
+        // and accessory/QuickType bar transitions with full animation duration and curve.
         if let Some(mtm) = MainThreadMarker::new() {
             let obs: Retained<KeyboardObserver> = unsafe { objc2::msg_send![KeyboardObserver::alloc(mtm), init] };
             let center = objc2_foundation::NSNotificationCenter::defaultCenter();
@@ -435,39 +453,9 @@ mod ios {
                     Some(objc2_ui_kit::UIKeyboardWillChangeFrameNotification),
                     None,
                 );
-                center.addObserver_selector_name_object(
-                    &obs,
-                    objc2::sel!(keyboardFrameChanged:),
-                    Some(objc2_ui_kit::UIKeyboardDidChangeFrameNotification),
-                    None,
-                );
-                center.addObserver_selector_name_object(
-                    &obs,
-                    objc2::sel!(keyboardFrameChanged:),
-                    Some(objc2_ui_kit::UIKeyboardWillShowNotification),
-                    None,
-                );
-                center.addObserver_selector_name_object(
-                    &obs,
-                    objc2::sel!(keyboardFrameChanged:),
-                    Some(objc2_ui_kit::UIKeyboardDidShowNotification),
-                    None,
-                );
-                center.addObserver_selector_name_object(
-                    &obs,
-                    objc2::sel!(keyboardFrameChanged:),
-                    Some(objc2_ui_kit::UIKeyboardWillHideNotification),
-                    None,
-                );
-                center.addObserver_selector_name_object(
-                    &obs,
-                    objc2::sel!(keyboardFrameChanged:),
-                    Some(objc2_ui_kit::UIKeyboardDidHideNotification),
-                    None,
-                );
             }
             OBSERVER.with(|c| c.set(Some(obs)));
-            crate::shared::nslog::nslog("[Keyboard] Registered KeyboardObserver for all keyboard show/hide/change notifications");
+            crate::shared::nslog::nslog("[Keyboard] Registered KeyboardObserver for UIKeyboardWillChangeFrameNotification");
         }
 
         // Swizzle UITextField setBorderStyle: to force UITextBorderStyleNone (0) so text fields have no native border/outline
@@ -518,8 +506,10 @@ mod ios {
         }
         unsafe {
             let _: () = objc2::msg_send![this, setAutocapitalizationType: 0isize];
-            let _: () = objc2::msg_send![this, setAutocorrectionType: 1isize];
-            let _: () = objc2::msg_send![this, setSpellCheckingType: 1isize];
+            // Leave autocorrectionType & spellCheckingType as Default (0)
+            // so iOS QuickType / Passwords bar does NOT collapse when switching to Russian keyboard!
+            let _: () = objc2::msg_send![this, setAutocorrectionType: 0isize];
+            let _: () = objc2::msg_send![this, setSpellCheckingType: 0isize];
             let is_secure: bool = objc2::msg_send![this, isSecureTextEntry];
             let ctype = if is_secure {
                 objc2_foundation::NSString::from_str("password")
@@ -527,6 +517,12 @@ mod ios {
                 objc2_foundation::NSString::from_str("username")
             };
             let _: () = objc2::msg_send![this, setTextContentType: &*ctype];
+
+            // Lock the input assistant bar visible on all keyboards
+            let assistant: Option<Retained<AnyObject>> = objc2::msg_send![this, inputAssistantItem];
+            if let Some(item) = assistant {
+                let _: () = objc2::msg_send![&*item, setAllowsHidingShortcuts: false];
+            }
         }
     }
 
@@ -545,14 +541,19 @@ mod ios {
         }
         unsafe {
             let _: () = objc2::msg_send![this, setAutocapitalizationType: 0isize];
-            let _: () = objc2::msg_send![this, setAutocorrectionType: 1isize];
-            let _: () = objc2::msg_send![this, setSpellCheckingType: 1isize];
+            let _: () = objc2::msg_send![this, setAutocorrectionType: 0isize];
+            let _: () = objc2::msg_send![this, setSpellCheckingType: 0isize];
             let ctype = if secure {
                 objc2_foundation::NSString::from_str("password")
             } else {
                 objc2_foundation::NSString::from_str("username")
             };
             let _: () = objc2::msg_send![this, setTextContentType: &*ctype];
+
+            let assistant: Option<Retained<AnyObject>> = objc2::msg_send![this, inputAssistantItem];
+            if let Some(item) = assistant {
+                let _: () = objc2::msg_send![&*item, setAllowsHidingShortcuts: false];
+            }
         }
     }
 }
