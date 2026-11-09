@@ -561,181 +561,7 @@ fn glass_theme_button() -> impl Piece {
 
 #[cfg(target_os = "ios")]
 pub fn setup_login_nav_bar(view: &objc2_ui_kit::UIView) {
-    use objc2::{MainThreadMarker, MainThreadOnly, Message};
-    use objc2_foundation::{NSString, NSArray};
-    use objc2_ui_kit::{
-        UIViewController, UINavigationController,
-        UIBarButtonItem, UIButton, UIColor, UIControlState, UIAction,
-    };
-    use objc2_core_foundation::{CGRect, CGSize, CGPoint};
-    use block2::RcBlock;
-    use core::ptr::NonNull;
-    use objc2::rc::Retained;
-
-    let Some(mtm) = MainThreadMarker::new() else { return };
-
-    let mut next = unsafe { view.nextResponder() };
-    let mut target_vc: Option<Retained<UIViewController>> = None;
-    while let Some(responder) = next {
-        if let Some(vc) = responder.downcast_ref::<UIViewController>() {
-            target_vc = Some(vc.retain());
-            break;
-        }
-        next = unsafe { responder.nextResponder() };
-    }
-
-    let vc = match target_vc {
-        Some(v) => v,
-        None => {
-            let app = objc2_ui_kit::UIApplication::sharedApplication(mtm);
-            #[allow(deprecated)]
-            let Some(win) = app.keyWindow() else { return };
-            let Some(root) = win.rootViewController() else { return };
-            let mut stack = vec![root];
-            let mut found = None;
-            while let Some(c) = stack.pop() {
-                if let Some(nav) = c.downcast_ref::<UINavigationController>() {
-                    if let Some(top) = nav.topViewController() {
-                        found = Some(top);
-                        break;
-                    }
-                }
-                for ch in c.childViewControllers().iter() {
-                    stack.push(ch);
-                }
-            }
-            let Some(v) = found else { return };
-            v
-        }
-    };
-
-    let nav_item = vc.navigationItem();
-
-    // 1. Theme button (glass style)
-    let theme_btn = unsafe {
-        let b = UIButton::new(mtm);
-        b.setFrame(CGRect {
-            origin: CGPoint { x: 0.0, y: 0.0 },
-            size: CGSize { width: 34.0, height: 34.0 },
-        });
-        b.layer().setCornerRadius(17.0);
-        b.layer().setMasksToBounds(true);
-        let bg = UIColor::tertiarySystemFillColor();
-        b.setBackgroundColor(Some(&bg));
-
-        let cur = day::prefs::get(crate::THEME_KEY);
-        let icon = match cur.as_deref() {
-            Some("light") => "☀️",
-            Some("dark") => "🌙",
-            _ => if day::dark_mode() { "🌙" } else { "☀️" },
-        };
-        b.setTitle_forState(Some(&NSString::from_str(icon)), UIControlState::Normal);
-        b
-    };
-
-    let action_theme = RcBlock::new(move |_act: NonNull<UIAction>| {
-        crate::shared::haptics::tick();
-        show_theme_sheet();
-    });
-    let act_theme = unsafe {
-        UIAction::actionWithTitle_image_identifier_handler(
-            &NSString::from_str("ThemeAction"),
-            None,
-            None,
-            RcBlock::as_ptr(&action_theme),
-            mtm,
-        )
-    };
-    unsafe {
-        theme_btn.addAction_forControlEvents(&act_theme, objc2_ui_kit::UIControlEvents::TouchUpInside);
-    }
-
-    // 2. Language button (glass style)
-    let lang_btn = unsafe {
-        let b = UIButton::new(mtm);
-        b.setFrame(CGRect {
-            origin: CGPoint { x: 0.0, y: 0.0 },
-            size: CGSize { width: 56.0, height: 34.0 },
-        });
-        b.layer().setCornerRadius(17.0);
-        b.layer().setMasksToBounds(true);
-        let bg = UIColor::tertiarySystemFillColor();
-        b.setBackgroundColor(Some(&bg));
-
-        let cur = day::locale().get_untracked();
-        let lower = cur.to_lowercase();
-        let title = if lower.starts_with("be") {
-            "🌐 BE"
-        } else if lower.starts_with("en") {
-            "🌐 EN"
-        } else {
-            "🌐 RU"
-        };
-        b.setTitle_forState(Some(&NSString::from_str(title)), UIControlState::Normal);
-        b.setTitleColor_forState(Some(&UIColor::labelColor()), UIControlState::Normal);
-        b
-    };
-
-    let action_lang = RcBlock::new(move |_act: NonNull<UIAction>| {
-        crate::shared::haptics::tick();
-        show_lang_sheet();
-    });
-    let act_lang = unsafe {
-        UIAction::actionWithTitle_image_identifier_handler(
-            &NSString::from_str("LangAction"),
-            None,
-            None,
-            RcBlock::as_ptr(&action_lang),
-            mtm,
-        )
-    };
-    unsafe {
-        lang_btn.addAction_forControlEvents(&act_lang, objc2_ui_kit::UIControlEvents::TouchUpInside);
-    }
-
-    let theme_btn_ptr = Retained::as_ptr(&theme_btn) as usize;
-    let lang_btn_ptr = Retained::as_ptr(&lang_btn) as usize;
-    struct SendBtns(usize, usize);
-    unsafe impl Send for SendBtns {}
-    let sb = SendBtns(theme_btn_ptr, lang_btn_ptr);
-
-    day::reactive::watch(
-        move || (day::locale().get(), day::dark_mode()),
-        move |(loc, dark), _| {
-            let Some(_mtm) = MainThreadMarker::new() else { return };
-            let t_btn = unsafe { &*(sb.0 as *const UIButton) };
-            let l_btn = unsafe { &*(sb.1 as *const UIButton) };
-
-            let cur = day::prefs::get(crate::THEME_KEY);
-            let icon = match cur.as_deref() {
-                Some("light") => "☀️",
-                Some("dark") => "🌙",
-                _ => if *dark { "🌙" } else { "☀️" },
-            };
-            t_btn.setTitle_forState(Some(&NSString::from_str(icon)), UIControlState::Normal);
-
-            let lower = loc.to_lowercase();
-            let title = if lower.starts_with("be") {
-                "🌐 BE"
-            } else if lower.starts_with("en") {
-                "🌐 EN"
-            } else {
-                "🌐 RU"
-            };
-            l_btn.setTitle_forState(Some(&NSString::from_str(title)), UIControlState::Normal);
-        },
-    );
-
-    let theme_item: Retained<UIBarButtonItem> = unsafe {
-        objc2::msg_send![UIBarButtonItem::alloc(mtm), initWithCustomView: &*theme_btn]
-    };
-    let lang_item: Retained<UIBarButtonItem> = unsafe {
-        objc2::msg_send![UIBarButtonItem::alloc(mtm), initWithCustomView: &*lang_btn]
-    };
-
-    // Right-to-left order on navbar: theme_item (right-most), lang_item (left of theme)
-    let items = NSArray::from_retained_slice(&[theme_item, lang_item]);
-    nav_item.setRightBarButtonItems(Some(&items));
+    crate::shared::ios_nav::ios_impl::schedule_login_nav_bar(view);
 }
 
 fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
@@ -1304,6 +1130,20 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
         })
         .id("auth-stack")
         .grow();
+
+    #[cfg(target_os = "ios")]
+    {
+        day::reactive::watch(
+            move || path.get(),
+            move |_, _| {
+                for delay in [60, 200, 450, 800] {
+                    day::reactive::on_main_delayed(delay, || {
+                        crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
+                    });
+                }
+            },
+        );
+    }
 
     stack
 }

@@ -3,6 +3,7 @@ pub mod cache;
 pub mod colors;
 pub mod haptics;
 pub mod i18n;
+pub mod ios_nav;
 pub mod keyboard;
 pub mod layout_diag;
 pub mod locale;

@@ -207,6 +207,12 @@ fn window_shell(primary: bool) -> impl Piece {
                     day::reactive::on_main_delayed(100, move || {
                         crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
                     });
+                    for delay in [60, 200, 450, 800] {
+                        day::reactive::on_main_delayed(delay, || {
+                            let st = AppState::ambient();
+                            crate::shared::ios_nav::ios_impl::setup_status_nav_bar(None, st);
+                        });
+                    }
                 },
             );
         }
