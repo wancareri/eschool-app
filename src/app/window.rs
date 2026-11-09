@@ -212,6 +212,21 @@ fn window_shell(primary: bool) -> impl Piece {
                 });
             }
             day::reactive::watch(
+                move || (state.is_authenticated.get(), day::locale().get(), day::dark_mode()),
+                move |&(auth, _, _), _| {
+                    for delay in [0, 40, 150, 350] {
+                        day::reactive::on_main_delayed(delay, move || {
+                            let st = AppState::ambient();
+                            if auth {
+                                crate::shared::ios_nav::ios_impl::setup_status_nav_bar(None, st);
+                            } else {
+                                crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
+                            }
+                        });
+                    }
+                },
+            );
+            day::reactive::watch(
                 move || state.conn_status.get(),
                 move |_, _| {
                     day::reactive::on_main_delayed(20, || {

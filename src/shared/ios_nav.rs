@@ -100,29 +100,22 @@ pub mod ios_impl {
         None
     }
 
-    /// Attach bar button items to both rightBarButtonItems and trailingItemGroups (iOS 16+)
-    /// Each item is in its OWN UIBarButtonItemGroup with representativeItem = Some(item)
-    /// to guarantee items are NEVER hidden in compact / iPhone portrait width.
+    /// Attach bar button items reliably to rightBarButtonItems.
+    /// Clears trailingItemGroups so UIKit does not ignore rightBarButtonItems
+    /// and does not collapse or drop items on compact iPhone portrait screens.
     pub fn attach_nav_items(
         nav_item: &objc2_ui_kit::UINavigationItem,
         items: &[Retained<UIBarButtonItem>],
     ) {
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        if items.is_empty() { return };
+        if items.is_empty() { return; }
 
         let arr = NSArray::from_retained_slice(items);
         nav_item.setRightBarButtonItems(Some(&arr));
 
-        let groups: Vec<Retained<UIBarButtonItemGroup>> = items
-            .iter()
-            .map(|item| {
-                let single = NSArray::from_retained_slice(&[item.clone()]);
-                UIBarButtonItemGroup::fixedGroupWithRepresentativeItem_items(Some(item), &single, mtm)
-            })
-            .collect();
-        let group_arr = NSArray::from_retained_slice(&groups);
-        nav_item.setTrailingItemGroups(&group_arr);
-        nslog(&format!("[ios_nav] Successfully attached {} separate bar items", items.len()));
+        // Clear trailingItemGroups so UIKit uses standard rightBarButtonItems directly
+        let empty = NSArray::new();
+        nav_item.setTrailingItemGroups(&empty);
+        nslog(&format!("[ios_nav] Successfully attached {} bar items", items.len()));
     }
 
     /// Build Theme button with native SF Symbol (sun.max.fill / moon.stars.fill)
@@ -231,6 +224,10 @@ pub mod ios_impl {
 
     /// Setup Login navigation bar (Theme + Language)
     pub fn setup_login_nav_bar(view: Option<&UIView>) {
+        let state = AppState::ambient();
+        if state.is_authenticated.get() {
+            return;
+        }
         let Some(mtm) = MainThreadMarker::new() else { return };
         let Some(nav_item) = find_active_nav_item(view) else { return };
 

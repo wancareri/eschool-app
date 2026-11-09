@@ -668,8 +668,6 @@ fn username_step_view(
         use day_uikit::UiKitExt;
         companion_pw.uikit(|tf, _class, _mtm| {
             tf.setUserInteractionEnabled(false);
-            let pwd = objc2_foundation::NSString::from_str("password");
-            let _: () = unsafe { objc2::msg_send![&**tf, setTextContentType: &*pwd] };
         })
     };
 
@@ -680,15 +678,6 @@ fn username_step_view(
         .grow_w()
         .log_pos("Auth:UsernameField")
         .on_submit(on_sub);
-
-    #[cfg(target_os = "ios")]
-    let input_field = {
-        use day_uikit::UiKitExt;
-        input_field.uikit(|tf, _class, _mtm| {
-            let usr = objc2_foundation::NSString::from_str("username");
-            let _: () = unsafe { objc2::msg_send![&**tf, setTextContentType: &*usr] };
-        })
-    };
 
     let clear_btn = when(
         move || !username.get().is_empty(),
@@ -909,8 +898,6 @@ fn password_step_view(
         use day_uikit::UiKitExt;
         companion_user.uikit(|tf, _class, _mtm| {
             tf.setUserInteractionEnabled(false);
-            let usr = objc2_foundation::NSString::from_str("username");
-            let _: () = unsafe { objc2::msg_send![&**tf, setTextContentType: &*usr] };
         })
     };
 
@@ -919,45 +906,29 @@ fn password_step_view(
         {
             let on_sub = on_sub_plain.clone();
             move || {
-                let f = text_field(password)
+                text_field(password)
                     .placeholder("Пароль")
                     .focused(password_focused)
                     .grow_w()
                     .id("password-field-plain")
                     .log_pos("Auth:PasswordField")
-                    .on_submit(on_sub.clone());
-                #[cfg(target_os = "ios")]
-                let f = {
-                    use day_uikit::UiKitExt;
-                    f.uikit(|tf, _class, _mtm| {
-                        let pwd = objc2_foundation::NSString::from_str("password");
-                        let _: () = unsafe { objc2::msg_send![&**tf, setTextContentType: &*pwd] };
-                    })
-                };
-                f.any()
+                    .on_submit(on_sub.clone())
+                    .any()
             }
         },
     )
     .otherwise({
         let on_sub = on_sub_sec.clone();
         move || {
-            let f = text_field(password)
+            text_field(password)
                 .secure()
                 .placeholder("Пароль")
                 .focused(password_focused)
                 .grow_w()
                 .id("password-field")
                 .log_pos("Auth:PasswordField")
-                .on_submit(on_sub.clone());
-            #[cfg(target_os = "ios")]
-            let f = {
-                use day_uikit::UiKitExt;
-                f.uikit(|tf, _class, _mtm| {
-                    let pwd = objc2_foundation::NSString::from_str("password");
-                    let _: () = unsafe { objc2::msg_send![&**tf, setTextContentType: &*pwd] };
-                })
-            };
-            f.any()
+                .on_submit(on_sub.clone())
+                .any()
         }
     })
     .grow();
@@ -1115,13 +1086,13 @@ fn get_auth_state() -> AuthState {
             *s
         } else {
             let s = AuthState {
-                path: Signal::new(Vec::<AuthRoute>::new()),
-                username: Signal::new(String::new()),
-                password: Signal::new(String::new()),
-                username_focused: Signal::new(false),
-                password_focused: Signal::new(false),
-                remember: Signal::new(true),
-                error_local: Signal::new(String::new()),
+                path: Signal::global(Vec::<AuthRoute>::new()),
+                username: Signal::global(String::new()),
+                password: Signal::global(String::new()),
+                username_focused: Signal::global(false),
+                password_focused: Signal::global(false),
+                remember: Signal::global(true),
+                error_local: Signal::global(String::new()),
             };
             *b = Some(s);
             s
@@ -1168,26 +1139,10 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 state.error_msg.set(String::new());
                 crate::shared::haptics::tick();
                 path.set(vec![AuthRoute::Login, AuthRoute::Password]);
-                #[cfg(target_os = "ios")]
-                {
-                    struct SendSignal(Signal<bool>);
-                    unsafe impl Send for SendSignal {}
-                    impl SendSignal {
-                        fn activate(self) {
-                            self.0.set(true);
-                        }
-                    }
-                    let pw_foc = SendSignal(password_focused);
-                    let when = dispatch2::DispatchTime::try_from(std::time::Duration::from_millis(350))
-                        .unwrap_or(dispatch2::DispatchTime::NOW);
-                    let _ = dispatch2::DispatchQueue::main().after(when, move || {
-                        pw_foc.activate();
-                    });
-                }
-                #[cfg(not(target_os = "ios"))]
-                {
-                    password_focused.set(true);
-                }
+                let set_pw_foc = password_focused.setter();
+                day::reactive::on_main_delayed(350, move || {
+                    set_pw_foc.set(true);
+                });
             }
         }
     };
@@ -1271,26 +1226,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
             });
         }
-
-        day::reactive::watch(
-            move || path.get(),
-            move |_, _| {
-                for delay in [20, 100, 300] {
-                    day::reactive::on_main_delayed(delay, || {
-                        crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
-                    });
-                }
-            },
-        );
-
-        day::reactive::watch(
-            move || (day::locale().get(), day::dark_mode()),
-            move |_, _| {
-                day::reactive::on_main_delayed(20, || {
-                    crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
-                });
-            },
-        );
     }
 
     stack
