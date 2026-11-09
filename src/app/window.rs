@@ -251,6 +251,11 @@ fn build_nav(primary: bool) -> impl Piece {
         crate::widgets::bottom_sheet::network_error_sheet(state),
     ))
     .grow()
+    .toolbar(move || {
+        if !state.is_authenticated.get() && !state.pin_lock_active.get() {
+            pages::login::auth_toolbar()
+        } else { Vec::new() }
+    })
 }
 
 fn nav_body(state: AppState, primary: bool) -> impl Piece {

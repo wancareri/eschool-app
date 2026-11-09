@@ -96,7 +96,7 @@ eschool-app/
   Omit `.on_back`. UIKit handles the interactive pop gesture 100% natively. If the user completes the pop, Day updates `path: Signal<Vec<AuthRoute>>`. Observe completed pops using `day::reactive::watch(move || path.get(), ...)`.
 
 ### B. Navigation Bar Buttons in iOS 16+ (`trailingItemGroups`)
-- **Login pages declare their buttons through Day's `.toolbar(...)` with `ToolbarPlacement::Primary`:** declare them on the stack root and each destination. Day owns the native `UINavigationItem` and reapplies its toolbar during reconciliation and transitions. Delayed manual `setup_login_nav_bar` mutations were overwritten by that reconciliation and left the welcome page without buttons. Do not reintroduce them.
+- **Authentication declares ONE window-level `.toolbar(...)` in `build_nav`:** use a single `toolbar_menu` with `Symbol::More` and `ToolbarPlacement::Primary`. It contains language (globe icon) and appearance submenus. Declaring the same commands on root and destination pages caused duplicated buttons and overflow. Native `UIMenu` anchors to the actual bar item; do not reintroduce delayed manual toolbar injection or action sheets with hard-coded popover coordinates.
 - In iOS 16+, `day-uikit` manages `trailingItemGroups` on `UINavigationItem`. When `trailingItemGroups` has any value, UIKit **completely ignores `rightBarButtonItems`**!
 - To attach bar buttons natively, wrap the `UIBarButtonItem` slice using `UIBarButtonItemGroup`:
   ```rust
@@ -123,12 +123,11 @@ eschool-app/
 ### D. iOS AutoFill & Passwords on Russian / Multilingual Keyboards
 - **Do NOT use invisible companion fields (`companion_pw` / `opacity(0.02)`):**
   Overlapping two text fields at the same location confuses iOS AutoFill and accessibility heuristics. Use a single `text_field` per step.
-- **Autocorrection & Predictive Text:**
-  On Russian and non-English keyboards, setting `autocorrectionType: No (1)` causes iOS to completely hide the QuickType accessory bar, removing the "Пароли" / Key button. In `keyboard.rs`, swizzle `setBorderStyle:` and `setSecureTextEntry:` to set `setAutocorrectionType: 2isize` (`UITextAutocorrectionTypeYes`), which guarantees the suggestion bar remains available.
+- **AutoFill traits are configured AFTER Day realizes a field:** `shared/autofill.rs` configures only authentication fields. Day sets `autocorrectionType: No` after `setSecureTextEntry`, so the former global swizzles were overwritten. Register the explicit username/password/newPassword role; on input-mode changes restore traits for the current field without resigning focus. The password visibility button changes masking on the same UITextField and keeps its `.password` role.
+- **System save prompts:** setting text traits improves AutoFill heuristics; it does not establish ownership of a third-party website. Guaranteed domain credential sharing/saving requires associated domains, matching signing entitlements and the website's AASA configuration. Do not promise that an unsigned/sideloaded build can force Apple Passwords to save credentials for e-schools.by.
 - **Locking Assistant Bar:**
   Set `inputAssistantItem.setAllowsHidingShortcuts: false` so iOS does not collapse the shortcut bar.
-- **Refocusing after Action Sheets:**
-  Presenting `UIAlertController` (ActionSheet for language or theme) resigns first responder. After calling `set_locale(...)`, schedule a delayed refocus (~250ms) using `auth.username_focused.setter().set(true)`.
+- **Language changes:** update localized text and native page titles in place. Keep the authentication stack, focus and field values alive. Do not apply a whole-form `.animation(...)` to the auth form; menu changes must not replay its entrance animation.
 
 ---
 
@@ -142,3 +141,5 @@ eschool-app/
   - Removed overlapping companion password fields and enforced `autocorrectionType = Yes` with automatic refocusing on language change to restore AutoFill Passwords.
 
 - **Build 64:** Native declarative theme/language toolbar on welcome and all login steps; interactive-pop keyboard updates wait for commit/cancel; weak per-page followers; guarded delayed focus and refocus after completed password-to-login pops.
+
+- **Build 65:** One window-level ellipsis menu, native anchored language/appearance submenus, live auth localization without entrance replay, stable password field masking, and scoped AutoFill/input-mode handling.

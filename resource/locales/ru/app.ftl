@@ -42,3 +42,22 @@ settings_title = Настройки
 
 auth_appearance = Оформление
 auth_language = Язык
+
+auth_options = Настройки входа
+auth_theme_system = Системная
+auth_theme_light = Светлая
+auth_theme_dark = Тёмная
+auth_username_title = Вход в аккаунт
+auth_password_title = Введите пароль
+auth_intro_subtitle = Электронный дневник
+auth_intro_description = Расписание, оценки и домашние задания — всегда под рукой
+auth_start = Начать
+auth_username_placeholder = Логин или код
+auth_password_placeholder = Пароль
+auth_remember = Запомнить вход
+auth_continue = Продолжить
+auth_sign_in = Войти
+auth_signing_in = Входим…
+auth_step_username = Шаг 1 из 2 · Логин
+auth_step_password = Шаг 2 из 2 · Пароль
+auth_setup_title = Новый пароль

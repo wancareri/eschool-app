@@ -489,29 +489,11 @@ mod ios {
                     "[TextField] Successfully swizzled UITextField setBorderStyle: to force None",
                 );
             }
-
-            let sel_sec = objc2::sel!(setSecureTextEntry:);
-            if let Some(method) = cls.instance_method(sel_sec) {
-                let orig: Imp = method.implementation();
-                ORIG_SET_SECURE_TEXT_ENTRY
-                    .store(orig as *mut (), std::sync::atomic::Ordering::Release);
-                let imp: Imp =
-                    unsafe { std::mem::transmute(swizzled_set_secure_text_entry as *const ()) };
-                unsafe {
-                    method.set_implementation(imp);
-                }
-                crate::shared::nslog::nslog(
-                    "[TextField] Successfully swizzled UITextField setSecureTextEntry:",
-                );
-            }
         }
     }
 
     static ORIG_SET_BORDER_STYLE: std::sync::atomic::AtomicPtr<()> =
         std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
-    static ORIG_SET_SECURE_TEXT_ENTRY: std::sync::atomic::AtomicPtr<()> =
-        std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
-
     unsafe extern "C-unwind" fn swizzled_set_border_style(
         this: *mut AnyObject,
         cmd: Sel,
@@ -524,57 +506,6 @@ mod ios {
                 unsafe { std::mem::transmute(orig_ptr) };
             unsafe {
                 orig(this, cmd, 0);
-            }
-        }
-        unsafe {
-            let _: () = objc2::msg_send![this, setAutocapitalizationType: 0isize];
-            // Set autocorrectionType to Yes (2) so iOS keeps the predictive / Passwords shortcut bar
-            // enabled across all languages (including Russian)!
-            let _: () = objc2::msg_send![this, setAutocorrectionType: 2isize];
-            let _: () = objc2::msg_send![this, setSpellCheckingType: 0isize];
-            let is_secure: bool = objc2::msg_send![this, isSecureTextEntry];
-            let ctype = if is_secure {
-                objc2_foundation::NSString::from_str("password")
-            } else {
-                objc2_foundation::NSString::from_str("username")
-            };
-            let _: () = objc2::msg_send![this, setTextContentType: &*ctype];
-
-            // Lock the input assistant bar visible on all keyboards
-            let assistant: Option<Retained<AnyObject>> = objc2::msg_send![this, inputAssistantItem];
-            if let Some(item) = assistant {
-                let _: () = objc2::msg_send![&*item, setAllowsHidingShortcuts: false];
-            }
-        }
-    }
-
-    unsafe extern "C-unwind" fn swizzled_set_secure_text_entry(
-        this: *mut AnyObject,
-        cmd: Sel,
-        secure: bool,
-    ) {
-        let orig_ptr = ORIG_SET_SECURE_TEXT_ENTRY.load(std::sync::atomic::Ordering::Acquire);
-        if !orig_ptr.is_null() {
-            let orig: unsafe extern "C-unwind" fn(*mut AnyObject, Sel, bool) =
-                unsafe { std::mem::transmute(orig_ptr) };
-            unsafe {
-                orig(this, cmd, secure);
-            }
-        }
-        unsafe {
-            let _: () = objc2::msg_send![this, setAutocapitalizationType: 0isize];
-            let _: () = objc2::msg_send![this, setAutocorrectionType: 2isize];
-            let _: () = objc2::msg_send![this, setSpellCheckingType: 0isize];
-            let ctype = if secure {
-                objc2_foundation::NSString::from_str("password")
-            } else {
-                objc2_foundation::NSString::from_str("username")
-            };
-            let _: () = objc2::msg_send![this, setTextContentType: &*ctype];
-
-            let assistant: Option<Retained<AnyObject>> = objc2::msg_send![this, inputAssistantItem];
-            if let Some(item) = assistant {
-                let _: () = objc2::msg_send![&*item, setAllowsHidingShortcuts: false];
             }
         }
     }

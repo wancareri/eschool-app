@@ -100,6 +100,24 @@ pub mod ios_impl {
         None
     }
 
+    /// Retitle the existing authentication page when the locale changes. The
+    /// navigation stack and its text fields stay mounted, including the page
+    /// behind the current one (its title supplies the native Back label).
+    pub fn bind_auth_page_title(view: &UIView, title: fn() -> String) {
+        let weak = objc2::rc::Weak::new(view);
+        day::reactive::watch(move || day::locale().get(), move |_, _| {
+            let Some(view) = weak.load() else { return };
+            let mut responder = view.nextResponder();
+            while let Some(current) = responder {
+                if let Some(vc) = current.downcast_ref::<UIViewController>() {
+                    vc.navigationItem().setTitle(Some(&NSString::from_str(&title())));
+                    break;
+                }
+                responder = current.nextResponder();
+            }
+        });
+    }
+
     /// Attach bar button items reliably to rightBarButtonItems and trailingItemGroups.
     pub fn attach_nav_items(
         nav_item: &objc2_ui_kit::UINavigationItem,

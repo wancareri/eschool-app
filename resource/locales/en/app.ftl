@@ -51,3 +51,22 @@ settings_title = Settings
 
 auth_appearance = Appearance
 auth_language = Language
+
+auth_options = Sign-in settings
+auth_theme_system = System
+auth_theme_light = Light
+auth_theme_dark = Dark
+auth_username_title = Sign in
+auth_password_title = Enter password
+auth_intro_subtitle = School diary
+auth_intro_description = Your timetable, grades and homework, always at hand
+auth_start = Get started
+auth_username_placeholder = Username or code
+auth_password_placeholder = Password
+auth_remember = Remember sign-in
+auth_continue = Continue
+auth_sign_in = Sign in
+auth_signing_in = Signing in…
+auth_step_username = Step 1 of 2 · Username
+auth_step_password = Step 2 of 2 · Password
+auth_setup_title = New password

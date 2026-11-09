@@ -1,3 +1,4 @@
+pub mod autofill;
 pub mod biometric;
 pub mod cache;
 pub mod colors;

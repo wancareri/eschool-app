@@ -17,14 +17,13 @@ pub fn render() -> impl Piece {
         when(
             move || !state.is_authenticated.get() && state.setup_new_password_active.get(),
             move || nav_stack(Signal::new(Vec::<String>::new()), setup_password_form(state, show_logs))
-                .title("Новый пароль")
-                .toolbar(|| auth_toolbar("setup"))
+                .title(res::str::auth_setup_title())
                 .grow()
                 .any(),
         ),
         when(
             move || !state.is_authenticated.get() && !state.setup_new_password_active.get(),
-            move || auth_form(state, show_logs).animation(AnimSpec::ease_out(350)).any(),
+            move || auth_form(state, show_logs).any(),
         ),
         when(
             move || show_logs.get(),
@@ -281,14 +280,14 @@ impl Route for AuthRoute {
     }
     fn title(&self) -> String {
         match self {
-            AuthRoute::Login => "Вход в аккаунт".into(),
-            AuthRoute::Password => "Введите пароль".into(),
+            AuthRoute::Login => res::str::auth_username_title().format(),
+            AuthRoute::Password => res::str::auth_password_title().format(),
         }
     }
 }
 
-fn auth_action_button(
-    title: impl Fn() -> &'static str + 'static,
+fn auth_action_button<M>(
+    title: impl IntoText<M>,
     action: impl Fn() + 'static,
 ) -> impl Piece {
     button(title)
@@ -301,324 +300,46 @@ fn auth_action_button(
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
 }
 
-#[cfg(target_os = "ios")]
-pub fn show_theme_sheet() {
-    use objc2::MainThreadMarker;
-    use objc2_foundation::NSString;
-    use objc2_ui_kit::{
-        UIAlertAction, UIAlertActionStyle, UIAlertController, UIAlertControllerStyle,
-        UIApplication,
-    };
-    use block2::RcBlock;
-    use core::ptr::NonNull;
-
-    let Some(mtm) = MainThreadMarker::new() else { return; };
-    let app = UIApplication::sharedApplication(mtm);
-    #[allow(deprecated)]
-    let Some(window) = app.keyWindow() else { return; };
-    let Some(mut top_vc) = window.rootViewController() else { return; };
-    while let Some(presented) = top_vc.presentedViewController() {
-        top_vc = presented;
-    }
-
-    let alert = UIAlertController::alertControllerWithTitle_message_preferredStyle(
-        Some(&NSString::from_str("Оформление")),
-        None,
-        UIAlertControllerStyle::ActionSheet,
-        mtm,
-    );
-
-    let h_sys = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
-        day::prefs::remove(crate::THEME_KEY);
-        day::set_appearance(None);
-        crate::shared::haptics::tick();
-        restore_auth_focus_after_sheet();
-    });
-    let a_sys = UIAlertAction::actionWithTitle_style_handler(
-        Some(&NSString::from_str("Системная")),
-        UIAlertActionStyle::Default,
-        Some(&*h_sys),
-        mtm,
-    );
-
-    let h_light = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
-        day::prefs::set(crate::THEME_KEY, "light");
-        day::set_appearance(Some(false));
-        crate::shared::haptics::tick();
-        restore_auth_focus_after_sheet();
-    });
-    let a_light = UIAlertAction::actionWithTitle_style_handler(
-        Some(&NSString::from_str("Светлая")),
-        UIAlertActionStyle::Default,
-        Some(&*h_light),
-        mtm,
-    );
-
-    let h_dark = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
-        day::prefs::set(crate::THEME_KEY, "dark");
-        day::set_appearance(Some(true));
-        crate::shared::haptics::tick();
-        restore_auth_focus_after_sheet();
-    });
-    let a_dark = UIAlertAction::actionWithTitle_style_handler(
-        Some(&NSString::from_str("Тёмная")),
-        UIAlertActionStyle::Default,
-        Some(&*h_dark),
-        mtm,
-    );
-
-    let h_cancel = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
-        restore_auth_focus_after_sheet();
-    });
-    let a_cancel = UIAlertAction::actionWithTitle_style_handler(
-        Some(&NSString::from_str("Отмена")),
-        UIAlertActionStyle::Cancel,
-        Some(&*h_cancel),
-        mtm,
-    );
-
-    alert.addAction(&a_sys);
-    alert.addAction(&a_light);
-    alert.addAction(&a_dark);
-    alert.addAction(&a_cancel);
-
-    if let Some(popover) = alert.popoverPresentationController() {
-        popover.setSourceView(Some(&window));
-        let bounds = window.bounds();
-        popover.setSourceRect(objc2_core_foundation::CGRect {
-            origin: objc2_core_foundation::CGPoint { x: bounds.size.width - 60.0, y: 60.0 },
-            size: objc2_core_foundation::CGSize { width: 1.0, height: 1.0 },
-        });
-    }
-
-    top_vc.presentViewController_animated_completion(&alert, true, None);
+/// One window-level menu shared by every authentication page. Native UIMenu
+/// supplies its own anchor; no action sheet coordinates or per-page duplicates.
+pub fn auth_toolbar() -> Vec<ToolbarEntry> {
+    let locale = day::locale().get().to_lowercase();
+    let _ = get_auth_state().settings_revision.get();
+    let theme = day::prefs::get(crate::THEME_KEY);
+    let dark = day::dark_mode(); // React to appearance changes, including system changes.
+    let language = sub_menu(res::str::auth_language().format(), vec![
+        menu_item("Русский").id("auth-language-ru").checked(locale.starts_with("ru")).action(|| choose_auth_language("ru")),
+        menu_item("Беларуская").id("auth-language-be").checked(locale.starts_with("be")).action(|| choose_auth_language("be")),
+        menu_item("English").id("auth-language-en").checked(locale.starts_with("en")).action(|| choose_auth_language("en")),
+    ]).image("globe");
+    let appearance = sub_menu(res::str::auth_appearance().format(), vec![
+        menu_item(res::str::auth_theme_system().format()).id("auth-theme-system").icon(Symbol::Auto)
+            .checked(!matches!(theme.as_deref(), Some("light" | "dark"))).action(|| choose_auth_theme(None)),
+        menu_item(res::str::auth_theme_light().format()).id("auth-theme-light").icon(Symbol::Light)
+            .checked(theme.as_deref() == Some("light")).action(|| choose_auth_theme(Some(false))),
+        menu_item(res::str::auth_theme_dark().format()).id("auth-theme-dark").icon(Symbol::Dark)
+            .checked(theme.as_deref() == Some("dark")).action(|| choose_auth_theme(Some(true))),
+    ]).icon(if dark { Symbol::Dark } else { Symbol::Light });
+    vec![toolbar_menu("auth-options", res::str::auth_options(), vec![language, appearance])
+        .icon(Symbol::More).placement(ToolbarPlacement::Primary)]
 }
 
-#[cfg(not(target_os = "ios"))]
-pub fn show_theme_sheet() {
-    let cur = day::prefs::get(crate::THEME_KEY);
-    match cur.as_deref() {
-        None => {
-            day::prefs::set(crate::THEME_KEY, "light");
-            day::set_appearance(Some(false));
-        }
-        Some("light") => {
-            day::prefs::set(crate::THEME_KEY, "dark");
-            day::set_appearance(Some(true));
-        }
-        _ => {
-            day::prefs::remove(crate::THEME_KEY);
-            day::set_appearance(None);
-        }
+fn choose_auth_language(locale: &'static str) {
+    if day::locale().get_untracked().starts_with(locale) { return; }
+    day::prefs::set(crate::LOCALE_KEY, locale);
+    set_locale(locale);
+    crate::shared::haptics::tick();
+}
+
+fn choose_auth_theme(appearance: Option<bool>) {
+    match appearance {
+        Some(true) => { day::prefs::set(crate::THEME_KEY, "dark"); }
+        Some(false) => { day::prefs::set(crate::THEME_KEY, "light"); }
+        None => { day::prefs::remove(crate::THEME_KEY); }
     }
-}
-
-#[cfg(target_os = "ios")]
-pub fn show_lang_sheet() {
-    use objc2::MainThreadMarker;
-    use objc2_foundation::NSString;
-    use objc2_ui_kit::{
-        UIAlertAction, UIAlertActionStyle, UIAlertController, UIAlertControllerStyle,
-        UIApplication,
-    };
-    use block2::RcBlock;
-    use core::ptr::NonNull;
-
-    let Some(mtm) = MainThreadMarker::new() else { return; };
-    let app = UIApplication::sharedApplication(mtm);
-    #[allow(deprecated)]
-    let Some(window) = app.keyWindow() else { return; };
-    let Some(mut top_vc) = window.rootViewController() else { return; };
-    while let Some(presented) = top_vc.presentedViewController() {
-        top_vc = presented;
-    }
-
-    let alert = UIAlertController::alertControllerWithTitle_message_preferredStyle(
-        Some(&NSString::from_str("Язык")),
-        None,
-        UIAlertControllerStyle::ActionSheet,
-        mtm,
-    );
-
-    let h_ru = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
-        day::prefs::set(crate::LOCALE_KEY, "ru");
-        set_locale("ru");
-        crate::shared::haptics::tick();
-        restore_auth_focus_after_sheet();
-    });
-    let a_ru = UIAlertAction::actionWithTitle_style_handler(
-        Some(&NSString::from_str("Русский (RU)")),
-        UIAlertActionStyle::Default,
-        Some(&*h_ru),
-        mtm,
-    );
-
-    let h_be = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
-        day::prefs::set(crate::LOCALE_KEY, "be");
-        set_locale("be");
-        crate::shared::haptics::tick();
-        restore_auth_focus_after_sheet();
-    });
-    let a_be = UIAlertAction::actionWithTitle_style_handler(
-        Some(&NSString::from_str("Беларуская (BE)")),
-        UIAlertActionStyle::Default,
-        Some(&*h_be),
-        mtm,
-    );
-
-    let h_en = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
-        day::prefs::set(crate::LOCALE_KEY, "en");
-        set_locale("en");
-        crate::shared::haptics::tick();
-        restore_auth_focus_after_sheet();
-    });
-    let a_en = UIAlertAction::actionWithTitle_style_handler(
-        Some(&NSString::from_str("English (EN)")),
-        UIAlertActionStyle::Default,
-        Some(&*h_en),
-        mtm,
-    );
-
-    let h_cancel = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
-        restore_auth_focus_after_sheet();
-    });
-    let a_cancel = UIAlertAction::actionWithTitle_style_handler(
-        Some(&NSString::from_str("Отмена")),
-        UIAlertActionStyle::Cancel,
-        Some(&*h_cancel),
-        mtm,
-    );
-
-    alert.addAction(&a_ru);
-    alert.addAction(&a_be);
-    alert.addAction(&a_en);
-    alert.addAction(&a_cancel);
-
-    if let Some(popover) = alert.popoverPresentationController() {
-        popover.setSourceView(Some(&window));
-        let bounds = window.bounds();
-        popover.setSourceRect(objc2_core_foundation::CGRect {
-            origin: objc2_core_foundation::CGPoint { x: bounds.size.width - 120.0, y: 60.0 },
-            size: objc2_core_foundation::CGSize { width: 1.0, height: 1.0 },
-        });
-    }
-
-    top_vc.presentViewController_animated_completion(&alert, true, None);
-}
-
-#[cfg(not(target_os = "ios"))]
-pub fn show_lang_sheet() {
-    let cur = day::locale().get_untracked();
-    if cur.starts_with("ru") {
-        day::prefs::set(crate::LOCALE_KEY, "be");
-        set_locale("be");
-    } else if cur.starts_with("be") {
-        day::prefs::set(crate::LOCALE_KEY, "en");
-        set_locale("en");
-    } else {
-        day::prefs::set(crate::LOCALE_KEY, "ru");
-        set_locale("ru");
-    }
-}
-
-pub fn glass_lang_button() -> impl Piece {
-    let lang_str = move || {
-        let cur = day::locale().get();
-        let lower = cur.to_lowercase();
-        if lower.starts_with("be") {
-            "BE"
-        } else if lower.starts_with("en") {
-            "EN"
-        } else {
-            "RU"
-        }
-    };
-
-    row((
-        vector(res::vectors::globe)
-            .frame(16.0, 16.0)
-            .tint(move || {
-                if day::dark_mode() {
-                    Color::hex(0xFFFFFF)
-                } else {
-                    Color::hex(0x000000)
-                }
-            }),
-        spacer().width(6.0),
-        label(lang_str)
-            .font(Font::Subheadline)
-            .bold(),
-    ))
-    .align(VAlign::Center)
-    .padding(Insets { top: 7.0, leading: 12.0, bottom: 7.0, trailing: 12.0 })
-    .background(move || {
-        if day::dark_mode() {
-            Color::rgba(1.0, 1.0, 1.0, 0.12)
-        } else {
-            Color::rgba(0.0, 0.0, 0.0, 0.07)
-        }
-    })
-    .glass_radius(18.0)
-    .on_tap(move || {
-        crate::shared::haptics::tick();
-        show_lang_sheet();
-    })
-}
-
-pub fn glass_theme_button() -> impl Piece {
-    let is_dark = move || {
-        let cur = day::prefs::get(crate::THEME_KEY);
-        match cur.as_deref() {
-            Some("light") => false,
-            Some("dark") => true,
-            _ => day::dark_mode(),
-        }
-    };
-
-    row((
-        when(is_dark, || {
-            vector(res::vectors::moon)
-                .frame(18.0, 18.0)
-                .tint(Color::hex(0xFFFFFF))
-                .any()
-        })
-        .otherwise(|| {
-            vector(res::vectors::sun)
-                .frame(18.0, 18.0)
-                .tint(Color::hex(0x000000))
-                .any()
-        }),
-    ))
-    .align(VAlign::Center)
-    .frame(36.0, 36.0)
-    .background(move || {
-        if day::dark_mode() {
-            Color::rgba(1.0, 1.0, 1.0, 0.12)
-        } else {
-            Color::rgba(0.0, 0.0, 0.0, 0.07)
-        }
-    })
-    .glass_radius(18.0)
-    .on_tap(move || {
-        crate::shared::haptics::tick();
-        show_theme_sheet();
-    })
-}
-
-fn auth_toolbar(page: &str) -> Vec<ToolbarEntry> {
-    let language = day::locale().get().to_lowercase();
-    let code = if language.starts_with("be") { "BE" }
-        else if language.starts_with("en") { "EN" } else { "RU" };
-    vec![
-        toolbar_button(format!("auth-{page}-language"), code)
-            .tooltip(res::str::auth_language())
-            .placement(ToolbarPlacement::Primary)
-            .action(show_lang_sheet),
-        toolbar_button(format!("auth-{page}-theme"), res::str::auth_appearance())
-            .icon(if day::dark_mode() { Symbol::Dark } else { Symbol::Light })
-            .placement(ToolbarPlacement::Primary)
-            .action(show_theme_sheet),
-    ]
+    day::set_appearance(appearance);
+    get_auth_state().settings_revision.update(|revision| *revision += 1);
+    crate::shared::haptics::tick();
 }
 
 fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
@@ -629,12 +350,12 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
             .bold()
             .align(TextAlign::Center),
         spacer().height(6.0),
-        label("Электронный дневник")
+        label(res::str::auth_intro_subtitle())
             .font(Font::Headline)
             .secondary()
             .align(TextAlign::Center),
         spacer().height(10.0),
-        label("Быстрый и удобный доступ к расписанию,\nоценкам и домашним заданиям")
+        label(res::str::auth_intro_description())
             .font(Font::Subheadline)
             .secondary()
             .align(TextAlign::Center)
@@ -646,7 +367,7 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
             spacer().grow(),
         )),
         spacer().grow(),
-        auth_action_button(|| "Начать", on_start),
+        auth_action_button(res::str::auth_start(), on_start),
         spacer().height(8.0),
     ))
     .grow()
@@ -697,11 +418,19 @@ fn username_step_view(
 
     let on_sub = on_submit.clone();
     let input_field = text_field(username)
-        .placeholder("Логин или код")
+        .placeholder(res::str::auth_username_placeholder())
         .focused(username_focused)
         .grow_w()
         .log_pos("Auth:UsernameField")
         .on_submit(on_sub);
+
+    #[cfg(target_os = "ios")]
+    let input_field = {
+        use day_uikit::UiKitExt;
+        input_field.uikit(|view, _, _| {
+            crate::shared::autofill::ios::configure(view, crate::shared::autofill::ios::Role::Username);
+        })
+    };
 
     let input_card = row((
         vector(res::vectors::tab_login)
@@ -742,7 +471,7 @@ fn username_step_view(
 
         // Minimalist native session remember toggle
         row((
-            label("Запомнить вход")
+            label(res::str::auth_remember())
                 .font(Font::Subheadline)
                 .secondary()
                 .grow(),
@@ -785,9 +514,11 @@ fn username_step_view(
     );
 
     let bottom_section = column((
+        label(res::str::auth_step_username()).font(Font::Caption).secondary()
+            .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
         content,
         err_display,
-        auth_action_button(|| "Продолжить", on_submit),
+        auth_action_button(res::str::auth_continue(), on_submit),
         spacer().height(8.0),
     ));
 
@@ -818,6 +549,7 @@ fn username_step_view(
     let piece = {
         use day_uikit::UiKitExt;
         piece.uikit(move |view, _class, _mtm| {
+            crate::shared::ios_nav::ios_impl::bind_auth_page_title(view, || res::str::auth_username_title().format());
             view.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
             if let Some(w) = view.window() {
                 w.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
@@ -829,7 +561,7 @@ fn username_step_view(
 }
 
 fn password_step_view(
-    _username: Signal<String>,
+    username: Signal<String>,
     password: Signal<String>,
     password_focused: Signal<bool>,
     error_local: Signal<String>,
@@ -869,40 +601,36 @@ fn password_step_view(
         }
     });
 
-    let on_sub_plain = on_submit.clone();
-    let on_sub_sec = on_submit.clone();
+    #[cfg(target_os = "ios")]
+    let pw_field = text_field(password)
+        .secure()
+        .placeholder(res::str::auth_password_placeholder())
+        .focused(password_focused)
+        .grow_w()
+        .id("password-field")
+        .log_pos("Auth:PasswordField")
+        .on_submit(on_submit.clone());
 
-    let pw_field = when(
-        move || show_password.get(),
-        {
-            let on_sub = on_sub_plain.clone();
-            move || {
-                text_field(password)
-                    .placeholder("Пароль")
-                    .focused(password_focused)
-                    .grow_w()
-                    .id("password-field-plain")
-                    .log_pos("Auth:PasswordField")
-                    .on_submit(on_sub.clone())
-                    .any()
-            }
-        },
-    )
-    .otherwise({
-        let on_sub = on_sub_sec.clone();
-        move || {
-            text_field(password)
-                .secure()
-                .placeholder("Пароль")
-                .focused(password_focused)
-                .grow_w()
-                .id("password-field")
-                .log_pos("Auth:PasswordField")
-                .on_submit(on_sub.clone())
-                .any()
-        }
-    })
-    .grow();
+    #[cfg(target_os = "ios")]
+    let pw_field = {
+        use day_uikit::UiKitExt;
+        pw_field.uikit(move |view, _, _| crate::shared::autofill::ios::password(view, show_password))
+    };
+
+    #[cfg(not(target_os = "ios"))]
+    let pw_field = {
+        let submit_plain = on_submit.clone();
+        let submit_secure = on_submit.clone();
+        when(move || show_password.get(), move || {
+            text_field(password).placeholder(res::str::auth_password_placeholder())
+                .focused(password_focused).grow_w().id("password-field")
+                .on_submit(submit_plain.clone()).any()
+        }).otherwise(move || {
+            text_field(password).secure().placeholder(res::str::auth_password_placeholder())
+                .focused(password_focused).grow_w().id("password-field")
+                .on_submit(submit_secure.clone()).any()
+        })
+    };
 
     let input_card = row((
         vector(res::vectors::lock)
@@ -976,13 +704,16 @@ fn password_step_view(
 
     let btn_title = move || {
         if state.loading.get() {
-            "Вход в систему…"
+            res::str::auth_signing_in().format()
         } else {
-            "Войти"
+            res::str::auth_sign_in().format()
         }
     };
 
     let bottom_section = column((
+        label(res::str::auth_step_password()).font(Font::Caption).secondary(),
+        label(move || username.get()).font(Font::Subheadline).bold()
+            .padding(Insets { top: 4.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
         content,
         err_display,
         auth_action_button(btn_title, on_submit),
@@ -1016,6 +747,7 @@ fn password_step_view(
     let piece = {
         use day_uikit::UiKitExt;
         piece.uikit(move |view, _class, _mtm| {
+            crate::shared::ios_nav::ios_impl::bind_auth_page_title(view, || res::str::auth_password_title().format());
             view.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
             if let Some(w) = view.window() {
                 w.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
@@ -1035,6 +767,7 @@ struct AuthState {
     password_focused: Signal<bool>,
     remember: Signal<bool>,
     error_local: Signal<String>,
+    settings_revision: Signal<u64>,
 }
 
 fn get_auth_state() -> AuthState {
@@ -1054,6 +787,7 @@ fn get_auth_state() -> AuthState {
                 password_focused: Signal::global(false),
                 remember: Signal::global(true),
                 error_local: Signal::global(String::new()),
+                settings_revision: Signal::global(0),
             };
             *b = Some(s);
             s
@@ -1074,13 +808,6 @@ fn focus_auth_route_after(route: AuthRoute, delay: u32) {
             AuthRoute::Password => auth.password_focused.set(true),
         }
     });
-}
-
-#[cfg(target_os = "ios")]
-fn restore_auth_focus_after_sheet() {
-    if let Some(route) = get_auth_state().path.get_untracked().last().copied() {
-        focus_auth_route_after(route, 350);
-    }
 }
 
 fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
@@ -1152,7 +879,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
 
     let stack = nav_stack(path, root)
         .title("ESchool")
-        .toolbar(|| auth_toolbar("intro"))
         .destination(move |route: &AuthRoute| {
             match route {
                 AuthRoute::Login => username_step_view(
@@ -1164,7 +890,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                     state,
                     proceed_username_sub.clone(),
                 )
-                .toolbar(|| auth_toolbar("username"))
                 .any(),
                 AuthRoute::Password => password_step_view(
                     username,
@@ -1174,7 +899,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                     state,
                     do_login_sub.clone(),
                 )
-                .toolbar(|| auth_toolbar("password"))
                 .any(),
             }
         })
@@ -1256,6 +980,7 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                     .secondary(),
                 text_field(new_password)
                     .secure()
+                    .tweak(crate::shared::autofill::new_password)
                     .grow_w()
                     .log_pos("Setup:NewPasswordField")
                     .on_submit(move || {
@@ -1282,6 +1007,7 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                     .secondary(),
                 text_field(confirm_password)
                     .secure()
+                    .tweak(crate::shared::autofill::new_password)
                     .focused(confirm_focused)
                     .grow_w()
                     .log_pos("Setup:ConfirmPasswordField")
@@ -1469,6 +1195,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         .secondary(),
                     text_field(old_password)
                         .secure()
+                        .tweak(crate::shared::autofill::current_password)
                         .grow_w()
                         .log_pos("ChangePwd:OldPasswordField"),
                 ))
@@ -1492,6 +1219,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         .secondary(),
                     text_field(new_password)
                         .secure()
+                    .tweak(crate::shared::autofill::new_password)
                         .grow_w()
                         .log_pos("ChangePwd:NewPasswordField")
                         .on_submit(move || {
@@ -1518,6 +1246,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         .secondary(),
                     text_field(confirm_password)
                         .secure()
+                    .tweak(crate::shared::autofill::new_password)
                         .focused(confirm_focused)
                         .grow_w()
                         .log_pos("ChangePwd:ConfirmPasswordField"),
