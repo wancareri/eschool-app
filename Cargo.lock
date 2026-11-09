@@ -578,6 +578,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "day-piece-lottie"
+version = "0.4.2"
+source = "git+https://github.com/daybrite/day-piece-lottie.git?rev=eccc4852d441edc8c89288cda70a7839769803fe#eccc4852d441edc8c89288cda70a7839769803fe"
+dependencies = [
+ "day-android",
+ "day-core",
+ "day-pieces",
+ "day-reactive",
+ "day-spec",
+ "day-uikit",
+ "linkme",
+ "log",
+ "objc2",
+ "objc2-foundation",
+ "objc2-ui-kit",
+ "serde_json",
+]
+
+[[package]]
 name = "day-piece-pullrefresh"
 version = "0.4.3"
 source = "git+https://github.com/wancareri/day.git#1ba9c51bbdb55c79979b840d7d015d9849465fe4"
@@ -854,6 +873,7 @@ dependencies = [
  "day-part-clipboard",
  "day-piece-colorpicker",
  "day-piece-datetime",
+ "day-piece-lottie",
  "day-piece-pullrefresh",
  "day-piece-rating",
  "day-piece-settings",

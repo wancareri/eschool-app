@@ -109,14 +109,7 @@ pub fn render() -> impl Piece {
     let rd = restore_done.clone();
     let piece = zstack((
         scroll(column((
-            column((
-                label(move || res::str::settings_title().format())
-                    .font(Font::LargeTitle)
-                    .bold(),
-                label("Настройки").font(Font::Subheadline).secondary(),
-            ))
-            .grow_w()
-            .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 }),
+
 
             picker(
                 vec![
@@ -183,21 +176,6 @@ pub fn render() -> impl Piece {
     .align(Alignment::TopLeading)
     .grow();
 
-    #[cfg(target_os = "ios")]
-    let piece = {
-        use day_uikit::UiKitExt;
-        piece.uikit(move |view, _class, _mtm| {
-            let ptr = objc2::rc::Retained::as_ptr(view) as usize;
-            struct SendPtr(usize);
-            unsafe impl Send for SendPtr {}
-            let sp = SendPtr(ptr);
-            dispatch2::DispatchQueue::main().exec_async(move || {
-                let state = AppState::ambient();
-                let v = unsafe { &*(sp.0 as *const objc2_ui_kit::UIView) };
-                crate::widgets::conn_status::setup_status_nav_bar(v, state);
-            });
-        })
-    };
 
     piece
 }
@@ -378,10 +356,10 @@ fn pin_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
-fn biometric_section(_state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
+fn biometric_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
     let available = biometric::is_available();
     let biometric_on = Signal::new(biometric::is_enabled());
-    let show_alert = Signal::new(false);
+    let notices = crate::widgets::notice::presenter(state);
 
     // When PIN is disabled, automatically turn biometric off
     day::reactive::watch(
@@ -401,10 +379,14 @@ fn biometric_section(_state: AppState, pin_enabled: Signal<bool>) -> impl Piece 
             if old.is_some() {
                 if pin::is_enabled() {
                     biometric::set_enabled(*val);
-                } else {
+                } else if *val {
                     // PIN not enabled — revert and show alert
                     biometric_on.set(false);
-                    show_alert.set(true);
+                    notices.show(crate::widgets::notice::Notice {
+                        title: res::str::notice_pin_title().format(),
+                        message: res::str::notice_pin_message().format(),
+                        kind: crate::widgets::notice::NoticeKind::Info,
+                    });
                 }
             }
         },
@@ -439,21 +421,7 @@ fn biometric_section(_state: AppState, pin_enabled: Signal<bool>) -> impl Piece 
                         .color(colors::WARNING),
                 ),
 
-                // Alert when trying to enable biometric without PIN
-                when(
-                    move || show_alert.get(),
-                    move || {
-                        column((
-                            label("Для использования биометрии сначала включите PIN-код")
-                                .font(Font::Caption)
-                                .color(colors::ERROR),
-                            button("Понятно")
-                                .action(move || show_alert.set(false))
-                                .id("bio-alert-ok"),
-                        ))
-                        .spacing(8.0)
-                    },
-                ),
+
             )
         ).title("Безопасность"),
     ))

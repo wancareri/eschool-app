@@ -1,19 +1,9 @@
 #[cfg(target_os = "ios")]
 pub mod ios_impl {
-    use crate::app::{AppState, ConnStatus};
-    use crate::shared::nslog::nslog;
-    use day::prelude::Ambient;
-    use objc2::{MainThreadMarker, MainThreadOnly};
+    use objc2::MainThreadMarker;
     use objc2::rc::Retained;
-    use objc2_foundation::{NSString, NSArray};
-    use objc2_ui_kit::{
-        UIViewController, UINavigationController, UITabBarController,
-        UIBarButtonItem, UIBarButtonItemGroup, UIButton, UIColor, UIImage,
-        UIControlState, UIAction, UIApplication, UIView,
-    };
-    use block2::RcBlock;
-    use core::ptr::NonNull;
-    use std::collections::VecDeque;
+    use objc2_foundation::{NSArray, NSString};
+    use objc2_ui_kit::{UIImage, UIView, UIViewController};
 
     /// Day currently discards icons on Submenu nodes. Supply them at native
     /// menu creation, before UIKit owns the menu. No bar items are injected.
@@ -22,9 +12,13 @@ pub mod ios_impl {
         static INSTALL: Once = Once::new();
         INSTALL.call_once(|| {
             let class = objc2::class!(UIMenu);
-            let Some(method) = class.class_method(objc2::sel!(menuWithTitle:children:)) else { return };
+            let Some(method) = class.class_method(objc2::sel!(menuWithTitle:children:)) else {
+                return;
+            };
             AUTH_MENU_ORIGINAL.store(method.implementation() as *mut (), Ordering::Release);
-            unsafe { method.set_implementation(std::mem::transmute(auth_menu as *const ())); }
+            unsafe {
+                method.set_implementation(std::mem::transmute(auth_menu as *const ()));
+            }
         });
     }
 
@@ -41,110 +35,40 @@ pub mod ios_impl {
         let label = title.to_string();
         // Check both title and contents so unrelated menus pass through.
         let language = matches!(label.as_str(), "Language" | "Язык" | "Мова")
-            && children.firstObject().is_some_and(|child| child.title().to_string() == "RU · Русский");
+            && children
+                .firstObject()
+                .is_some_and(|child| child.title().to_string() == "RU · Русский");
         let appearance = matches!(label.as_str(), "Appearance" | "Оформление" | "Афармленне")
             && children.len() == 3
             && children.iter().all(|child| child.image().is_some());
-        if (language || appearance) && let Some(mtm) = MainThreadMarker::new() {
-            let icon = if language { "globe" } else { "circle.lefthalf.filled" };
+        if (language || appearance)
+            && let Some(mtm) = MainThreadMarker::new()
+        {
+            let icon = if language {
+                "globe"
+            } else {
+                "circle.lefthalf.filled"
+            };
             let image = UIImage::systemImageNamed(&NSString::from_str(icon));
             let menu = UIMenu::menuWithTitle_image_identifier_options_children(
-                title, image.as_deref(), None, UIMenuOptions::empty(), children, mtm,
+                title,
+                image.as_deref(),
+                None,
+                UIMenuOptions::empty(),
+                children,
+                mtm,
             );
             return Retained::autorelease_return(menu);
         }
         let original: unsafe extern "C-unwind" fn(
-            *const objc2::runtime::AnyClass, objc2::runtime::Sel,
-            &NSString, &NSArray<objc2_ui_kit::UIMenuElement>,
-        ) -> *mut UIMenu = unsafe { std::mem::transmute(
-            AUTH_MENU_ORIGINAL.load(std::sync::atomic::Ordering::Acquire),
-        ) };
+            *const objc2::runtime::AnyClass,
+            objc2::runtime::Sel,
+            &NSString,
+            &NSArray<objc2_ui_kit::UIMenuElement>,
+        ) -> *mut UIMenu = unsafe {
+            std::mem::transmute(AUTH_MENU_ORIGINAL.load(std::sync::atomic::Ordering::Acquire))
+        };
         unsafe { original(class, selector, title, children) }
-    }
-
-    /// Find the topmost visible `UINavigationItem` in the current UI hierarchy.
-    pub fn find_active_nav_item(view: Option<&UIView>) -> Option<Retained<objc2_ui_kit::UINavigationItem>> {
-        let mtm = MainThreadMarker::new()?;
-
-        // 1. If view is given, walk its responder chain upwards
-        if let Some(v) = view {
-            let mut next = v.nextResponder();
-            while let Some(responder) = next {
-                if let Some(vc) = responder.downcast_ref::<UIViewController>() {
-                    if let Some(nav) = vc.navigationController() {
-                        nav.setNavigationBarHidden_animated(false, false);
-                        if let Some(top) = nav.topViewController() {
-                            nslog("[ios_nav] Found topViewController via VC.navigationController");
-                            return Some(top.navigationItem());
-                        }
-                    }
-                    nslog("[ios_nav] Found VC via responder chain");
-                    return Some(vc.navigationItem());
-                }
-                next = responder.nextResponder();
-            }
-        }
-
-        // 2. Try window from view or UIApplication.windows()
-        let window = view.and_then(|v| v.window()).or_else(|| {
-            let app = UIApplication::sharedApplication(mtm);
-            #[allow(deprecated)]
-            let wins = app.windows();
-            wins.firstObject()
-        })?;
-
-        // Ensure window has system background color (prevents black screen in light mode)
-        window.setBackgroundColor(Some(&UIColor::systemBackgroundColor()));
-        if let Some(rvc) = window.rootViewController() {
-            if let Some(v) = rvc.view() {
-                v.setBackgroundColor(Some(&UIColor::systemBackgroundColor()));
-            }
-        }
-
-        // 3. Search view controller tree with BFS for instant match
-        let root = window.rootViewController()?;
-        let mut queue = VecDeque::new();
-        queue.push_back(root);
-
-        while let Some(c) = queue.pop_front() {
-            if let Some(nav) = c.downcast_ref::<UINavigationController>() {
-                nav.setNavigationBarHidden_animated(false, false);
-                if let Some(top) = nav.topViewController() {
-                    nslog("[ios_nav] Found topViewController via UINavigationController");
-                    return Some(top.navigationItem());
-                }
-                if let Some(vis) = nav.visibleViewController() {
-                    nslog("[ios_nav] Found visibleViewController via UINavigationController");
-                    return Some(vis.navigationItem());
-                }
-                if let Some(first) = nav.viewControllers().firstObject() {
-                    nslog("[ios_nav] Found firstViewController via UINavigationController");
-                    return Some(first.navigationItem());
-                }
-            }
-            if let Some(tab) = c.downcast_ref::<UITabBarController>() {
-                if let Some(sel) = unsafe { tab.selectedViewController() } {
-                    if let Some(nav) = sel.downcast_ref::<UINavigationController>() {
-                        nav.setNavigationBarHidden_animated(false, false);
-                        if let Some(top) = nav.topViewController() {
-                            nslog("[ios_nav] Found topViewController via UITabBarController");
-                            return Some(top.navigationItem());
-                        }
-                    }
-                    nslog("[ios_nav] Found selectedViewController via UITabBarController");
-                    return Some(sel.navigationItem());
-                }
-            }
-            if let Some(pres) = c.presentedViewController() {
-                queue.push_back(pres);
-            }
-            for ch in c.childViewControllers().iter() {
-                queue.push_back(ch);
-            }
-        }
-
-        nslog("[ios_nav] No UINavigationItem found in hierarchy");
-        None
     }
 
     /// Retitle the existing authentication page when the locale changes. The
@@ -152,114 +76,20 @@ pub mod ios_impl {
     /// behind the current one (its title supplies the native Back label).
     pub fn bind_auth_page_title(view: &UIView, title: fn() -> String) {
         let weak = objc2::rc::Weak::new(view);
-        day::reactive::watch(move || day::locale().get(), move |_, _| {
-            let Some(view) = weak.load() else { return };
-            let mut responder = view.nextResponder();
-            while let Some(current) = responder {
-                if let Some(vc) = current.downcast_ref::<UIViewController>() {
-                    vc.navigationItem().setTitle(Some(&NSString::from_str(&title())));
-                    break;
+        day::reactive::watch(
+            move || day::locale().get(),
+            move |_, _| {
+                let Some(view) = weak.load() else { return };
+                let mut responder = view.nextResponder();
+                while let Some(current) = responder {
+                    if let Some(vc) = current.downcast_ref::<UIViewController>() {
+                        vc.navigationItem()
+                            .setTitle(Some(&NSString::from_str(&title())));
+                        break;
+                    }
+                    responder = current.nextResponder();
                 }
-                responder = current.nextResponder();
-            }
-        });
-    }
-
-    /// Attach bar button items reliably to rightBarButtonItems and trailingItemGroups.
-    pub fn attach_nav_items(
-        nav_item: &objc2_ui_kit::UINavigationItem,
-        items: &[Retained<UIBarButtonItem>],
-    ) {
-        if items.is_empty() { return; }
-
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        let arr = NSArray::from_retained_slice(items);
-
-        // In iOS 16+, day-uikit calls setTrailingItemGroups on page reconciliation,
-        // which causes UIKit to ignore rightBarButtonItems.
-        // By wrapping items into fixedGroupWithRepresentativeItem_items(None, ...),
-        // we satisfy trailingItemGroups without representativeItem crash!
-        let fixed_group = UIBarButtonItemGroup::fixedGroupWithRepresentativeItem_items(None, &arr, mtm);
-        let groups = NSArray::from_retained_slice(&[fixed_group]);
-        nav_item.setTrailingItemGroups(&groups);
-        nav_item.setRightBarButtonItems(Some(&arr));
-        nslog(&format!("[ios_nav] Successfully attached {} bar items (trailing + right)", items.len()));
-    }
-
-    /// Build Network status button
-    pub fn build_status_button(mtm: MainThreadMarker, state: AppState) -> (Retained<UIButton>, Retained<UIBarButtonItem>) {
-        let b = UIButton::new(mtm);
-        b.setFrame(objc2_core_foundation::CGRect {
-            origin: objc2_core_foundation::CGPoint { x: 0.0, y: 0.0 },
-            size: objc2_core_foundation::CGSize { width: 36.0, height: 36.0 },
-        });
-        b.layer().setCornerRadius(18.0);
-        b.layer().setMasksToBounds(true);
-        b.setBackgroundColor(Some(&UIColor::tertiarySystemFillColor()));
-
-        let icon_name = match state.conn_status.get() {
-            ConnStatus::Connecting => "arrow.triangle.2.circlepath",
-            ConnStatus::Offline => "wifi.slash",
-            ConnStatus::Error => "exclamationmark.triangle.fill",
-            _ => "checkmark.circle.fill",
-        };
-        let icon = UIImage::systemImageNamed(&NSString::from_str(icon_name));
-        b.setImage_forState(icon.as_deref(), UIControlState::Normal);
-
-        let tint = match state.conn_status.get() {
-            ConnStatus::Offline => UIColor::systemGrayColor(),
-            ConnStatus::Error => UIColor::systemRedColor(),
-            _ => UIColor::labelColor(),
-        };
-        unsafe {
-            b.setTintColor(Some(&tint));
-        }
-
-        let action_block = RcBlock::new(move |_act: NonNull<UIAction>| {
-            crate::shared::haptics::tick();
-            state.show_network_modal.set(Some("net".into()));
-        });
-        let act = unsafe {
-            UIAction::actionWithTitle_image_identifier_handler(
-                &NSString::from_str("NetworkStatus"),
-                None,
-                None,
-                RcBlock::as_ptr(&action_block),
-                mtm,
-            )
-        };
-        b.addAction_forControlEvents(&act, objc2_ui_kit::UIControlEvents::TouchUpInside);
-
-        let item = UIBarButtonItem::initWithCustomView(UIBarButtonItem::alloc(mtm), &b);
-        item.setWidth(36.0);
-        (b, item)
-    }
-
-    /// Setup Status navigation bar
-    pub fn setup_status_nav_bar(view: Option<&UIView>, state: AppState) {
-        if !state.is_authenticated.get() {
-            return;
-        }
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        let Some(nav_item) = find_active_nav_item(view) else { return };
-
-        let (_b, item) = build_status_button(mtm, state);
-        attach_nav_items(&nav_item, &[item]);
-    }
-
-    /// Schedule retries for status nav bar
-    pub fn schedule_status_nav_bar(view: &UIView) {
-        let ptr = view as *const UIView as usize;
-        struct SendPtr(usize);
-        unsafe impl Send for SendPtr {}
-
-        for delay in [0, 60, 180, 450] {
-            let sp = SendPtr(ptr);
-            day::reactive::on_main_delayed(delay, move || {
-                let v = unsafe { &*(sp.0 as *const UIView) };
-                let st = AppState::ambient();
-                setup_status_nav_bar(Some(v), st);
-            });
-        }
+            },
+        );
     }
 }

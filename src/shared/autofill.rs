@@ -14,8 +14,8 @@ pub mod ios {
         UIEditMenuConfiguration, UIEditMenuInteraction, UIImage, UIReturnKeyType,
         UITextAutocapitalizationType, UITextAutocorrectionType, UITextContentTypeNewPassword,
         UITextContentTypePassword, UITextContentTypeUsername, UITextField, UITextFieldDelegate,
-        UITextFieldViewMode, UITextInput, UITextInputTraits, UITextSmartDashesType,
-        UITextSmartQuotesType, UITextSpellCheckingType, UIView,
+        UITextFieldViewMode, UITextInlinePredictionType, UITextInput, UITextInputTraits,
+        UITextSmartDashesType, UITextSmartQuotesType, UITextSpellCheckingType, UIView,
     };
     use std::cell::RefCell;
 
@@ -60,20 +60,40 @@ pub mod ios {
             }
         }
 
-        field.setAutocapitalizationType(UITextAutocapitalizationType::None);
-        // Day sets No during creation, after setSecureTextEntry. Configure here
-        // instead of globally changing every text field in the application.
-        if field.autocorrectionType() != UITextAutocorrectionType::Yes {
-            field.setAutocorrectionType(UITextAutocorrectionType::Yes);
+        // Credential AutoFill comes from textContentType, not word prediction.
+        // Enabling autocorrection here allowed a language switch to replace
+        // Passwords with dictionary suggestions on the username keyboard.
+        if field.autocapitalizationType() != UITextAutocapitalizationType::None {
+            field.setAutocapitalizationType(UITextAutocapitalizationType::None);
         }
-        field.setSpellCheckingType(UITextSpellCheckingType::No);
-        field.setSmartQuotesType(UITextSmartQuotesType::No);
-        field.setSmartDashesType(UITextSmartDashesType::No);
-        field.setReturnKeyType(match role {
+        if field.autocorrectionType() != UITextAutocorrectionType::No {
+            field.setAutocorrectionType(UITextAutocorrectionType::No);
+        }
+        if field.spellCheckingType() != UITextSpellCheckingType::No {
+            field.setSpellCheckingType(UITextSpellCheckingType::No);
+        }
+        // Inline predictions are a separate setting on iOS 17 and later.
+        // Keep the iOS 16 deployment target: never message an absent selector.
+        if field.respondsToSelector(objc2::sel!(inlinePredictionType))
+            && field.respondsToSelector(objc2::sel!(setInlinePredictionType:))
+            && field.inlinePredictionType() != UITextInlinePredictionType::No
+        {
+            field.setInlinePredictionType(UITextInlinePredictionType::No);
+        }
+        if field.smartQuotesType() != UITextSmartQuotesType::No {
+            field.setSmartQuotesType(UITextSmartQuotesType::No);
+        }
+        if field.smartDashesType() != UITextSmartDashesType::No {
+            field.setSmartDashesType(UITextSmartDashesType::No);
+        }
+        let return_key = match role {
             Role::Username => UIReturnKeyType::Next,
             Role::Password => UIReturnKeyType::Go,
             Role::NewPassword => UIReturnKeyType::Done,
-        });
+        };
+        if field.returnKeyType() != return_key {
+            field.setReturnKeyType(return_key);
+        }
         field.inputAssistantItem().setAllowsHidingShortcuts(false);
     }
 

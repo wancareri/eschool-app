@@ -87,3 +87,20 @@ auth_error_generic_title = Не ўдалося ўвайсці
 auth_error_generic_message = Уведзеныя даныя засталіся ў форме. Паспрабуйце яшчэ раз.
 
 auth_autofill = Аўтазапаўненне
+
+# Shared messages and connection status
+notice_dismiss = Зразумела
+notice_retry = Паўтарыць спробу
+notice_error_title = Не ўдалося выканаць дзеянне
+notice_error_message = Паспрабуйце яшчэ раз. Калі памылка паўтараецца, праверце падключэнне да інтэрнэту.
+notice_success_title = Гатова
+notice_password_updated = Пароль абноўлены. Выкарыстоўвайце новы пароль пры наступным уваходзе.
+notice_pin_title = Спачатку ўключыце PIN-код
+notice_pin_message = Для ўваходу праз Face ID або Touch ID патрэбны наладжаны PIN-код.
+status_connecting_title = Абнаўленне даных
+status_connecting_message = Загружаем даныя электроннага дзённіка.
+status_offline_title = Няма сувязі з серверам
+status_error_title = Памылка падключэння
+status_error_message = Не ўдалося падключыцца да сервера. Захаваныя даныя могуць быць неактуальныя.
+status_ready_title = Даныя абноўлены
+status_ready_message = Падключэнне працуе. Даступныя апошнія загружаныя даныя.

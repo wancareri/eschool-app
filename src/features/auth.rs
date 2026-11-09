@@ -242,6 +242,9 @@ pub fn logout(state: AppState) {
         crate::shared::keyboard::dismiss();
         crate::pages::login::reset_auth_flow();
         state.error_msg.set(String::new());
+        state.notice_route.set(None);
+        state.notice.set(None);
+        state.show_network_modal.set(None);
         state.loading.set(false);
         state.settings_tab.set(0);
         state.remember_me.set(false);

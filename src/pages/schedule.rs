@@ -2,7 +2,6 @@ use crate::app::AppState;
 use crate::features;
 use crate::widgets;
 use crate::shared::utils;
-use crate::res;
 use day::prelude::*;
 use day_piece_pullrefresh::pull_to_refresh;
 use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
@@ -23,16 +22,7 @@ pub fn render() -> impl Piece {
 
     let piece = zstack((
         pull_to_refresh(refreshing, scroll(column((
-                    column((
-                        label(move || res::str::schedule_title().format())
-                            .font(Font::LargeTitle)
-                            .bold(),
-                        label("Уроки дня")
-                            .font(Font::Subheadline)
-                            .secondary(),
-                    ))
-                    .grow_w()
-                    .padding(Insets { top: 8.0, leading: PAD, bottom: 12.0, trailing: PAD }),
+
 
                     when(
                         move || !state.is_authenticated.get(),
@@ -73,21 +63,6 @@ pub fn render() -> impl Piece {
     .align(Alignment::TopLeading)
     .grow();
 
-    #[cfg(target_os = "ios")]
-    let piece = {
-        use day_uikit::UiKitExt;
-        piece.uikit(move |view, _class, _mtm| {
-            let ptr = objc2::rc::Retained::as_ptr(view) as usize;
-            struct SendPtr(usize);
-            unsafe impl Send for SendPtr {}
-            let sp = SendPtr(ptr);
-            dispatch2::DispatchQueue::main().exec_async(move || {
-                let state = AppState::ambient();
-                let v = unsafe { &*(sp.0 as *const objc2_ui_kit::UIView) };
-                crate::widgets::conn_status::setup_status_nav_bar(v, state);
-            });
-        })
-    };
 
     piece
 }

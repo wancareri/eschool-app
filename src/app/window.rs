@@ -185,50 +185,7 @@ fn window_shell(primary: bool) -> impl Piece {
             day::reactive::on_main_delayed(800, move || {
                 crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
             });
-            for delay in [0, 30, 80, 160, 320, 600, 1200] {
-                day::reactive::on_main_delayed(delay, || {
-                    let st = AppState::ambient();
-                    if st.is_authenticated.get() {
-                        crate::shared::ios_nav::ios_impl::setup_status_nav_bar(None, st);
-                    }
-                });
-            }
-            day::reactive::watch(
-                move || (state.is_authenticated.get(), day::locale().get(), day::dark_mode()),
-                move |&(auth, _, _), _| {
-                    for delay in [0, 40, 150, 350] {
-                        day::reactive::on_main_delayed(delay, move || {
-                            let st = AppState::ambient();
-                            if auth {
-                                crate::shared::ios_nav::ios_impl::setup_status_nav_bar(None, st);
-                            }
-                        });
-                    }
-                },
-            );
-            day::reactive::watch(
-                move || state.conn_status.get(),
-                move |_, _| {
-                    day::reactive::on_main_delayed(20, || {
-                        let st = AppState::ambient();
-                        crate::shared::ios_nav::ios_impl::setup_status_nav_bar(None, st);
-                    });
-                },
-            );
-            day::reactive::watch(
-                move || state.current_section.get(),
-                move |_, _| {
-                    day::reactive::on_main_delayed(100, move || {
-                        crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
-                    });
-                    for delay in [0, 60, 180, 450] {
-                        day::reactive::on_main_delayed(delay, || {
-                            let st = AppState::ambient();
-                            crate::shared::ios_nav::ios_impl::setup_status_nav_bar(None, st);
-                        });
-                    }
-                },
-            );
+
         }
 
         build_nav(primary)
@@ -237,6 +194,17 @@ fn window_shell(primary: bool) -> impl Piece {
 
 fn build_nav(primary: bool) -> impl Piece {
     let state = AppState::ambient();
+
+    crate::widgets::notice::bind_error(state, state.error_msg, move |raw| {
+        if !state.is_authenticated.get_untracked() && !state.setup_new_password_active.get_untracked() {
+            pages::login::error_notice(raw)
+        } else {
+            let message = if raw.len() <= 240 && !raw.contains("http") && !raw.contains('{') {
+                raw.to_owned()
+            } else { res::str::notice_error_message().format() };
+            crate::widgets::notice::Notice::error(res::str::notice_error_title().format(), message)
+        }
+    });
 
     // The status sheet is a cover: day never attaches a cover's view to this
     // page (it lives in its own modal VC, its node measures 0×0), so the
@@ -251,13 +219,10 @@ fn build_nav(primary: bool) -> impl Piece {
         crate::widgets::lesson_note::modal(state),
         crate::widgets::lesson_peek::modal(state),
         crate::widgets::bottom_sheet::network_error_sheet(state),
+        crate::widgets::notice::modal(state),
     ))
     .grow()
-    .toolbar(move || {
-        if !state.is_authenticated.get() && !state.pin_lock_active.get() {
-            pages::login::auth_toolbar()
-        } else { Vec::new() }
-    })
+    .toolbar(move || crate::widgets::header::toolbar(state))
 }
 
 fn nav_body(state: AppState, primary: bool) -> impl Piece {
@@ -285,22 +250,22 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
 
 fn diary_tab() -> impl Piece {
     let path = Signal::new(Vec::<String>::new());
-    nav_stack(path, pages::diary::render())
+    crate::widgets::header::page(res::str::diary_title(), path, pages::diary::render())
 }
 
 fn schedule_tab() -> impl Piece {
     let path = Signal::new(Vec::<String>::new());
-    nav_stack(path, pages::schedule::render())
+    crate::widgets::header::page(res::str::schedule_title(), path, pages::schedule::render())
 }
 
 fn teachers_tab() -> impl Piece {
     let path = Signal::new(Vec::<String>::new());
-    nav_stack(path, pages::teachers::render())
+    crate::widgets::header::page(res::str::teachers_title(), path, pages::teachers::render())
 }
 
 fn settings_tab() -> impl Piece {
     let path = Signal::new(Vec::<String>::new());
-    nav_stack(path, pages::settings::render())
+    crate::widgets::header::page(res::str::settings_title(), path, pages::settings::render())
 }
 
 fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
@@ -311,13 +276,7 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
     let sel = nav(section)
         .style(day::prelude::NavStyle::Tabs)
         .background(Color::rgba(0.0, 0.0, 0.0, 0.0))
-        .title(move || {
-            if state.loading.get() {
-                format!("{}  ⏳", res::str::app_title().format())
-            } else {
-                res::str::app_title().format()
-            }
-        })
+        .title(move || crate::widgets::header::section_title(section.get()))
         .item_icon(
             crate::Section::Diary,
             res::str::nav_diary(),

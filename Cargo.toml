@@ -12,8 +12,8 @@ default = ["mock"]
 appkit = ["day/appkit"]
 gtk = ["day/gtk"]
 qt = ["day/qt"]
-uikit = ["day/uikit"]
-mdc = ["day/mdc"]
+uikit = ["day/uikit", "day-piece-lottie/uikit"]
+mdc = ["day/mdc", "day-piece-lottie/mdc"]
 xaml = ["day/xaml"]
 arkui = ["day/arkui"]
 dom = ["day/dom"]
@@ -28,6 +28,8 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 eschool-api = { path = "crates/eschool-api" }
 day = { git = "https://github.com/wancareri/day.git", features = ["model"] }
+# Native Lottie player compatible with the project’s Day 0.4 fork.
+day-piece-lottie = { git = "https://github.com/daybrite/day-piece-lottie.git", rev = "eccc4852d441edc8c89288cda70a7839769803fe" }
 day-piece-datetime = { git = "https://github.com/wancareri/day.git" }
 day-piece-settings = { git = "https://github.com/wancareri/day.git" }
 day-piece-rating = { git = "https://github.com/wancareri/day.git" }
@@ -93,3 +95,12 @@ day-spec = { git = "https://github.com/wancareri/day.git" }
 
 [workspace]
 members = [".", "crates/eschool-api"]
+
+# External Day pieces must share the app’s framework instance and renderers.
+[patch."https://github.com/daybrite/day.git"]
+day-spec = { git = "https://github.com/wancareri/day.git" }
+day-core = { git = "https://github.com/wancareri/day.git" }
+day-pieces = { git = "https://github.com/wancareri/day.git" }
+day-reactive = { git = "https://github.com/wancareri/day.git" }
+day-uikit = { git = "https://github.com/wancareri/day.git" }
+day-android = { git = "https://github.com/wancareri/day.git" }

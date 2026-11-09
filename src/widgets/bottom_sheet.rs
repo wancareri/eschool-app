@@ -52,12 +52,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
 
         let icon_and_title = row((
             status_icon,
-            label(move || match state.conn_status.get() {
-                ConnStatus::Offline => "Нет связи с сервером",
-                ConnStatus::Error => "Ошибка сети",
-                ConnStatus::Connecting => "Обновление данных",
-                ConnStatus::Connected | ConnStatus::Idle => "Обновлено",
-            })
+            label(move || super::conn_status::title(state.conn_status.get()))
             .font(Font::Headline)
             .grow(),
         ))
@@ -70,13 +65,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
             trailing: 10.0,
         });
 
-        let body = label(move || match state.conn_status.get() {
-            ConnStatus::Offline | ConnStatus::Error => {
-                "Не удалось подключиться к серверу. Используются сохранённые данные, они могут быть неактуальны."
-            }
-            ConnStatus::Connecting => "Идёт загрузка данных, подождите немного.",
-            ConnStatus::Connected | ConnStatus::Idle => "Данные обновлены, всё в порядке.",
-        })
+        let body = label(move || super::conn_status::message(state.conn_status.get()))
         .font(Font::Subheadline)
         .secondary()
         .grow()
@@ -101,7 +90,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                         state.conn_status.get(),
                         ConnStatus::Offline | ConnStatus::Error
                     ),
-                    move || button("Повторить попытку")
+                    move || button(res::str::notice_retry())
                         .prominent()
                         .action(move || {
                             let st = s_retry;
@@ -114,7 +103,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                         .any(),
                 ),
 
-                button("Понятно")
+                button(res::str::notice_dismiss())
                     .action(move || close_sheet(s_ok, "ok-button"))
                     .padding(Insets { top: 4.0, leading: 16.0, bottom: 4.0, trailing: 16.0 }),
             ))

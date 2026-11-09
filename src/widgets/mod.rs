@@ -13,3 +13,4 @@ pub mod spinner;
 pub mod lesson_note;
 pub mod lesson_peek;
 pub mod lottie_view;
+pub mod notice;

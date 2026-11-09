@@ -16,8 +16,7 @@ pub fn render() -> impl Piece {
         ),
         when(
             move || !state.is_authenticated.get() && state.setup_new_password_active.get(),
-            move || nav_stack(Signal::new(Vec::<String>::new()), setup_password_form(state, show_logs))
-                .title(res::str::auth_setup_title())
+            move || crate::widgets::header::page(res::str::auth_setup_title(), Signal::new(Vec::<String>::new()), setup_password_form(state, show_logs))
                 .grow()
                 .any(),
         ),
@@ -213,27 +212,9 @@ fn parse_auth_error(raw: &str) -> AuthErrorInfo {
 }
 
 
-fn auth_error_card(local: Signal<String>, state: AppState) -> impl Piece {
-    let info = move || {
-        let local = local.get();
-        let raw = if local.is_empty() { state.error_msg.get() } else { local };
-        parse_auth_error(&raw)
-    };
-    when(
-        move || !local.get().is_empty() || !state.error_msg.get().is_empty(),
-        move || column((
-            label(move || info().title.to_string()).font(Font::Subheadline).bold()
-                .color(colors::ERROR),
-            label(move || info().message).font(Font::Subheadline).secondary(),
-        ))
-        .spacing(4.0)
-        .padding(14.0)
-        .grow_w()
-        .background(colors::ERROR.with_alpha(0.08))
-        .glass_radius(14.0)
-        .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-        .any(),
-    )
+pub fn error_notice(raw: &str) -> crate::widgets::notice::Notice {
+    let error = parse_auth_error(raw);
+    crate::widgets::notice::Notice::error(error.title, error.message)
 }
 
 
@@ -365,15 +346,7 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
     #[cfg(target_os = "ios")]
     let piece = {
         use day_uikit::UiKitExt;
-        piece.uikit(move |view, _class, mtm| {
-            let weak_view = dispatch2::MainThreadBound::new(objc2::rc::Weak::new(&**view), mtm);
-            let ticket = crate::shared::session::ticket();
-            dispatch2::DispatchQueue::main().exec_async(move || {
-                let Some(mtm) = objc2::MainThreadMarker::new() else { return };
-                if ticket.is_current() && weak_view.get(mtm).load().is_some_and(|v| v.window().is_some()) {
-                    crate::widgets::lottie_view::prepare_password_sticker();
-                }
-            });
+        piece.uikit(move |view, _class, _mtm| {
             view.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
             if let Some(w) = view.window() {
                 w.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
@@ -389,7 +362,6 @@ fn username_step_view(
     password: Signal<String>,
     remember: Signal<bool>,
     username_focused: Signal<bool>,
-    error_local: Signal<String>,
     state: AppState,
     on_submit: impl Fn() + Clone + 'static,
 ) -> impl Piece {
@@ -491,13 +463,11 @@ fn username_step_view(
         .grow_w(),
     ));
 
-    let err_display = auth_error_card(error_local, state);
 
     let bottom_section = column((
         label(res::str::auth_step_username()).font(Font::Caption).secondary()
             .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
         content,
-        err_display,
         auth_action_button(res::str::auth_continue(), on_submit),
         spacer().height(8.0),
     ));
@@ -544,7 +514,6 @@ fn password_step_view(
     username: Signal<String>,
     password: Signal<String>,
     password_focused: Signal<bool>,
-    error_local: Signal<String>,
     state: AppState,
     on_submit: impl Fn() + Clone + 'static,
 ) -> impl Piece {
@@ -616,7 +585,7 @@ fn password_step_view(
         vector(res::vectors::lock)
             .frame(20.0, 20.0)
             .tint(move || {
-                if password_focused.get() || !password.get().is_empty() {
+                if password_focused.get() {
                     Color::hex(state.accent_color.get())
                 } else {
                     Color::hex(0x8E8E93)
@@ -651,7 +620,6 @@ fn password_step_view(
             .grow_w(),
     ));
 
-    let err_display = auth_error_card(error_local, state);
 
     let btn_title = move || {
         if state.loading.get() {
@@ -666,7 +634,6 @@ fn password_step_view(
         label(move || username.get()).font(Font::Subheadline).bold()
             .padding(Insets { top: 4.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
         content,
-        err_display,
         auth_action_button(btn_title, on_submit),
         spacer().height(8.0),
     ));
@@ -799,6 +766,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
     let password_focused = auth.password_focused;
     let remember = auth.remember;
     let error_local = auth.error_local;
+    crate::widgets::notice::bind_error(state, error_local, error_notice);
 
     let root = intro_view({
         let path = path;
@@ -859,8 +827,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
     let proceed_username_sub = proceed_username.clone();
     let do_login_sub = do_login.clone();
 
-    let stack = nav_stack(path, root)
-        .title("ESchool")
+    let stack = crate::widgets::header::page("ESchool", path, root)
         .destination(move |route: &AuthRoute| {
             match route {
                 AuthRoute::Login => username_step_view(
@@ -868,7 +835,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                     password,
                     remember,
                     username_focused,
-                    error_local,
                     state,
                     proceed_username_sub.clone(),
                 )
@@ -877,7 +843,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                     username,
                     password,
                     password_focused,
-                    error_local,
                     state,
                     do_login_sub.clone(),
                 )
@@ -922,6 +887,9 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
     let error_local = Signal::new(String::new());
     let remember = Signal::new(true);
     let kb_h = crate::shared::keyboard::keyboard_height_signal();
+    crate::widgets::notice::bind_error(state, error_local, |message| {
+        crate::widgets::notice::Notice::error(res::str::auth_setup_title().format(), message)
+    });
 
     column((
         debug_log_button(show_logs),
@@ -932,23 +900,9 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                     .font(Font::Title)
                     .bold()
                     .align(TextAlign::Center),
-                label(move || {
-                    let local = error_local.get();
-                    let state_err = state.error_msg.get();
-                    if !local.is_empty() {
-                        local
-                    } else if !state_err.is_empty() {
-                        let err = parse_auth_error(&state_err);
-                        err.message
-                    } else {
-                        "Вы вошли по временному коду. Придумайте надёжный постоянный пароль для кабинета родителя (12–15 символов, буквы, цифры и спецсимволы)".to_string()
-                    }
-                })
+                label("Вы вошли по временному коду. Придумайте надёжный постоянный пароль для кабинета родителя (12–15 символов, буквы, цифры и спецсимволы)")
                 .font(Font::Subheadline)
-                .color(move || {
-                    let has_err = !error_local.get().is_empty() || !state.error_msg.get().is_empty();
-                    if has_err { colors::ERROR } else { colors::SECONDARY }
-                })
+                .secondary()
                 .align(TextAlign::Center)
                 .padding(Insets { top: 6.0, leading: 24.0, bottom: 16.0, trailing: 24.0 }),
             ))
@@ -1110,7 +1064,10 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
     let confirm_password = Signal::new(String::new());
     let confirm_focused = Signal::new(false);
     let error_local = Signal::new(String::new());
-    let success_msg = Signal::new(String::new());
+    let notices = crate::widgets::notice::presenter(state);
+    crate::widgets::notice::bind_error(state, error_local, |message| {
+        crate::widgets::notice::Notice::error(res::str::notice_error_title().format(), message)
+    });
     let kb_h = crate::shared::keyboard::keyboard_height_signal();
 
     column((
@@ -1130,45 +1087,6 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         .padding(Insets { top: 6.0, leading: 24.0, bottom: 16.0, trailing: 24.0 }),
                 ))
                 .grow_w(),
-
-                when(
-                    move || !success_msg.get().is_empty(),
-                    move || {
-                        label(move || success_msg.get())
-                            .font(Font::Callout)
-                            .color(Color::hex(0x34C759))
-                            .align(TextAlign::Center)
-                            .padding(Insets { top: 8.0, leading: 14.0, bottom: 8.0, trailing: 14.0 })
-                            .background(Color::hex(0x34C759).with_alpha(0.12))
-                            .corner_radius(12.0)
-                            .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-                            .grow_w()
-                            .any()
-                    },
-                ),
-
-                when(
-                    move || {
-                        let local = error_local.get();
-                        let state_err = state.error_msg.get();
-                        !local.is_empty() || !state_err.is_empty()
-                    },
-                    move || {
-                        let local = error_local.get();
-                        let state_err = state.error_msg.get();
-                        let msg = if !local.is_empty() { local } else { state_err };
-                        label(msg)
-                            .font(Font::Callout)
-                            .color(colors::ERROR)
-                            .align(TextAlign::Center)
-                            .padding(Insets { top: 8.0, leading: 14.0, bottom: 8.0, trailing: 14.0 })
-                            .background(colors::ERROR.with_alpha(0.12))
-                            .corner_radius(12.0)
-                            .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-                            .grow_w()
-                            .any()
-                    },
-                ),
 
                 column((
                     label("ТЕКУЩИЙ ПАРОЛЬ")
@@ -1289,14 +1207,17 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                     let op_c = op.clone();
                     let np_c = np.clone();
                     let set_open = open.setter();
-                    let set_success = success_msg.setter();
                     features::auth::change_logged_in_parent_password(
                         state,
                         &op_c,
                         &np_c,
                         move || {
                             crate::shared::haptics::pop();
-                            set_success.set("Пароль успешно обновлён!".into());
+                            notices.show(crate::widgets::notice::Notice {
+                                title: res::str::notice_success_title().format(),
+                                message: res::str::notice_password_updated().format(),
+                                kind: crate::widgets::notice::NoticeKind::Success,
+                            });
                             set_open.set(false);
                         },
                     );

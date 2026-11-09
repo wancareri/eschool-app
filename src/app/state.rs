@@ -100,18 +100,8 @@ pub struct AppState {
     /// `Some` presents the network-status sheet as a fullscreen cover (the
     /// value is the cover's route key; the cover is unrouted).
     pub show_network_modal: Signal<Option<String>>,
-    // Shared across the four conn_status island instances so a change made on
-    // one tab is visible on the others instead of four diverging local copies.
-    pub island_expanded: Signal<bool>,
-    /// The island label's opacity: fades out before the capsule collapses.
-    pub island_text_opacity: Signal<f64>,
-    /// Visual mirror of `conn_status` for the island chrome (capsule tint, icon):
-    /// swapped inside `with_animation` on a status change so the color eases
-    /// instead of snapping with the raw write.
-    pub island_state: Signal<ConnStatus>,
-    /// Label copy of the status: swapped only while the text is invisible, so
-    /// the wording never changes mid-fade.
-    pub island_label: Signal<ConnStatus>,
+    pub notice: Signal<Option<crate::widgets::notice::Notice>>,
+    pub notice_route: Signal<Option<String>>,
 
     // ── lesson notes & peek ────────────────────────────────────────────────
     pub lesson_notes: Signal<std::collections::HashMap<String, String>>,
@@ -195,10 +185,8 @@ impl Ambient for AppState {
             teachers_loading: Signal::new(false),
             conn_status: Signal::new(ConnStatus::Idle),
             show_network_modal: Signal::new(None),
-            island_expanded: Signal::new(false),
-            island_text_opacity: Signal::new(1.0),
-            island_state: Signal::new(ConnStatus::Idle),
-            island_label: Signal::new(ConnStatus::Idle),
+            notice: Signal::new(None),
+            notice_route: Signal::new(None),
             log_version: Signal::new(0u64),
             lesson_notes: Signal::new(crate::widgets::lesson_note::load_notes_map()),
             lesson_attachments: Signal::new(std::collections::HashMap::new()),

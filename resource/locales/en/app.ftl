@@ -96,3 +96,20 @@ auth_error_generic_title = Couldn’t sign in
 auth_error_generic_message = Your details are still here. Please try again.
 
 auth_autofill = AutoFill
+
+# Shared messages and connection status
+notice_dismiss = Got it
+notice_retry = Try again
+notice_error_title = Couldn’t complete the action
+notice_error_message = Please try again. If the problem continues, check your internet connection.
+notice_success_title = Done
+notice_password_updated = Your password has been updated. Use the new password the next time you sign in.
+notice_pin_title = Set up a PIN first
+notice_pin_message = Set up a PIN before enabling Face ID or Touch ID sign-in.
+status_connecting_title = Updating data
+status_connecting_message = Loading data from the school diary.
+status_offline_title = Server unreachable
+status_error_title = Connection error
+status_error_message = Couldn’t connect to the server. Saved data may be out of date.
+status_ready_title = Data updated
+status_ready_message = Connected. The latest downloaded data is available.

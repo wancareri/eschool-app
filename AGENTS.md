@@ -9,6 +9,7 @@
 - **Application:** `eschool-app` (ESchool / Электронный дневник) — cross-platform school diary app.
 - **Framework:** [Day](https://daybrite.dev) (`wancareri/day` git fork) — Rust reactive UI framework with native platform widgets.
 - **Primary Target:** `ios-uikit` (`aarch64-apple-ios`).
+- **Stickers:** `day-piece-lottie` (Day 0.4-compatible revision), native LottieAnimationView on iOS and Android. JSON files live under `resource/assets/animations/` so Day bundles them.
 - **Language / Tooling:**
   - Rust 2024 edition
   - Objective-C 2.0 bindings: `objc2`, `objc2_ui_kit`, `objc2_foundation`, `block2`
@@ -123,7 +124,7 @@ eschool-app/
 ### D. iOS AutoFill & Passwords on Russian / Multilingual Keyboards
 - **Do NOT use overlapping invisible companion fields (`companion_pw` / `opacity(0.02)`):**
   Overlapping two text fields at the same location confuses iOS AutoFill and accessibility heuristics. Keep a single interactive `text_field` per step. Explicit user exception in build 66: a separate one-point password capture field below the username card is mounted only while the username step is active. It uses clear text rather than opacity, cannot receive touches or accessibility focus, and is removed before the visible password field is used. Read native values before advancing; do not assume every iOS credential provider will fill the capture field.
-- **AutoFill traits are configured AFTER Day realizes a field:** `shared/autofill.rs` configures only authentication fields. Day sets `autocorrectionType: No` after `setSecureTextEntry`, so the former global swizzles were overwritten. Register the explicit username/password/newPassword role; on input-mode changes restore traits for the current field without resigning focus. The password visibility button changes masking on the same UITextField and keeps its `.password` role. Use UIKit’s `UITextContentTypeUsername`, `UITextContentTypePassword`, and `UITextContentTypeNewPassword` constants. The native key button opens the standard edit menu as a fallback when QuickType suggestions collapse.
+- **AutoFill traits are configured AFTER Day realizes a field:** `shared/autofill.rs` configures only authentication fields. Register the explicit username/password/newPassword role; on input-mode changes restore traits for the current field without resigning focus. Keep `autocorrectionType = No`, `spellCheckingType = No`, and (where available, guarded by selector availability) `inlinePredictionType = No`. Password AutoFill is enabled by the credential content type, not by dictionary predictions. Do not force `autocorrectionType = Yes`: that let language changes replace the Passwords entry with word suggestions. Avoid reassigning unchanged traits during input-mode changes. The password visibility button changes masking on the same UITextField and keeps its `.password` role. Use UIKit’s `UITextContentTypeUsername`, `UITextContentTypePassword`, and `UITextContentTypeNewPassword` constants. The native key button opens the standard edit menu as a fallback when QuickType suggestions collapse.
 - **System save prompts:** setting text traits improves AutoFill heuristics; it does not establish ownership of a third-party website. Guaranteed domain credential sharing/saving requires associated domains, matching signing entitlements and the website's AASA configuration. Do not promise that an unsigned/sideloaded build can force Apple Passwords to save credentials for e-schools.by.
 - Do not call `reloadInputViews` on input-mode changes: it can interrupt the active Password AutoFill session. Preserve the existing content type when it already matches.
 - **Locking Assistant Bar:**
@@ -150,3 +151,21 @@ eschool-app/
 - **Build 67:** Central `reset_auth_flow` called by every logout path clears drafts, focus, error and auth navigation; logout also clears settings selection/loading. Successful login removes filled fields before the deferred draft reset to preserve UIKit save heuristics. Password is seeded into its native field before focus, filled-field styling stays stable during AutoFill, and normal username-to-password focus has no 350 ms delay (the welcome push still does). A scoped return-key delegate avoids the default resign/reopen cycle. A native key button opens the system text-edit menu independently of QuickType. The background-tap dismisser ignores keyboard windows, keyboard bounds and presented modals. Language labels use `EN · English` order. System AutoFill/save behavior still requires device verification and does not bypass domain association.
 
 - **Build 68:** Authentication autofocus follows the actual native transition completion instead of timers, with guarded responder handoff after layout. A visible keyboard stays in place during secure-field activation. The password sticker WebView is preloaded while the welcome screen is idle, consumed once at mount, and never reparented from an active page. Sticker WebViews/configurations now release their creation retain correctly. Validate keyboard direction and frame pacing on a physical iPhone.
+
+### Native Lottie migration (build 69)
+- `src/widgets/lottie_view.rs` wraps `day_piece_lottie::lottie` for the three authentication stickers. Do not restore the app-owned WebView/HTML/JavaScript player or WebView prewarming.
+- Native JSON assets are in `resource/assets/animations/`. Pass `animations/duck_intro`, `animations/duck_login`, or `animations/duck_password` to the player; it appends `.json` and resolves the bundled asset.
+- The component is pinned to its Day 0.4-compatible revision. Its canonical Day dependencies are redirected to the existing `wancareri/day` source through `[patch]` so the app and the component use one framework instance.
+- Native iOS SwiftPM Lottie dependencies/shims are contributed by the piece’s Cargo metadata; no duplicate app-specific Swift bridge is needed.
+
+### Keyboard word-prediction correction (build 69)
+- Removed the app’s forced `autocorrectionType = Yes` from authentication field setup and input-mode restoration. All credential roles now disable autocorrection/spell checking and, on supported iOS versions, inline predictions while keeping their explicit credential content type.
+- This addresses the reported switch from Passwords to word corrections on iOS 27. Actual Passwords visibility still needs on-device verification.
+
+### Shared page chrome and in-app notices (build 69)
+- Use `widgets::header::page(title, path, content)` for page navigation and native titles. Main page headings belong in the navbar; do not repeat them in scroll content.
+- `build_nav` owns the one window-level toolbar via `widgets::header::toolbar`. It switches between the login options menu and the authenticated connection-status bar item. Do not inject status buttons from individual pages or timers.
+- `widgets::conn_status::toolbar` creates a native toolbar button; UIKit provides its navigation-bar glass treatment. It opens the existing `bottom_sheet::network_error_sheet`, built on `modal_window`.
+- `widgets::notice` is the shared message UI using the same modal shell. `bind_error` consumes an error source once and presents it, so repeating the same failed action can show the error again. `presenter(state)` exposes Send-safe setters for async success callbacks.
+- Global app errors, login validation, password creation/change and biometric setup notices use this shell. Network-status text and shared actions are localized in RU/BE/EN. PIN keypad validation remains part of the PIN form.
+- Logout closes notice/network routes and clears their payload. The user subsequently requested publishing these accumulated changes to GitHub as build 69.

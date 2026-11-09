@@ -53,7 +53,12 @@ fn switching_identity_and_logout_reject_queued_replies_and_clear_state() {
     day::reactive::install_main_poster(|f| QUEUE.lock().unwrap().push_back(f));
     let (mock, _) = day_mock::MockToolkit::new();
     day_core::launch_with(mock, day_spec::WindowOptions::default(), || {
-        AppState::scoped(|_| spacer()).any()
+        AppState::scoped(|state| {
+            dayapp::widgets::notice::bind_error(state, state.error_msg, |message| {
+                dayapp::widgets::notice::Notice::error("Connection", message)
+            });
+            spacer()
+        }).any()
     });
     deliver();
     let state = AppState::get_main().unwrap();
@@ -101,6 +106,23 @@ fn switching_identity_and_logout_reject_queued_replies_and_clear_state() {
     secure::save("auth.account_id", "another-account");
     assert!(cache::load("user_full_name").is_none());
 
+    // A dismissed error can be shown again when the same action fails twice.
+    state.error_msg.set("Connection failed".into());
+    deliver();
+    assert!(state.error_msg.get().is_empty());
+    assert_eq!(state.notice_route.get().as_deref(), Some("notice"));
+    assert_eq!(state.notice.get().unwrap().message, "Connection failed");
+    state.notice_route.set(None);
+    deliver();
+    state.error_msg.set("Connection failed".into());
+    deliver();
+    assert_eq!(state.notice_route.get().as_deref(), Some("notice"));
+    assert_eq!(state.notice.get().unwrap().message, "Connection failed");
+    // An old queued presentation must not reopen after logout.
+    dayapp::widgets::notice::presenter(state).show(
+        dayapp::widgets::notice::Notice::error("Old account", "Queued message"),
+    );
+
     secure::save("auth.account_id", "test-parent");
     let old = session::ticket();
     old.publish(|state| {
@@ -118,6 +140,9 @@ fn switching_identity_and_logout_reject_queued_replies_and_clear_state() {
     assert!(!state.loading.get());
     assert!(state.error_msg.get().is_empty());
     assert!(!state.is_authenticated.get());
+    assert!(state.notice_route.get().is_none());
+    assert!(state.notice.get().is_none());
+    assert!(state.show_network_modal.get().is_none());
     assert!(state.full_name.get().is_empty());
     assert!(state.week_cache.get().is_empty());
     assert!(state.lesson_notes.get().is_empty());

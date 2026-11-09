@@ -1,14 +1,32 @@
+//! Shared native page chrome. One window toolbar owns all trailing commands.
+use crate::app::{AppState, Section};
+use crate::res;
 use day::prelude::*;
 
-pub fn render(title: &str, subtitle: &str) -> impl Piece {
-    let t = title.to_string();
-    let s = subtitle.to_string();
-    column((
-        label(t.clone())
-            .font(Font::LargeTitle),
-        label(s.clone())
-            .font(Font::Subheadline).secondary(),
-    ))
-    .spacing(6.0)
-    .padding(Insets { top: 16.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
+pub fn page<R: Route, M>(
+    title: impl IntoText<M>,
+    path: Signal<Vec<R>>,
+    content: impl Piece,
+) -> NavStack<Signal<Vec<R>>, R> {
+    nav_stack(path, content).title(title)
+}
+
+pub fn section_title(section: Section) -> String {
+    match section {
+        Section::Diary => res::str::diary_title().format(),
+        Section::Schedule => res::str::schedule_title().format(),
+        Section::Teachers => res::str::teachers_title().format(),
+        Section::Settings => res::str::settings_title().format(),
+        Section::Login => res::str::auth_username_title().format(),
+    }
+}
+
+pub fn toolbar(state: AppState) -> Vec<ToolbarEntry> {
+    if state.pin_lock_active.get() || state.pin_setup_active.get() {
+        Vec::new()
+    } else if state.is_authenticated.get() {
+        super::conn_status::toolbar(state)
+    } else {
+        crate::pages::login::auth_toolbar()
+    }
 }
