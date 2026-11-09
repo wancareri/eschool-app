@@ -160,6 +160,11 @@ fn profile_view(state: AppState) -> impl Piece {
                         button("Выйти")
                             .action(move || {
                                 crate::shared::haptics::pop();
+                                let auth = get_auth_state();
+                                auth.path.set(Vec::new());
+                                auth.username.set(String::new());
+                                auth.password.set(String::new());
+                                auth.error_local.set(String::new());
                                 features::auth::logout(state);
                             }),
                     )
@@ -649,13 +654,24 @@ fn username_step_view(
         })
     };
 
-    // Companion password field: enables iOS AutoFill to associate username + password,
-    // keeping the "Passwords" key icon visible across all keyboard languages (EN, RU, etc.)
-    // and populating password simultaneously when user picks a credential!
+    // Full-size companion password field: positioned behind input_field in a zstack.
+    // iOS AutoFill requires standard dimensions (>= 100x30) to recognize it as a valid form field
+    // on all keyboard languages (RU, BE, EN), keeping "Passwords" / "Пароли" permanently visible!
     let companion_pw = text_field(password)
         .secure()
-        .frame(1.0, 1.0)
+        .placeholder("Пароль")
+        .grow_w()
         .opacity(0.01);
+
+    #[cfg(target_os = "ios")]
+    let companion_pw = {
+        use day_uikit::UiKitExt;
+        companion_pw.uikit(|tf, _class, _mtm| {
+            tf.setUserInteractionEnabled(false);
+            let pwd = objc2_foundation::NSString::from_str("password");
+            let _: () = unsafe { objc2::msg_send![&**tf, setTextContentType: &*pwd] };
+        })
+    };
 
     let on_sub = on_submit.clone();
     let input_field = text_field(username)
@@ -664,6 +680,15 @@ fn username_step_view(
         .grow_w()
         .log_pos("Auth:UsernameField")
         .on_submit(on_sub);
+
+    #[cfg(target_os = "ios")]
+    let input_field = {
+        use day_uikit::UiKitExt;
+        input_field.uikit(|tf, _class, _mtm| {
+            let usr = objc2_foundation::NSString::from_str("username");
+            let _: () = unsafe { objc2::msg_send![&**tf, setTextContentType: &*usr] };
+        })
+    };
 
     let clear_btn = when(
         move || !username.get().is_empty(),
@@ -694,6 +719,12 @@ fn username_step_view(
         },
     );
 
+    let field_stack = zstack((
+        companion_pw,
+        input_field,
+    ))
+    .grow();
+
     let input_card = row((
         vector(res::vectors::tab_login)
             .frame(20.0, 20.0)
@@ -705,8 +736,7 @@ fn username_step_view(
                 }
             }),
         spacer().width(12.0),
-        input_field,
-        companion_pw,
+        field_stack,
         clear_btn,
     ))
     .align(VAlign::Center)
@@ -826,6 +856,7 @@ fn username_step_view(
 }
 
 fn password_step_view(
+    username: Signal<String>,
     password: Signal<String>,
     password_focused: Signal<bool>,
     error_local: Signal<String>,
@@ -868,6 +899,75 @@ fn password_step_view(
     let on_sub_plain = on_submit.clone();
     let on_sub_sec = on_submit.clone();
 
+    let companion_user = text_field(username)
+        .placeholder("Логин")
+        .grow_w()
+        .opacity(0.01);
+
+    #[cfg(target_os = "ios")]
+    let companion_user = {
+        use day_uikit::UiKitExt;
+        companion_user.uikit(|tf, _class, _mtm| {
+            tf.setUserInteractionEnabled(false);
+            let usr = objc2_foundation::NSString::from_str("username");
+            let _: () = unsafe { objc2::msg_send![&**tf, setTextContentType: &*usr] };
+        })
+    };
+
+    let pw_field = when(
+        move || show_password.get(),
+        {
+            let on_sub = on_sub_plain.clone();
+            move || {
+                let f = text_field(password)
+                    .placeholder("Пароль")
+                    .focused(password_focused)
+                    .grow_w()
+                    .id("password-field-plain")
+                    .log_pos("Auth:PasswordField")
+                    .on_submit(on_sub.clone());
+                #[cfg(target_os = "ios")]
+                let f = {
+                    use day_uikit::UiKitExt;
+                    f.uikit(|tf, _class, _mtm| {
+                        let pwd = objc2_foundation::NSString::from_str("password");
+                        let _: () = unsafe { objc2::msg_send![&**tf, setTextContentType: &*pwd] };
+                    })
+                };
+                f.any()
+            }
+        },
+    )
+    .otherwise({
+        let on_sub = on_sub_sec.clone();
+        move || {
+            let f = text_field(password)
+                .secure()
+                .placeholder("Пароль")
+                .focused(password_focused)
+                .grow_w()
+                .id("password-field")
+                .log_pos("Auth:PasswordField")
+                .on_submit(on_sub.clone());
+            #[cfg(target_os = "ios")]
+            let f = {
+                use day_uikit::UiKitExt;
+                f.uikit(|tf, _class, _mtm| {
+                    let pwd = objc2_foundation::NSString::from_str("password");
+                    let _: () = unsafe { objc2::msg_send![&**tf, setTextContentType: &*pwd] };
+                })
+            };
+            f.any()
+        }
+    })
+    .grow();
+
+    let field_stack = zstack((
+        companion_user,
+        pw_field,
+    ))
+    .grow();
+
     let input_card = row((
         vector(res::vectors::lock)
             .frame(20.0, 20.0)
@@ -879,37 +979,7 @@ fn password_step_view(
                 }
             }),
         spacer().width(12.0),
-        when(
-            move || show_password.get(),
-            {
-                let on_sub = on_sub_plain.clone();
-                move || {
-                    text_field(password)
-                        .placeholder("Пароль")
-                        .focused(password_focused)
-                        .grow_w()
-                        .id("password-field-plain")
-                        .log_pos("Auth:PasswordField")
-                        .on_submit(on_sub.clone())
-                        .any()
-                }
-            },
-        )
-        .otherwise({
-            let on_sub = on_sub_sec.clone();
-            move || {
-                text_field(password)
-                    .secure()
-                    .placeholder("Пароль")
-                    .focused(password_focused)
-                    .grow_w()
-                    .id("password-field")
-                    .log_pos("Auth:PasswordField")
-                    .on_submit(on_sub.clone())
-                    .any()
-            }
-        })
-        .grow(),
+        field_stack,
         toggle_eye,
     ))
     .align(VAlign::Center)
@@ -1024,14 +1094,50 @@ fn password_step_view(
     piece
 }
 
+#[derive(Clone, Copy)]
+struct AuthState {
+    path: Signal<Vec<AuthRoute>>,
+    username: Signal<String>,
+    password: Signal<String>,
+    username_focused: Signal<bool>,
+    password_focused: Signal<bool>,
+    remember: Signal<bool>,
+    error_local: Signal<String>,
+}
+
+fn get_auth_state() -> AuthState {
+    thread_local! {
+        static STATE: std::cell::RefCell<Option<AuthState>> = const { std::cell::RefCell::new(None) };
+    }
+    STATE.with(|cell| {
+        let mut b = cell.borrow_mut();
+        if let Some(s) = b.as_ref() {
+            *s
+        } else {
+            let s = AuthState {
+                path: Signal::new(Vec::<AuthRoute>::new()),
+                username: Signal::new(String::new()),
+                password: Signal::new(String::new()),
+                username_focused: Signal::new(false),
+                password_focused: Signal::new(false),
+                remember: Signal::new(true),
+                error_local: Signal::new(String::new()),
+            };
+            *b = Some(s);
+            s
+        }
+    })
+}
+
 fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
-    let path = Signal::new(Vec::<AuthRoute>::new());
-    let username = Signal::new(String::new());
-    let password = Signal::new(String::new());
-    let username_focused = Signal::new(false);
-    let password_focused = Signal::new(false);
-    let remember = Signal::new(true);
-    let error_local = Signal::new(String::new());
+    let auth = get_auth_state();
+    let path = auth.path;
+    let username = auth.username;
+    let password = auth.password;
+    let username_focused = auth.username_focused;
+    let password_focused = auth.password_focused;
+    let remember = auth.remember;
+    let error_local = auth.error_local;
 
     let root = intro_view({
         let path = path;
@@ -1126,6 +1232,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 )
                 .any(),
                 AuthRoute::Password => password_step_view(
+                    username,
                     password,
                     password_focused,
                     error_local,

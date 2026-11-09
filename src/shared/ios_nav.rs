@@ -24,6 +24,13 @@ pub mod ios_impl {
             let mut next = v.nextResponder();
             while let Some(responder) = next {
                 if let Some(vc) = responder.downcast_ref::<UIViewController>() {
+                    if let Some(nav) = vc.navigationController() {
+                        nav.setNavigationBarHidden_animated(false, false);
+                        if let Some(top) = nav.topViewController() {
+                            nslog("[ios_nav] Found topViewController via VC.navigationController");
+                            return Some(top.navigationItem());
+                        }
+                    }
                     nslog("[ios_nav] Found VC via responder chain");
                     return Some(vc.navigationItem());
                 }
@@ -94,7 +101,8 @@ pub mod ios_impl {
     }
 
     /// Attach bar button items to both rightBarButtonItems and trailingItemGroups (iOS 16+)
-    /// Each item is in its OWN UIBarButtonItemGroup to prevent fusing into one capsule.
+    /// Each item is in its OWN UIBarButtonItemGroup with representativeItem = Some(item)
+    /// to guarantee items are NEVER hidden in compact / iPhone portrait width.
     pub fn attach_nav_items(
         nav_item: &objc2_ui_kit::UINavigationItem,
         items: &[Retained<UIBarButtonItem>],
@@ -109,7 +117,7 @@ pub mod ios_impl {
             .iter()
             .map(|item| {
                 let single = NSArray::from_retained_slice(&[item.clone()]);
-                UIBarButtonItemGroup::fixedGroupWithRepresentativeItem_items(None, &single, mtm)
+                UIBarButtonItemGroup::fixedGroupWithRepresentativeItem_items(Some(item), &single, mtm)
             })
             .collect();
         let group_arr = NSArray::from_retained_slice(&groups);
@@ -120,6 +128,10 @@ pub mod ios_impl {
     /// Build Theme button with native SF Symbol (sun.max.fill / moon.stars.fill)
     pub fn build_theme_button(mtm: MainThreadMarker) -> (Retained<UIButton>, Retained<UIBarButtonItem>) {
         let b = UIButton::new(mtm);
+        b.setFrame(objc2_core_foundation::CGRect {
+            origin: objc2_core_foundation::CGPoint { x: 0.0, y: 0.0 },
+            size: objc2_core_foundation::CGSize { width: 36.0, height: 36.0 },
+        });
         b.setTranslatesAutoresizingMaskIntoConstraints(false);
         b.widthAnchor().constraintEqualToConstant(36.0).setActive(true);
         b.heightAnchor().constraintEqualToConstant(36.0).setActive(true);
@@ -156,12 +168,17 @@ pub mod ios_impl {
         b.addAction_forControlEvents(&act, objc2_ui_kit::UIControlEvents::TouchUpInside);
 
         let item = UIBarButtonItem::initWithCustomView(UIBarButtonItem::alloc(mtm), &b);
+        item.setWidth(36.0);
         (b, item)
     }
 
     /// Build Language button with native SF Symbol globe + clean code (" RU", " BE", " EN")
     pub fn build_lang_button(mtm: MainThreadMarker) -> (Retained<UIButton>, Retained<UIBarButtonItem>) {
         let b = UIButton::new(mtm);
+        b.setFrame(objc2_core_foundation::CGRect {
+            origin: objc2_core_foundation::CGPoint { x: 0.0, y: 0.0 },
+            size: objc2_core_foundation::CGSize { width: 68.0, height: 36.0 },
+        });
         b.setTranslatesAutoresizingMaskIntoConstraints(false);
         b.widthAnchor().constraintEqualToConstant(68.0).setActive(true);
         b.heightAnchor().constraintEqualToConstant(36.0).setActive(true);
@@ -208,15 +225,12 @@ pub mod ios_impl {
         b.addAction_forControlEvents(&act, objc2_ui_kit::UIControlEvents::TouchUpInside);
 
         let item = UIBarButtonItem::initWithCustomView(UIBarButtonItem::alloc(mtm), &b);
+        item.setWidth(68.0);
         (b, item)
     }
 
     /// Setup Login navigation bar (Theme + Language)
     pub fn setup_login_nav_bar(view: Option<&UIView>) {
-        let state = AppState::ambient();
-        if state.is_authenticated.get() {
-            return;
-        }
         let Some(mtm) = MainThreadMarker::new() else { return };
         let Some(nav_item) = find_active_nav_item(view) else { return };
 
@@ -245,6 +259,10 @@ pub mod ios_impl {
     /// Build Network status button
     pub fn build_status_button(mtm: MainThreadMarker, state: AppState) -> (Retained<UIButton>, Retained<UIBarButtonItem>) {
         let b = UIButton::new(mtm);
+        b.setFrame(objc2_core_foundation::CGRect {
+            origin: objc2_core_foundation::CGPoint { x: 0.0, y: 0.0 },
+            size: objc2_core_foundation::CGSize { width: 36.0, height: 36.0 },
+        });
         b.setTranslatesAutoresizingMaskIntoConstraints(false);
         b.widthAnchor().constraintEqualToConstant(36.0).setActive(true);
         b.heightAnchor().constraintEqualToConstant(36.0).setActive(true);
@@ -286,6 +304,7 @@ pub mod ios_impl {
         b.addAction_forControlEvents(&act, objc2_ui_kit::UIControlEvents::TouchUpInside);
 
         let item = UIBarButtonItem::initWithCustomView(UIBarButtonItem::alloc(mtm), &b);
+        item.setWidth(36.0);
         (b, item)
     }
 
