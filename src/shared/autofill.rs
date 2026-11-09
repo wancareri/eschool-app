@@ -19,7 +19,7 @@ pub mod ios {
     };
     use std::cell::RefCell;
 
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, PartialEq, Eq)]
     pub enum Role {
         Username,
         Password,
@@ -276,6 +276,127 @@ pub mod ios {
         );
         field.setRightView(Some(&button));
         field.setRightViewMode(UITextFieldViewMode::Always);
+    }
+
+    /// Focus only after UIKit has finished positioning the destination page.
+    /// Focusing a moving page makes the keyboard inherit the horizontal push.
+    pub fn focus_after_navigation(role: Role, allowed: impl Fn() -> bool + 'static) {
+        use std::rc::Rc;
+        fn enqueue(role: Role, allowed: Rc<dyn Fn() -> bool>, retry: bool) {
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            if !allowed() {
+                return;
+            }
+            let field = FIELDS.with(|fields| {
+                fields.borrow().iter().rev().find_map(|(weak, known)| {
+                    let field = weak.load()?;
+                    (*known == role && field.isUserInteractionEnabled()).then_some(field)
+                })
+            });
+            let bound =
+                dispatch2::MainThreadBound::new((field.map(|f| Weak::new(&*f)), allowed), mtm);
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                let Some(mtm) = MainThreadMarker::new() else {
+                    return;
+                };
+                let (weak, allowed) = bound.get(mtm);
+                if !allowed() {
+                    return;
+                }
+                let field = weak.as_ref().and_then(Weak::load);
+                let Some(field) = field.filter(|f| f.window().is_some()) else {
+                    // Day may still be applying this turn's navigation patch.
+                    if retry {
+                        enqueue(role, allowed.clone(), false);
+                    }
+                    return;
+                };
+                let weak = Weak::new(&*field);
+                let allowed = allowed.clone();
+                let finish = move || {
+                    if !allowed() {
+                        return;
+                    }
+                    let Some(field) = weak.load() else { return };
+                    if field.window().is_none()
+                        || !field.isUserInteractionEnabled()
+                        || field.isFirstResponder()
+                    {
+                        return;
+                    }
+                    // A completed or interrupted pop can precede Day's path
+                    // update. Never focus the outgoing native controller.
+                    let mut responder = field.nextResponder();
+                    while let Some(current) = responder {
+                        if let Some(vc) = current.downcast_ref::<objc2_ui_kit::UIViewController>() {
+                            if let Some(nav) = vc.navigationController() {
+                                if !nav
+                                    .topViewController()
+                                    .is_some_and(|top| std::ptr::eq(&*top, vc))
+                                {
+                                    return;
+                                }
+                            }
+                            break;
+                        }
+                        responder = current.nextResponder();
+                    }
+                    field.layoutIfNeeded();
+                    let focus = block2::RcBlock::new(|| {
+                        field.becomeFirstResponder();
+                    });
+                    // Keep an already visible keyboard in place when changing
+                    // from username to secure input; allow the initial rise.
+                    if crate::shared::keyboard::get_keyboard_height()
+                        > crate::shared::keyboard::get_safe_area_bottom()
+                    {
+                        UIView::performWithoutAnimation(&focus, mtm);
+                    } else {
+                        field.becomeFirstResponder();
+                    }
+                };
+                let mut responder = field.nextResponder();
+                while let Some(current) = responder {
+                    if let Some(vc) = current.downcast_ref::<objc2_ui_kit::UIViewController>() {
+                        let coordinator = vc.transitionCoordinator().or_else(|| {
+                            vc.navigationController()
+                                .and_then(|nav| nav.transitionCoordinator())
+                        });
+                        if let Some(coordinator) = coordinator {
+                            use objc2_ui_kit::{
+                                UIViewControllerTransitionCoordinator,
+                                UIViewControllerTransitionCoordinatorContext,
+                            };
+                            let finish = std::rc::Rc::new(finish);
+                            let on_complete = finish.clone();
+                            let completion = block2::RcBlock::new(
+                                move |context: std::ptr::NonNull<
+                                    ProtocolObject<
+                                        dyn UIViewControllerTransitionCoordinatorContext,
+                                    >,
+                                >| {
+                                    if !unsafe { context.as_ref().isCancelled() } {
+                                        on_complete();
+                                    }
+                                },
+                            );
+                            if !coordinator
+                                .animateAlongsideTransition_completion(None, Some(&completion))
+                            {
+                                finish();
+                            }
+                            return;
+                        }
+                        break;
+                    }
+                    responder = current.nextResponder();
+                }
+                finish();
+            });
+        }
+        enqueue(role, Rc::new(allowed), true);
     }
 
     pub fn reset() {

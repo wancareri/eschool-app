@@ -365,7 +365,15 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
     #[cfg(target_os = "ios")]
     let piece = {
         use day_uikit::UiKitExt;
-        piece.uikit(move |view, _class, _mtm| {
+        piece.uikit(move |view, _class, mtm| {
+            let weak_view = dispatch2::MainThreadBound::new(objc2::rc::Weak::new(&**view), mtm);
+            let ticket = crate::shared::session::ticket();
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                let Some(mtm) = objc2::MainThreadMarker::new() else { return };
+                if ticket.is_current() && weak_view.get(mtm).load().is_some_and(|v| v.window().is_some()) {
+                    crate::widgets::lottie_view::prepare_password_sticker();
+                }
+            });
             view.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
             if let Some(w) = view.window() {
                 w.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
@@ -754,17 +762,30 @@ pub fn reset_auth_flow() {
     });
 }
 
-fn focus_auth_route_after(route: AuthRoute, delay: u32) {
+fn focus_auth_route(route: AuthRoute) {
     let ticket = crate::shared::session::ticket();
-    day::reactive::on_main_delayed(delay, move || {
-        if !ticket.is_current() { return; }
-        let Some(state) = AppState::get_main() else { return };
-        if state.is_authenticated.get() || state.setup_new_password_active.get() { return; }
-        let auth = get_auth_state();
-        if auth.path.get_untracked().last() != Some(&route) { return; }
-        match route {
-            AuthRoute::Login => auth.username_focused.set(true),
-            AuthRoute::Password => auth.password_focused.set(true),
+    day::reactive::on_main(move || {
+        let allowed = move || {
+            if !ticket.is_current() { return false; }
+            let Some(state) = AppState::get_main() else { return false };
+            !state.is_authenticated.get_untracked()
+                && !state.setup_new_password_active.get_untracked()
+                && get_auth_state().path.get_untracked().last() == Some(&route)
+        };
+        #[cfg(target_os = "ios")]
+        crate::shared::autofill::ios::focus_after_navigation(
+            match route {
+                AuthRoute::Login => crate::shared::autofill::ios::Role::Username,
+                AuthRoute::Password => crate::shared::autofill::ios::Role::Password,
+            }, allowed,
+        );
+        #[cfg(not(target_os = "ios"))]
+        if allowed() {
+            let auth = get_auth_state();
+            match route {
+                AuthRoute::Login => auth.username_focused.set(true),
+                AuthRoute::Password => auth.password_focused.set(true),
+            }
         }
     });
 }
@@ -788,7 +809,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             error_local.set(String::new());
             state.error_msg.set(String::new());
             path.set(vec![AuthRoute::Login]);
-            focus_auth_route_after(AuthRoute::Login, 350);
+            focus_auth_route(AuthRoute::Login);
         }
     });
 
@@ -808,7 +829,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 state.error_msg.set(String::new());
                 crate::shared::haptics::tick();
                 path.set(vec![AuthRoute::Login, AuthRoute::Password]);
-                focus_auth_route_after(AuthRoute::Password, 0);
+                focus_auth_route(AuthRoute::Password);
             }
         }
     };
@@ -885,7 +906,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 // never changes the path and must not dismiss/refocus fields.
                 if p.last() == Some(&AuthRoute::Login) {
                     password_focused.set(false);
-                    focus_auth_route_after(AuthRoute::Login, 0);
+                    focus_auth_route(AuthRoute::Login);
                 }
             }
         },

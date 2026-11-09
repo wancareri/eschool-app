@@ -195,7 +195,7 @@ pub fn lottie_view_raw(json_data: &'static str, size: f64) -> impl Piece {
 }
 
 #[cfg(target_os = "ios")]
-fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f64) {
+fn create_lottie_webview(html: &str, size: f64) -> Option<objc2::rc::Retained<objc2_ui_kit::UIView>> {
     use objc2::runtime::{AnyClass, AnyObject};
     use objc2_core_foundation::{CGPoint, CGRect, CGSize};
     use objc2_foundation::NSString;
@@ -208,7 +208,7 @@ fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f6
 
         let Some(wk_class) = AnyClass::get(c"WKWebView") else {
             crate::shared::nslog::nslog("[Lottie] ERROR: WKWebView class not found");
-            return;
+            return None;
         };
 
         let frame = CGRect {
@@ -235,13 +235,12 @@ fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f6
         };
 
         let web_view: *mut AnyObject = if let Some(cfg_cls) = AnyClass::get(c"WKWebViewConfiguration") {
-            let cfg: *mut AnyObject = objc2::msg_send![cfg_cls, alloc];
-            let cfg: *mut AnyObject = objc2::msg_send![cfg, init];
+            let cfg: objc2::rc::Retained<AnyObject> = objc2::msg_send![cfg_cls, new];
             if !pool.is_null() {
-                let _: () = objc2::msg_send![cfg, setProcessPool: pool];
+                let _: () = objc2::msg_send![&*cfg, setProcessPool: pool];
             }
             let wv: *mut AnyObject = objc2::msg_send![wk_class, alloc];
-            objc2::msg_send![wv, initWithFrame: frame, configuration: cfg]
+            objc2::msg_send![wv, initWithFrame: frame, configuration: &*cfg]
         } else {
             let wv: *mut AnyObject = objc2::msg_send![wk_class, alloc];
             objc2::msg_send![wv, initWithFrame: frame]
@@ -249,7 +248,7 @@ fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f6
 
         if web_view.is_null() {
             crate::shared::nslog::nslog("[Lottie] ERROR: Failed to instantiate WKWebView");
-            return;
+            return None;
         }
 
         let _: () = objc2::msg_send![web_view, setOpaque: false];
@@ -286,6 +285,34 @@ fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f6
             baseURL: base_url
         ];
 
+        objc2::rc::Retained::from_raw(web_view.cast::<objc2_ui_kit::UIView>())
+    }
+}
+
+#[cfg(target_os = "ios")]
+thread_local! {
+    // Only an unattached preloaded view is cached; never move a mounted view
+    // between pages or windows. Mounting consumes the cache.
+    static WARM_PASSWORD: std::cell::RefCell<Option<objc2::rc::Retained<objc2_ui_kit::UIView>>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(target_os = "ios")]
+pub fn prepare_password_sticker() {
+    if WARM_PASSWORD.with(|cached| cached.borrow().is_some()) { return; }
+    let view = create_lottie_webview(&DUCK_PASSWORD_HTML, 230.0);
+    WARM_PASSWORD.with(|cached| *cached.borrow_mut() = view);
+}
+
+#[cfg(target_os = "ios")]
+fn mount_lottie_webview(parent_view: &objc2_ui_kit::UIView, html: &str, size: f64) {
+    use objc2::runtime::AnyObject;
+    let cached = if size == 230.0 && std::ptr::eq(html.as_ptr(), DUCK_PASSWORD_HTML.as_ptr()) {
+        WARM_PASSWORD.with(|cached| cached.borrow_mut().take())
+    } else { None };
+    let Some(view) = cached.or_else(|| create_lottie_webview(html, size)) else { return };
+    unsafe {
+        let web_view = objc2::rc::Retained::as_ptr(&view) as *mut AnyObject;
+        let clear_color = objc2_ui_kit::UIColor::clearColor();
         let _: () = objc2::msg_send![parent_view, addSubview: web_view];
         let _: () = objc2::msg_send![web_view, setTranslatesAutoresizingMaskIntoConstraints: false];
 
