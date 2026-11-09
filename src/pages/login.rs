@@ -434,6 +434,18 @@ pub fn show_lang_sheet() {
         day::prefs::set(crate::LOCALE_KEY, "ru");
         set_locale("ru");
         crate::shared::haptics::tick();
+        let auth = get_auth_state();
+        let un_set = auth.username_focused.setter();
+        let pw_set = auth.password_focused.setter();
+        let is_pw = auth.path.get_untracked().contains(&AuthRoute::Password);
+        let is_login = auth.path.get_untracked().contains(&AuthRoute::Login);
+        day::reactive::on_main_delayed(250, move || {
+            if is_pw {
+                pw_set.set(true);
+            } else if is_login {
+                un_set.set(true);
+            }
+        });
     });
     let a_ru = UIAlertAction::actionWithTitle_style_handler(
         Some(&NSString::from_str("Русский (RU)")),
@@ -446,6 +458,18 @@ pub fn show_lang_sheet() {
         day::prefs::set(crate::LOCALE_KEY, "be");
         set_locale("be");
         crate::shared::haptics::tick();
+        let auth = get_auth_state();
+        let un_set = auth.username_focused.setter();
+        let pw_set = auth.password_focused.setter();
+        let is_pw = auth.path.get_untracked().contains(&AuthRoute::Password);
+        let is_login = auth.path.get_untracked().contains(&AuthRoute::Login);
+        day::reactive::on_main_delayed(250, move || {
+            if is_pw {
+                pw_set.set(true);
+            } else if is_login {
+                un_set.set(true);
+            }
+        });
     });
     let a_be = UIAlertAction::actionWithTitle_style_handler(
         Some(&NSString::from_str("Беларуская (BE)")),
@@ -458,6 +482,18 @@ pub fn show_lang_sheet() {
         day::prefs::set(crate::LOCALE_KEY, "en");
         set_locale("en");
         crate::shared::haptics::tick();
+        let auth = get_auth_state();
+        let un_set = auth.username_focused.setter();
+        let pw_set = auth.password_focused.setter();
+        let is_pw = auth.path.get_untracked().contains(&AuthRoute::Password);
+        let is_login = auth.path.get_untracked().contains(&AuthRoute::Login);
+        day::reactive::on_main_delayed(250, move || {
+            if is_pw {
+                pw_set.set(true);
+            } else if is_login {
+                un_set.set(true);
+            }
+        });
     });
     let a_en = UIAlertAction::actionWithTitle_style_handler(
         Some(&NSString::from_str("English (EN)")),
@@ -589,26 +625,9 @@ pub fn glass_theme_button() -> impl Piece {
     })
 }
 
-pub fn login_header_bar() -> impl Piece {
-    row((
-        spacer().grow(),
-        glass_lang_button(),
-        spacer().width(10.0),
-        glass_theme_button(),
-    ))
-    .align(VAlign::Center)
-    .padding(Insets { top: 12.0, leading: 16.0, bottom: 4.0, trailing: 16.0 })
-}
-
-#[cfg(target_os = "ios")]
-pub fn setup_login_nav_bar(view: &objc2_ui_kit::UIView) {
-    crate::shared::ios_nav::ios_impl::schedule_login_nav_bar(view);
-}
-
 fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
     let piece = column((
-        login_header_bar(),
-        spacer().height(8.0),
+        spacer().height(16.0),
         label("ESchool")
             .font(Font::LargeTitle)
             .bold()
@@ -663,7 +682,7 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
 
 fn username_step_view(
     username: Signal<String>,
-    password: Signal<String>,
+    _password: Signal<String>,
     remember: Signal<bool>,
     username_focused: Signal<bool>,
     error_local: Signal<String>,
@@ -684,23 +703,6 @@ fn username_step_view(
         })
     };
 
-    // Full-size companion password field: positioned behind input_field in a zstack.
-    // iOS AutoFill requires standard dimensions (>= 100x30) to recognize it as a valid form field
-    // on all keyboard languages (RU, BE, EN), keeping "Passwords" / "Пароли" permanently visible!
-    let companion_pw = text_field(password)
-        .secure()
-        .placeholder("Пароль")
-        .grow_w()
-        .opacity(0.02);
-
-    #[cfg(target_os = "ios")]
-    let companion_pw = {
-        use day_uikit::UiKitExt;
-        companion_pw.uikit(|tf, _class, _mtm| {
-            tf.setUserInteractionEnabled(false);
-        })
-    };
-
     let on_sub = on_submit.clone();
     let input_field = text_field(username)
         .placeholder("Логин или код")
@@ -708,12 +710,6 @@ fn username_step_view(
         .grow_w()
         .log_pos("Auth:UsernameField")
         .on_submit(on_sub);
-
-    let field_stack = zstack((
-        companion_pw,
-        input_field,
-    ))
-    .grow();
 
     let input_card = row((
         vector(res::vectors::tab_login)
@@ -726,7 +722,7 @@ fn username_step_view(
                 }
             }),
         spacer().width(12.0),
-        field_stack,
+        input_field,
     ))
     .align(VAlign::Center)
     .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
@@ -845,7 +841,7 @@ fn username_step_view(
 }
 
 fn password_step_view(
-    username: Signal<String>,
+    _username: Signal<String>,
     password: Signal<String>,
     password_focused: Signal<bool>,
     error_local: Signal<String>,
@@ -888,19 +884,6 @@ fn password_step_view(
     let on_sub_plain = on_submit.clone();
     let on_sub_sec = on_submit.clone();
 
-    let companion_user = text_field(username)
-        .placeholder("Логин")
-        .grow_w()
-        .opacity(0.02);
-
-    #[cfg(target_os = "ios")]
-    let companion_user = {
-        use day_uikit::UiKitExt;
-        companion_user.uikit(|tf, _class, _mtm| {
-            tf.setUserInteractionEnabled(false);
-        })
-    };
-
     let pw_field = when(
         move || show_password.get(),
         {
@@ -933,12 +916,6 @@ fn password_step_view(
     })
     .grow();
 
-    let field_stack = zstack((
-        companion_user,
-        pw_field,
-    ))
-    .grow();
-
     let input_card = row((
         vector(res::vectors::lock)
             .frame(20.0, 20.0)
@@ -950,7 +927,7 @@ fn password_step_view(
                 }
             }),
         spacer().width(12.0),
-        field_stack,
+        pw_field,
         toggle_eye,
     ))
     .align(VAlign::Center)
@@ -1200,30 +1177,6 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 .any(),
             }
         })
-        .on_back({
-            let error_local = error_local;
-            let username_focused = username_focused;
-            let password_focused = password_focused;
-            let path = path;
-            move |_req| {
-                error_local.set(String::new());
-                let p = path.get_untracked();
-                if p.len() > 1 {
-                    // Popping from Password to Login: keep keyboard up, focus username!
-                    password_focused.set(false);
-                    let set_un_foc = username_focused.setter();
-                    day::reactive::on_main_delayed(50, move || {
-                        set_un_foc.set(true);
-                    });
-                } else {
-                    // Popping from Login to Intro: dismiss keyboard
-                    username_focused.set(false);
-                    password_focused.set(false);
-                    crate::shared::keyboard::dismiss();
-                }
-                BackResponse::Proceed
-            }
-        })
         .id("auth-stack")
         .grow()
         .background(move || {
@@ -1233,6 +1186,25 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 Color::hex(0xFFFFFF)
             }
         });
+
+    day::reactive::watch(
+        move || path.get(),
+        move |p, _old| {
+            if p.is_empty() {
+                username_focused.set(false);
+                password_focused.set(false);
+                crate::shared::keyboard::dismiss();
+            }
+            #[cfg(target_os = "ios")]
+            {
+                for delay in [0, 50, 150] {
+                    day::reactive::on_main_delayed(delay, || {
+                        crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
+                    });
+                }
+            }
+        },
+    );
 
     #[cfg(target_os = "ios")]
     {

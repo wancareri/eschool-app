@@ -121,61 +121,37 @@ pub mod ios_impl {
         nslog(&format!("[ios_nav] Successfully attached {} bar items (trailing + right)", items.len()));
     }
 
-    /// Build Theme button with native SF Symbol (sun.max.fill / moon.stars.fill)
-    pub fn build_theme_button(mtm: MainThreadMarker) -> (Retained<UIButton>, Retained<UIBarButtonItem>) {
-        let b = UIButton::new(mtm);
-        b.setFrame(objc2_core_foundation::CGRect {
-            origin: objc2_core_foundation::CGPoint { x: 0.0, y: 0.0 },
-            size: objc2_core_foundation::CGSize { width: 36.0, height: 36.0 },
-        });
-        b.layer().setCornerRadius(18.0);
-        b.layer().setMasksToBounds(true);
-        b.setBackgroundColor(Some(&UIColor::tertiarySystemFillColor()));
-
+    /// Build native Theme UIBarButtonItem (SF Symbol sun.max / moon, exact native style like Back button)
+    pub fn build_theme_bar_item(mtm: MainThreadMarker) -> Retained<UIBarButtonItem> {
         let cur = day::prefs::get(crate::THEME_KEY);
         let icon_name = match cur.as_deref() {
-            Some("light") => "sun.max.fill",
-            Some("dark") => "moon.stars.fill",
-            _ => if day::dark_mode() { "moon.stars.fill" } else { "sun.max.fill" },
+            Some("light") => "sun.max",
+            Some("dark") => "moon",
+            _ => if day::dark_mode() { "moon" } else { "sun.max" },
         };
         let icon = UIImage::systemImageNamed(&NSString::from_str(icon_name));
-        b.setImage_forState(icon.as_deref(), UIControlState::Normal);
-        b.setTitle_forState(None, UIControlState::Normal);
-        unsafe {
-            b.setTintColor(Some(&UIColor::labelColor()));
-        }
-
         let action_block = RcBlock::new(move |_act: NonNull<UIAction>| {
             crate::shared::haptics::tick();
             crate::pages::login::show_theme_sheet();
         });
         let act = unsafe {
             UIAction::actionWithTitle_image_identifier_handler(
-                &NSString::from_str("ThemeAction"),
-                None,
+                &NSString::from_str("Theme"),
+                icon.as_deref(),
                 None,
                 RcBlock::as_ptr(&action_block),
                 mtm,
             )
         };
-        b.addAction_forControlEvents(&act, objc2_ui_kit::UIControlEvents::TouchUpInside);
-
-        let item = UIBarButtonItem::initWithCustomView(UIBarButtonItem::alloc(mtm), &b);
-        item.setWidth(36.0);
-        (b, item)
+        let item = UIBarButtonItem::initWithPrimaryAction(UIBarButtonItem::alloc(mtm), Some(&act));
+        item.setImage(icon.as_deref());
+        item.setTitle(None);
+        item.setStyle(objc2_ui_kit::UIBarButtonItemStyle::Plain);
+        item
     }
 
-    /// Build Language button with native SF Symbol globe + clean code (" RU", " BE", " EN")
-    pub fn build_lang_button(mtm: MainThreadMarker) -> (Retained<UIButton>, Retained<UIBarButtonItem>) {
-        let b = UIButton::new(mtm);
-        b.setFrame(objc2_core_foundation::CGRect {
-            origin: objc2_core_foundation::CGPoint { x: 0.0, y: 0.0 },
-            size: objc2_core_foundation::CGSize { width: 68.0, height: 36.0 },
-        });
-        b.layer().setCornerRadius(18.0);
-        b.layer().setMasksToBounds(true);
-        b.setBackgroundColor(Some(&UIColor::tertiarySystemFillColor()));
-
+    /// Build native Language UIBarButtonItem (SF Symbol globe + RU/BE/EN, exact native style like Back button)
+    pub fn build_lang_bar_item(mtm: MainThreadMarker) -> Retained<UIBarButtonItem> {
         let cur = day::locale().get_untracked();
         let lower = cur.to_lowercase();
         let code = if lower.starts_with("be") {
@@ -185,54 +161,77 @@ pub mod ios_impl {
         } else {
             "RU"
         };
-
         let globe = UIImage::systemImageNamed(&NSString::from_str("globe"));
-        b.setImage_forState(globe.as_deref(), UIControlState::Normal);
-        b.setTitle_forState(Some(&NSString::from_str(&format!(" {}", code))), UIControlState::Normal);
-        b.setTitleColor_forState(Some(&UIColor::labelColor()), UIControlState::Normal);
-        unsafe {
-            b.setTintColor(Some(&UIColor::labelColor()));
-        }
-        if let Some(lbl) = b.titleLabel() {
-            unsafe {
-                lbl.setFont(Some(&objc2_ui_kit::UIFont::boldSystemFontOfSize(13.0)));
-            }
-        }
-
+        let title_str = NSString::from_str(code);
         let action_block = RcBlock::new(move |_act: NonNull<UIAction>| {
             crate::shared::haptics::tick();
             crate::pages::login::show_lang_sheet();
         });
         let act = unsafe {
             UIAction::actionWithTitle_image_identifier_handler(
-                &NSString::from_str("LangAction"),
-                None,
+                &title_str,
+                globe.as_deref(),
                 None,
                 RcBlock::as_ptr(&action_block),
                 mtm,
             )
         };
-        b.addAction_forControlEvents(&act, objc2_ui_kit::UIControlEvents::TouchUpInside);
-
-        let item = UIBarButtonItem::initWithCustomView(UIBarButtonItem::alloc(mtm), &b);
-        item.setWidth(68.0);
-        (b, item)
+        let item = UIBarButtonItem::initWithPrimaryAction(UIBarButtonItem::alloc(mtm), Some(&act));
+        item.setTitle(Some(&title_str));
+        item.setImage(globe.as_deref());
+        item.setStyle(objc2_ui_kit::UIBarButtonItemStyle::Plain);
+        item
     }
 
-    /// Setup Login navigation bar (Theme + Language)
+    /// Setup Login navigation bar (Theme + Language) natively on every navigation controller in view hierarchy
     pub fn setup_login_nav_bar(view: Option<&UIView>) {
         let state = AppState::ambient();
         if state.is_authenticated.get() {
             return;
         }
         let Some(mtm) = MainThreadMarker::new() else { return };
-        let Some(nav_item) = find_active_nav_item(view) else { return };
 
-        let (_t_btn, t_item) = build_theme_button(mtm);
-        let (_l_btn, l_item) = build_lang_button(mtm);
+        let window = view.and_then(|v| v.window()).or_else(|| {
+            let app = UIApplication::sharedApplication(mtm);
+            #[allow(deprecated)]
+            let wins = app.windows();
+            wins.firstObject()
+        });
+        let Some(win) = window else { return };
 
-        // Right to left: theme on right, lang on left
-        attach_nav_items(&nav_item, &[t_item, l_item]);
+        let t_item = build_theme_bar_item(mtm);
+        let l_item = build_lang_bar_item(mtm);
+        // Order: theme rightmost, lang to its left
+        let items = [t_item, l_item];
+
+        let mut queue = VecDeque::new();
+        if let Some(r) = win.rootViewController() {
+            queue.push_back(r);
+        }
+
+        while let Some(c) = queue.pop_front() {
+            if let Some(nav) = c.downcast_ref::<UINavigationController>() {
+                nav.setNavigationBarHidden_animated(false, false);
+                let bar = nav.navigationBar();
+                if let Some(top) = bar.topItem() {
+                    attach_nav_items(&top, &items);
+                }
+                for vc in nav.viewControllers().iter() {
+                    attach_nav_items(&vc.navigationItem(), &items);
+                }
+            }
+            if let Some(tab) = c.downcast_ref::<UITabBarController>() {
+                if let Some(sel) = unsafe { tab.selectedViewController() } {
+                    queue.push_back(sel);
+                }
+            }
+            if let Some(pres) = c.presentedViewController() {
+                queue.push_back(pres);
+            }
+            for ch in c.childViewControllers().iter() {
+                queue.push_back(ch);
+            }
+        }
     }
 
     /// Schedule retries for login nav bar to guarantee instantaneous attachment

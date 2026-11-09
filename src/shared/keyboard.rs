@@ -506,9 +506,9 @@ mod ios {
         }
         unsafe {
             let _: () = objc2::msg_send![this, setAutocapitalizationType: 0isize];
-            // Leave autocorrectionType & spellCheckingType as Default (0)
-            // so iOS QuickType / Passwords bar does NOT collapse when switching to Russian keyboard!
-            let _: () = objc2::msg_send![this, setAutocorrectionType: 0isize];
+            // Set autocorrectionType to Yes (2) so iOS keeps the predictive / Passwords shortcut bar
+            // enabled across all languages (including Russian)!
+            let _: () = objc2::msg_send![this, setAutocorrectionType: 2isize];
             let _: () = objc2::msg_send![this, setSpellCheckingType: 0isize];
             let is_secure: bool = objc2::msg_send![this, isSecureTextEntry];
             let ctype = if is_secure {
@@ -541,7 +541,7 @@ mod ios {
         }
         unsafe {
             let _: () = objc2::msg_send![this, setAutocapitalizationType: 0isize];
-            let _: () = objc2::msg_send![this, setAutocorrectionType: 0isize];
+            let _: () = objc2::msg_send![this, setAutocorrectionType: 2isize];
             let _: () = objc2::msg_send![this, setSpellCheckingType: 0isize];
             let ctype = if secure {
                 objc2_foundation::NSString::from_str("password")
