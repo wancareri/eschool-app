@@ -101,8 +101,6 @@ pub mod ios_impl {
     }
 
     /// Attach bar button items reliably to rightBarButtonItems.
-    /// Clears trailingItemGroups so UIKit does not ignore rightBarButtonItems
-    /// and does not collapse or drop items on compact iPhone portrait screens.
     pub fn attach_nav_items(
         nav_item: &objc2_ui_kit::UINavigationItem,
         items: &[Retained<UIBarButtonItem>],
@@ -111,10 +109,6 @@ pub mod ios_impl {
 
         let arr = NSArray::from_retained_slice(items);
         nav_item.setRightBarButtonItems(Some(&arr));
-
-        // Clear trailingItemGroups so UIKit uses standard rightBarButtonItems directly
-        let empty = NSArray::new();
-        nav_item.setTrailingItemGroups(&empty);
         nslog(&format!("[ios_nav] Successfully attached {} bar items", items.len()));
     }
 
@@ -125,9 +119,6 @@ pub mod ios_impl {
             origin: objc2_core_foundation::CGPoint { x: 0.0, y: 0.0 },
             size: objc2_core_foundation::CGSize { width: 36.0, height: 36.0 },
         });
-        b.setTranslatesAutoresizingMaskIntoConstraints(false);
-        b.widthAnchor().constraintEqualToConstant(36.0).setActive(true);
-        b.heightAnchor().constraintEqualToConstant(36.0).setActive(true);
         b.layer().setCornerRadius(18.0);
         b.layer().setMasksToBounds(true);
         b.setBackgroundColor(Some(&UIColor::tertiarySystemFillColor()));
@@ -172,9 +163,6 @@ pub mod ios_impl {
             origin: objc2_core_foundation::CGPoint { x: 0.0, y: 0.0 },
             size: objc2_core_foundation::CGSize { width: 68.0, height: 36.0 },
         });
-        b.setTranslatesAutoresizingMaskIntoConstraints(false);
-        b.widthAnchor().constraintEqualToConstant(68.0).setActive(true);
-        b.heightAnchor().constraintEqualToConstant(36.0).setActive(true);
         b.layer().setCornerRadius(18.0);
         b.layer().setMasksToBounds(true);
         b.setBackgroundColor(Some(&UIColor::tertiarySystemFillColor()));
@@ -244,7 +232,7 @@ pub mod ios_impl {
         struct SendPtr(usize);
         unsafe impl Send for SendPtr {}
 
-        for delay in [0, 20, 60, 150, 400] {
+        for delay in [0, 20, 60, 150, 400, 800, 1500] {
             let sp = SendPtr(ptr);
             day::reactive::on_main_delayed(delay, move || {
                 let v = unsafe { &*(sp.0 as *const UIView) };
@@ -260,9 +248,6 @@ pub mod ios_impl {
             origin: objc2_core_foundation::CGPoint { x: 0.0, y: 0.0 },
             size: objc2_core_foundation::CGSize { width: 36.0, height: 36.0 },
         });
-        b.setTranslatesAutoresizingMaskIntoConstraints(false);
-        b.widthAnchor().constraintEqualToConstant(36.0).setActive(true);
-        b.heightAnchor().constraintEqualToConstant(36.0).setActive(true);
         b.layer().setCornerRadius(18.0);
         b.layer().setMasksToBounds(true);
         b.setBackgroundColor(Some(&UIColor::tertiarySystemFillColor()));

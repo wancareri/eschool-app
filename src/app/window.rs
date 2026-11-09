@@ -201,7 +201,7 @@ fn window_shell(primary: bool) -> impl Piece {
             day::reactive::on_main_delayed(800, move || {
                 crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
             });
-            for delay in [0, 30, 100, 300] {
+            for delay in [0, 30, 80, 160, 320, 600, 1200] {
                 day::reactive::on_main_delayed(delay, || {
                     let st = AppState::ambient();
                     if st.is_authenticated.get() {

@@ -661,7 +661,7 @@ fn username_step_view(
         .secure()
         .placeholder("Пароль")
         .grow_w()
-        .opacity(0.01);
+        .opacity(0.02);
 
     #[cfg(target_os = "ios")]
     let companion_pw = {
@@ -891,7 +891,7 @@ fn password_step_view(
     let companion_user = text_field(username)
         .placeholder("Логин")
         .grow_w()
-        .opacity(0.01);
+        .opacity(0.02);
 
     #[cfg(target_os = "ios")]
     let companion_user = {

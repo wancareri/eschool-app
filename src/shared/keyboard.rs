@@ -519,6 +519,7 @@ mod ios {
         unsafe {
             let _: () = objc2::msg_send![this, setAutocapitalizationType: 0isize];
             let _: () = objc2::msg_send![this, setAutocorrectionType: 1isize];
+            let _: () = objc2::msg_send![this, setSpellCheckingType: 1isize];
             let is_secure: bool = objc2::msg_send![this, isSecureTextEntry];
             let ctype = if is_secure {
                 objc2_foundation::NSString::from_str("password")
@@ -543,6 +544,9 @@ mod ios {
             }
         }
         unsafe {
+            let _: () = objc2::msg_send![this, setAutocapitalizationType: 0isize];
+            let _: () = objc2::msg_send![this, setAutocorrectionType: 1isize];
+            let _: () = objc2::msg_send![this, setSpellCheckingType: 1isize];
             let ctype = if secure {
                 objc2_foundation::NSString::from_str("password")
             } else {
