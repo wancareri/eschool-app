@@ -61,3 +61,27 @@ auth_signing_in = Входим…
 auth_step_username = Шаг 1 из 2 · Логин
 auth_step_password = Шаг 2 из 2 · Пароль
 auth_setup_title = Новый пароль
+
+auth_error_login_title = Введите логин
+auth_error_login_message = Укажите школьный логин или временный код.
+
+auth_error_password_title = Введите пароль
+auth_error_password_message = Укажите пароль от этого аккаунта.
+
+auth_error_forbidden_title = Доступ ограничен
+auth_error_forbidden_message = Обратитесь в школу, чтобы проверить доступ к аккаунту.
+
+auth_error_timeout_title = Сервер долго отвечает
+auth_error_timeout_message = Попробуйте ещё раз чуть позже.
+
+auth_error_server_title = Дневник временно недоступен
+auth_error_server_message = Попробуйте войти позже.
+
+auth_error_network_title = Не удалось подключиться
+auth_error_network_message = Проверьте подключение к интернету и повторите попытку.
+
+auth_error_credentials_title = Проверьте данные для входа
+auth_error_credentials_message = Логин или пароль не подходят. Исправьте данные и попробуйте ещё раз.
+
+auth_error_generic_title = Не удалось войти
+auth_error_generic_message = Введённые данные сохранены в форме. Попробуйте ещё раз.

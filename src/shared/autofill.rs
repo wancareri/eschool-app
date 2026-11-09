@@ -9,7 +9,7 @@ pub mod ios {
         NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol, NSString,
     };
     use objc2_ui_kit::{
-        UIReturnKeyType, UITextAutocapitalizationType, UITextAutocorrectionType, UITextField,
+        NSObjectUIAccessibility, UIReturnKeyType, UITextAutocapitalizationType, UITextAutocorrectionType, UITextField,
         UITextInput, UITextInputTraits, UITextSmartDashesType, UITextSmartQuotesType,
         UITextSpellCheckingType, UIView,
     };
@@ -24,6 +24,7 @@ pub mod ios {
 
     thread_local! {
         static FIELDS: RefCell<Vec<(Weak<UITextField>, Role)>> = const { RefCell::new(Vec::new()) };
+        static VALUES: RefCell<Vec<(Weak<UITextField>, Signal<String>)>> = const { RefCell::new(Vec::new()) };
         static OBSERVER: RefCell<Option<Retained<InputModeObserver>>> = const { RefCell::new(None) };
         static LAST_MODE: RefCell<Option<(usize, String)>> = const { RefCell::new(None) };
     }
@@ -34,7 +35,9 @@ pub mod ios {
             Role::Password => "password",
             Role::NewPassword => "newPassword",
         };
-        field.setTextContentType(Some(&NSString::from_str(content)));
+        if field.textContentType().to_string() != content {
+            field.setTextContentType(Some(&NSString::from_str(content)));
+        }
         if let Role::NewPassword = role {
             if let Some(mtm) = MainThreadMarker::new() {
                 // The parent API accepts 12–15 characters and requires a letter
@@ -83,6 +86,59 @@ pub mod ios {
             all.push((Weak::new(&*field), role));
         });
         install_observer();
+    }
+
+    fn bind_value(view: &UIView, value: Signal<String>) {
+        let Some(field) = find_field(view) else { return };
+        VALUES.with(|values| {
+            let mut values = values.borrow_mut();
+            values.retain(|(weak, _)| weak.load().is_some_and(|old| !std::ptr::eq(&*old, &*field)));
+            values.push((Weak::new(&*field), value));
+        });
+    }
+
+    pub fn username(view: &UIView, value: Signal<String>) {
+        configure(view, Role::Username);
+        bind_value(view, value);
+    }
+
+    pub fn capture_password(view: &UIView, value: Signal<String>) {
+        configure(view, Role::Password);
+        bind_value(view, value);
+        // Separate capture field: never overlays the username input or takes
+        // focus, and it is omitted from accessibility navigation.
+        view.setUserInteractionEnabled(false);
+        if let Some(mtm) = MainThreadMarker::new() {
+            view.setAccessibilityElementsHidden(true, mtm);
+            if let Some(field) = find_field(view) {
+                field.setTextColor(Some(&objc2_ui_kit::UIColor::clearColor()));
+                field.setBackgroundColor(Some(&objc2_ui_kit::UIColor::clearColor()));
+                field.setAccessibilityElementsHidden(true, mtm);
+                field.setIsAccessibilityElement(false, mtm);
+            }
+        }
+    }
+
+    /// Read before replacing the username page: credential providers may set
+    /// native text without sending Day's editingChanged control event.
+    pub fn sync_values() {
+        let updates = VALUES.with(|values| {
+            let mut values = values.borrow_mut();
+            values.retain(|(weak, _)| weak.load().is_some());
+            values.iter().filter_map(|(weak, value)| {
+                Some((*value, weak.load()?.text().map(|s| s.to_string()).unwrap_or_default()))
+            }).collect::<Vec<_>>()
+        });
+        for (value, text) in updates {
+            if value.get_untracked() != text { value.set(text); }
+        }
+    }
+
+    pub fn refresh_active() {
+        dispatch2::DispatchQueue::main().exec_async(|| {
+            LAST_MODE.with(|last| *last.borrow_mut() = None);
+            restore_current_traits();
+        });
     }
 
     /// Toggle masking on ONE field. Replacing a secure field with a plain field
@@ -136,9 +192,10 @@ pub mod ios {
                 true
             }
         });
-        traits(&field, role);
+        // Input-mode changes do not require rebuilding the keyboard. Doing so
+        // interrupts the credential suggestion session on multilingual keyboards.
         if changed {
-            field.reloadInputViews();
+            traits(&field, role);
         }
     }
 
@@ -149,6 +206,19 @@ pub mod ios {
         struct InputModeObserver;
         unsafe impl NSObjectProtocol for InputModeObserver {}
         impl InputModeObserver {
+            #[unsafe(method(textChanged:))]
+            fn text_changed(&self, notification: &NSNotification) {
+                let Some(object) = notification.object() else { return };
+                let Some(field) = object.downcast_ref::<UITextField>() else { return };
+                let value = VALUES.with(|values| values.borrow().iter().find_map(|(weak, value)| {
+                    weak.load().filter(|known| std::ptr::eq(&**known, field)).map(|_| *value)
+                }));
+                if let Some(value) = value {
+                    let text = field.text().map(|s| s.to_string()).unwrap_or_default();
+                    if value.get_untracked() != text { value.set(text); }
+                }
+            }
+
             #[unsafe(method(inputModeChanged:))]
             fn input_mode_changed(&self, _notification: &NSNotification) {
                 // UIKit has to finish changing input modes before traits and
@@ -170,6 +240,12 @@ pub mod ios {
                 unsafe { objc2::msg_send![InputModeObserver::alloc(mtm), init] };
             let center = NSNotificationCenter::defaultCenter();
             unsafe {
+                center.addObserver_selector_name_object(
+                    &observer,
+                    objc2::sel!(textChanged:),
+                    Some(objc2_ui_kit::UITextFieldTextDidChangeNotification),
+                    None,
+                );
                 center.addObserver_selector_name_object(
                     &observer,
                     objc2::sel!(inputModeChanged:),

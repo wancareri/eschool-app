@@ -70,3 +70,27 @@ auth_signing_in = Signing in…
 auth_step_username = Step 1 of 2 · Username
 auth_step_password = Step 2 of 2 · Password
 auth_setup_title = New password
+
+auth_error_login_title = Enter your username
+auth_error_login_message = Use your school username or temporary code.
+
+auth_error_password_title = Enter your password
+auth_error_password_message = Enter the password for this account.
+
+auth_error_forbidden_title = Access restricted
+auth_error_forbidden_message = Contact your school to check access to this account.
+
+auth_error_timeout_title = The server took too long
+auth_error_timeout_message = Try again in a moment.
+
+auth_error_server_title = Diary temporarily unavailable
+auth_error_server_message = Please try again later.
+
+auth_error_network_title = Couldn’t connect
+auth_error_network_message = Check your internet connection and try again.
+
+auth_error_credentials_title = Check your sign-in details
+auth_error_credentials_message = The username or password is incorrect. You can edit them and try again.
+
+auth_error_generic_title = Couldn’t sign in
+auth_error_generic_message = Your details are still here. Please try again.

@@ -186,75 +186,59 @@ fn profile_view(state: AppState) -> impl Piece {
     .grow()
 }
 
-#[allow(dead_code)]
 struct AuthErrorInfo {
-    code: &'static str,
-    title: &'static str,
+    title: String,
     message: String,
 }
 
-fn parse_auth_error(raw: &str) -> AuthErrorInfo {
+fn auth_error_code(raw: &str) -> &'static str {
     let lower = raw.to_lowercase();
-    if lower.contains("введите логин") || lower.contains("введите имя") {
-        AuthErrorInfo {
-            code: "AUTH_EMPTY_LOGIN",
-            title: "Не указан логин",
-            message: "Пожалуйста, введите ваш логин или код.".into(),
-        }
-    } else if lower.contains("введите пароль") {
-        AuthErrorInfo {
-            code: "AUTH_EMPTY_PASSWORD",
-            title: "Не указан пароль",
-            message: "Пожалуйста, введите пароль от вашего аккаунта.".into(),
-        }
-    } else if lower.contains("401") || lower.contains("неверн") || lower.contains("парол") || lower.contains("unauthorized") || lower.contains("invalid") {
-        AuthErrorInfo {
-            code: "AUTH_INVALID_CREDENTIALS",
-            title: "Неверные данные",
-            message: "Неверный логин или пароль. Проверьте правильность ввода.".into(),
-        }
-    } else if lower.contains("403") || lower.contains("заблокир") || lower.contains("forbidden") {
-        AuthErrorInfo {
-            code: "AUTH_FORBIDDEN",
-            title: "Доступ ограничен",
-            message: "Доступ к аккаунту заблокирован или запрещён.".into(),
-        }
-    } else if lower.contains("таймаут") || lower.contains("timeout") || lower.contains("timed out") {
-        AuthErrorInfo {
-            code: "NET_TIMEOUT",
-            title: "Таймаут соединения",
-            message: "Сервер электронного дневника не ответил вовремя.".into(),
-        }
-    } else if lower.contains("error sending request")
-        || lower.contains("не удалось подключиться")
-        || lower.contains("dns error")
-        || lower.contains("connection refused")
-        || lower.contains("failed to connect")
-    {
-        AuthErrorInfo {
-            code: "NET_NO_CONNECTION",
-            title: "Ошибка сети",
-            message: "Не удалось подключиться. Проверьте интернет или отключите VPN.".into(),
-        }
-    } else if lower.contains("500") || lower.contains("502") || lower.contains("503") || lower.contains("504") || lower.contains("internal") {
-        AuthErrorInfo {
-            code: "SRV_UNAVAILABLE",
-            title: "Сбой сервера",
-            message: "На сервере дневника проводятся работы. Попробуйте позже.".into(),
-        }
-    } else {
-        AuthErrorInfo {
-            code: "AUTH_FAILED",
-            title: "Ошибка входа",
-            message: if raw.trim().is_empty() {
-                "Не удалось выполнить вход. Попробуйте снова.".into()
-            } else if raw.len() <= 60 && !raw.contains('{') && !raw.contains("http") {
-                raw.to_string()
-            } else {
-                "Произошла ошибка при попытке входа. Попробуйте снова.".into()
-            },
-        }
-    }
+    if lower.contains("введите логин") || lower.contains("введите имя") { "empty_login" }
+    else if lower.contains("введите пароль") { "empty_password" }
+    else if lower.contains("403") || lower.contains("заблокир") || lower.contains("forbidden") { "forbidden" }
+    else if lower.contains("таймаут") || lower.contains("timeout") || lower.contains("timed out") { "timeout" }
+    else if ["500", "502", "503", "504", "internal server"].iter().any(|s| lower.contains(s)) { "server" }
+    else if ["error sending request", "не удалось подключиться", "dns", "connection refused", "failed to connect", "network", "connection reset"].iter().any(|s| lower.contains(s)) { "network" }
+    else if ["401", "неверн", "unauthorized", "invalid credentials", "invalid password", "invalid login"].iter().any(|s| lower.contains(s)) { "credentials" }
+    else { "generic" }
+}
+
+fn parse_auth_error(raw: &str) -> AuthErrorInfo {
+    let (title, message) = match auth_error_code(raw) {
+        "empty_login" => (res::str::auth_error_login_title().format(), res::str::auth_error_login_message().format()),
+        "empty_password" => (res::str::auth_error_password_title().format(), res::str::auth_error_password_message().format()),
+        "forbidden" => (res::str::auth_error_forbidden_title().format(), res::str::auth_error_forbidden_message().format()),
+        "timeout" => (res::str::auth_error_timeout_title().format(), res::str::auth_error_timeout_message().format()),
+        "server" => (res::str::auth_error_server_title().format(), res::str::auth_error_server_message().format()),
+        "network" => (res::str::auth_error_network_title().format(), res::str::auth_error_network_message().format()),
+        "credentials" => (res::str::auth_error_credentials_title().format(), res::str::auth_error_credentials_message().format()),
+        _ => (res::str::auth_error_generic_title().format(), res::str::auth_error_generic_message().format()),
+    };
+    AuthErrorInfo { title, message }
+}
+
+
+fn auth_error_card(local: Signal<String>, state: AppState) -> impl Piece {
+    let info = move || {
+        let local = local.get();
+        let raw = if local.is_empty() { state.error_msg.get() } else { local };
+        parse_auth_error(&raw)
+    };
+    when(
+        move || !local.get().is_empty() || !state.error_msg.get().is_empty(),
+        move || column((
+            label(move || info().title.to_string()).font(Font::Subheadline).bold()
+                .color(colors::ERROR),
+            label(move || info().message).font(Font::Subheadline).secondary(),
+        ))
+        .spacing(4.0)
+        .padding(14.0)
+        .grow_w()
+        .background(colors::ERROR.with_alpha(0.08))
+        .glass_radius(14.0)
+        .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
+        .any(),
+    )
 }
 
 
@@ -308,9 +292,9 @@ pub fn auth_toolbar() -> Vec<ToolbarEntry> {
     let theme = day::prefs::get(crate::THEME_KEY);
     let dark = day::dark_mode(); // React to appearance changes, including system changes.
     let language = sub_menu(res::str::auth_language().format(), vec![
-        menu_item("Русский").id("auth-language-ru").checked(locale.starts_with("ru")).action(|| choose_auth_language("ru")),
-        menu_item("Беларуская").id("auth-language-be").checked(locale.starts_with("be")).action(|| choose_auth_language("be")),
-        menu_item("English").id("auth-language-en").checked(locale.starts_with("en")).action(|| choose_auth_language("en")),
+        menu_item("Русский · RU").id("auth-language-ru").checked(locale.starts_with("ru")).action(|| choose_auth_language("ru")),
+        menu_item("Беларуская · BE").id("auth-language-be").checked(locale.starts_with("be")).action(|| choose_auth_language("be")),
+        menu_item("English · EN").id("auth-language-en").checked(locale.starts_with("en")).action(|| choose_auth_language("en")),
     ]).image("globe");
     let appearance = sub_menu(res::str::auth_appearance().format(), vec![
         menu_item(res::str::auth_theme_system().format()).id("auth-theme-system").icon(Symbol::Auto)
@@ -326,8 +310,12 @@ pub fn auth_toolbar() -> Vec<ToolbarEntry> {
 
 fn choose_auth_language(locale: &'static str) {
     if day::locale().get_untracked().starts_with(locale) { return; }
+    #[cfg(target_os = "ios")]
+    crate::shared::autofill::ios::sync_values();
     day::prefs::set(crate::LOCALE_KEY, locale);
     set_locale(locale);
+    #[cfg(target_os = "ios")]
+    crate::shared::autofill::ios::refresh_active();
     crate::shared::haptics::tick();
 }
 
@@ -395,7 +383,7 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
 
 fn username_step_view(
     username: Signal<String>,
-    _password: Signal<String>,
+    password: Signal<String>,
     remember: Signal<bool>,
     username_focused: Signal<bool>,
     error_local: Signal<String>,
@@ -427,8 +415,8 @@ fn username_step_view(
     #[cfg(target_os = "ios")]
     let input_field = {
         use day_uikit::UiKitExt;
-        input_field.uikit(|view, _, _| {
-            crate::shared::autofill::ios::configure(view, crate::shared::autofill::ios::Role::Username);
+        input_field.uikit(move |view, _, _| {
+            crate::shared::autofill::ios::username(view, username);
         })
     };
 
@@ -464,10 +452,28 @@ fn username_step_view(
     })
     .glass_radius(16.0);
 
+    // The user explicitly requested keeping two steps with a capture input.
+    // Mount only while this step is active so it never competes with the real
+    // password field on the destination page. It has no hit/accessibility target.
+    #[cfg(target_os = "ios")]
+    let credential_capture = {
+        use day_uikit::UiKitExt;
+        when(move || get_auth_state().path.get().last() == Some(&AuthRoute::Login), move || {
+            text_field(password).secure().height(1.0).grow_w()
+                .uikit(move |view, _, _| {
+                    crate::shared::autofill::ios::capture_password(view, password);
+                })
+                .any()
+        })
+    };
+    #[cfg(not(target_os = "ios"))]
+    let credential_capture = { let _ = password; spacer().height(0.0) };
+
     let content = column((
         input_card
             .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
             .grow_w(),
+        credential_capture,
 
         // Minimalist native session remember toggle
         row((
@@ -482,36 +488,7 @@ fn username_step_view(
         .grow_w(),
     ));
 
-    let err_display = when(
-        move || !error_local.get().is_empty() || !state.error_msg.get().is_empty(),
-        move || {
-            let local_err = error_local.get();
-            let state_err = state.error_msg.get();
-            let (code, msg) = if !local_err.is_empty() {
-                let err = parse_auth_error(&local_err);
-                (err.code, err.message)
-            } else {
-                let err = parse_auth_error(&state_err);
-                (err.code, err.message)
-            };
-            column((
-                label(msg)
-                    .font(Font::Subheadline)
-                    .color(colors::ERROR)
-                    .align(TextAlign::Center),
-                spacer().height(2.0),
-                label(format!("Код ошибки: [{code}]"))
-                    .font(Font::Caption2)
-                    .bold()
-                    .color(colors::ERROR.with_alpha(0.8))
-                    .align(TextAlign::Center),
-            ))
-            .spacing(2.0)
-            .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 })
-            .grow_w()
-            .any()
-        },
-    );
+    let err_display = auth_error_card(error_local, state);
 
     let bottom_section = column((
         label(res::str::auth_step_username()).font(Font::Caption).secondary()
@@ -671,36 +648,7 @@ fn password_step_view(
             .grow_w(),
     ));
 
-    let err_display = when(
-        move || !error_local.get().is_empty() || !state.error_msg.get().is_empty(),
-        move || {
-            let local_err = error_local.get();
-            let state_err = state.error_msg.get();
-            let (code, msg) = if !local_err.is_empty() {
-                let err = parse_auth_error(&local_err);
-                (err.code, err.message)
-            } else {
-                let err = parse_auth_error(&state_err);
-                (err.code, err.message)
-            };
-            column((
-                label(msg)
-                    .font(Font::Subheadline)
-                    .color(colors::ERROR)
-                    .align(TextAlign::Center),
-                spacer().height(2.0),
-                label(format!("Код ошибки: [{code}]"))
-                    .font(Font::Caption2)
-                    .bold()
-                    .color(colors::ERROR.with_alpha(0.8))
-                    .align(TextAlign::Center),
-            ))
-            .spacing(2.0)
-            .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 })
-            .grow_w()
-            .any()
-        },
-    );
+    let err_display = auth_error_card(error_local, state);
 
     let btn_title = move || {
         if state.loading.get() {
@@ -839,6 +787,8 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
         let state = state;
         let path = path;
         move || {
+            #[cfg(target_os = "ios")]
+            crate::shared::autofill::ios::sync_values();
             let u = username.get_untracked();
             if u.trim().is_empty() {
                 error_local.set("Введите логин".into());
@@ -1358,4 +1308,19 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
         }
     })
     .grow()
+}
+
+#[cfg(test)]
+mod auth_error_tests {
+    use super::auth_error_code;
+
+    #[test]
+    fn transport_errors_are_not_bad_passwords() {
+        assert_eq!(auth_error_code("password login: error sending request: DNS error"), "network");
+        assert_eq!(auth_error_code("invalid password: request timed out"), "timeout");
+        assert_eq!(auth_error_code("password endpoint: HTTP 503"), "server");
+        assert_eq!(auth_error_code("HTTP 403: invalid credentials"), "forbidden");
+        assert_eq!(auth_error_code("HTTP 401 Unauthorized"), "credentials");
+        assert_eq!(auth_error_code("Введите пароль"), "empty_password");
+    }
 }

@@ -53,12 +53,12 @@ pub fn apply_ios_tint(hex: u32) {
         let _: () = objc2::msg_send![&*tab_appearance, setStandardAppearance: &*tab_app];
         let _: () = objc2::msg_send![&*tab_appearance, setScrollEdgeAppearance: &*tab_app];
 
-        // UINavigationBarAppearance — seamless transparent ground matching page background
+        // Opaque system background matches the page without a gray material tint.
         let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
         let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![nav_appearance_class, new];
-        let _: () = objc2::msg_send![&*nav_app, configureWithTransparentBackground];
-        let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*clear];
+        let _: () = objc2::msg_send![&*nav_app, configureWithOpaqueBackground];
+        let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*objc2_ui_kit::UIColor::systemBackgroundColor()];
         let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
 
         // UINavigationBar.appearance()
@@ -153,8 +153,8 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
             let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
             let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
                 objc2::msg_send![nav_appearance_class, new];
-            let _: () = objc2::msg_send![&*nav_app, configureWithTransparentBackground];
-            let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*clear];
+            let _: () = objc2::msg_send![&*nav_app, configureWithOpaqueBackground];
+            let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*objc2_ui_kit::UIColor::systemBackgroundColor()];
             let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
 
             let _: () = objc2::msg_send![bar, setStandardAppearance: &*nav_app];

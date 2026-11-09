@@ -121,10 +121,11 @@ eschool-app/
 - In `intro_view`, when starting the login transition to `username_step_view`, delay focusing by ~350ms (`on_main_delayed(350, ...)`) to let the page push finish before the keyboard slides up.
 
 ### D. iOS AutoFill & Passwords on Russian / Multilingual Keyboards
-- **Do NOT use invisible companion fields (`companion_pw` / `opacity(0.02)`):**
-  Overlapping two text fields at the same location confuses iOS AutoFill and accessibility heuristics. Use a single `text_field` per step.
+- **Do NOT use overlapping invisible companion fields (`companion_pw` / `opacity(0.02)`):**
+  Overlapping two text fields at the same location confuses iOS AutoFill and accessibility heuristics. Keep a single interactive `text_field` per step. Explicit user exception in build 66: a separate one-point password capture field below the username card is mounted only while the username step is active. It uses clear text rather than opacity, cannot receive touches or accessibility focus, and is removed before the visible password field is used. Read native values before advancing; do not assume every iOS credential provider will fill the capture field.
 - **AutoFill traits are configured AFTER Day realizes a field:** `shared/autofill.rs` configures only authentication fields. Day sets `autocorrectionType: No` after `setSecureTextEntry`, so the former global swizzles were overwritten. Register the explicit username/password/newPassword role; on input-mode changes restore traits for the current field without resigning focus. The password visibility button changes masking on the same UITextField and keeps its `.password` role.
 - **System save prompts:** setting text traits improves AutoFill heuristics; it does not establish ownership of a third-party website. Guaranteed domain credential sharing/saving requires associated domains, matching signing entitlements and the website's AASA configuration. Do not promise that an unsigned/sideloaded build can force Apple Passwords to save credentials for e-schools.by.
+- Do not call `reloadInputViews` on input-mode changes: it can interrupt the active Password AutoFill session. Preserve the existing content type when it already matches.
 - **Locking Assistant Bar:**
   Set `inputAssistantItem.setAllowsHidingShortcuts: false` so iOS does not collapse the shortcut bar.
 - **Language changes:** update localized text and native page titles in place. Keep the authentication stack, focus and field values alive. Do not apply a whole-form `.animation(...)` to the auth form; menu changes must not replay its entrance animation.
@@ -143,3 +144,5 @@ eschool-app/
 - **Build 64:** Native declarative theme/language toolbar on welcome and all login steps; interactive-pop keyboard updates wait for commit/cancel; weak per-page followers; guarded delayed focus and refocus after completed password-to-login pops.
 
 - **Build 65:** One window-level ellipsis menu, native anchored language/appearance submenus, live auth localization without entrance replay, stable password field masking, and scoped AutoFill/input-mode handling.
+
+- **Build 66:** Native submenu icon compatibility for Day’s UIKit menu lowering; RU/BE/EN labels; localized reactive error cards and corrected transport-error classification; opaque navigation background matching the page; no keyboard reload on language changes; user-requested separate password capture input and native value synchronization before advancing. AutoFill eligibility still requires device verification.

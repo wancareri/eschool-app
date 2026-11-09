@@ -61,3 +61,27 @@ auth_signing_in = Уваходзім…
 auth_step_username = Крок 1 з 2 · Лагін
 auth_step_password = Крок 2 з 2 · Пароль
 auth_setup_title = Новы пароль
+
+auth_error_login_title = Увядзіце лагін
+auth_error_login_message = Укажыце школьны лагін або часовы код.
+
+auth_error_password_title = Увядзіце пароль
+auth_error_password_message = Укажыце пароль ад гэтага акаўнта.
+
+auth_error_forbidden_title = Доступ абмежаваны
+auth_error_forbidden_message = Звярніцеся ў школу, каб праверыць доступ да акаўнта.
+
+auth_error_timeout_title = Сервер доўга адказвае
+auth_error_timeout_message = Паспрабуйце яшчэ раз крыху пазней.
+
+auth_error_server_title = Дзённік часова недаступны
+auth_error_server_message = Паспрабуйце ўвайсці пазней.
+
+auth_error_network_title = Не ўдалося падключыцца
+auth_error_network_message = Праверце падключэнне да інтэрнэту і паўтарыце спробу.
+
+auth_error_credentials_title = Праверце даныя для ўваходу
+auth_error_credentials_message = Лагін або пароль няправільныя. Выпраўце даныя і паспрабуйце яшчэ раз.
+
+auth_error_generic_title = Не ўдалося ўвайсці
+auth_error_generic_message = Уведзеныя даныя засталіся ў форме. Паспрабуйце яшчэ раз.
