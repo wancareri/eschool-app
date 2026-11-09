@@ -41,7 +41,7 @@ pub mod ios_impl {
         let label = title.to_string();
         // Check both title and contents so unrelated menus pass through.
         let language = matches!(label.as_str(), "Language" | "Язык" | "Мова")
-            && children.firstObject().is_some_and(|child| child.title().to_string() == "Русский · RU");
+            && children.firstObject().is_some_and(|child| child.title().to_string() == "RU · Русский");
         let appearance = matches!(label.as_str(), "Appearance" | "Оформление" | "Афармленне")
             && children.len() == 3
             && children.iter().all(|child| child.image().is_some());

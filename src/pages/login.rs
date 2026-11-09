@@ -163,11 +163,6 @@ fn profile_view(state: AppState) -> impl Piece {
                         button("Выйти")
                             .action(move || {
                                 crate::shared::haptics::pop();
-                                let auth = get_auth_state();
-                                auth.path.set(Vec::new());
-                                auth.username.set(String::new());
-                                auth.password.set(String::new());
-                                auth.error_local.set(String::new());
                                 features::auth::logout(state);
                             }),
                     )
@@ -292,9 +287,9 @@ pub fn auth_toolbar() -> Vec<ToolbarEntry> {
     let theme = day::prefs::get(crate::THEME_KEY);
     let dark = day::dark_mode(); // React to appearance changes, including system changes.
     let language = sub_menu(res::str::auth_language().format(), vec![
-        menu_item("Русский · RU").id("auth-language-ru").checked(locale.starts_with("ru")).action(|| choose_auth_language("ru")),
-        menu_item("Беларуская · BE").id("auth-language-be").checked(locale.starts_with("be")).action(|| choose_auth_language("be")),
-        menu_item("English · EN").id("auth-language-en").checked(locale.starts_with("en")).action(|| choose_auth_language("en")),
+        menu_item("RU · Русский").id("auth-language-ru").checked(locale.starts_with("ru")).action(|| choose_auth_language("ru")),
+        menu_item("BE · Беларуская").id("auth-language-be").checked(locale.starts_with("be")).action(|| choose_auth_language("be")),
+        menu_item("EN · English").id("auth-language-en").checked(locale.starts_with("en")).action(|| choose_auth_language("en")),
     ]).image("globe");
     let appearance = sub_menu(res::str::auth_appearance().format(), vec![
         menu_item(res::str::auth_theme_system().format()).id("auth-theme-system").icon(Symbol::Auto)
@@ -591,7 +586,7 @@ fn password_step_view(
     #[cfg(target_os = "ios")]
     let pw_field = {
         use day_uikit::UiKitExt;
-        pw_field.uikit(move |view, _, _| crate::shared::autofill::ios::password(view, show_password))
+        pw_field.uikit(move |view, _, _| crate::shared::autofill::ios::password(view, show_password, password))
     };
 
     #[cfg(not(target_os = "ios"))]
@@ -613,7 +608,7 @@ fn password_step_view(
         vector(res::vectors::lock)
             .frame(20.0, 20.0)
             .tint(move || {
-                if password_focused.get() {
+                if password_focused.get() || !password.get().is_empty() {
                     Color::hex(state.accent_color.get())
                 } else {
                     Color::hex(0x8E8E93)
@@ -627,13 +622,13 @@ fn password_step_view(
     .padding(Insets { top: 6.0, leading: 16.0, bottom: 6.0, trailing: 10.0 })
     .background(move || {
         if day::dark_mode() {
-            if password_focused.get() {
+            if password_focused.get() || !password.get().is_empty() {
                 Color::rgba(1.0, 1.0, 1.0, 0.12)
             } else {
                 Color::rgba(1.0, 1.0, 1.0, 0.07)
             }
         } else {
-            if password_focused.get() {
+            if password_focused.get() || !password.get().is_empty() {
                 Color::rgba(0.0, 0.0, 0.0, 0.06)
             } else {
                 Color::rgba(0.0, 0.0, 0.0, 0.035)
@@ -743,6 +738,22 @@ fn get_auth_state() -> AuthState {
     })
 }
 
+/// Clear every auth draft before showing the welcome page again.
+pub fn reset_auth_flow() {
+    #[cfg(target_os = "ios")]
+    crate::shared::autofill::ios::reset();
+    let auth = get_auth_state();
+    day::reactive::batch(|| {
+        auth.username_focused.set(false);
+        auth.password_focused.set(false);
+        auth.username.set(String::new());
+        auth.password.set(String::new());
+        auth.error_local.set(String::new());
+        auth.remember.set(true);
+        auth.path.set(Vec::new());
+    });
+}
+
 fn focus_auth_route_after(route: AuthRoute, delay: u32) {
     let ticket = crate::shared::session::ticket();
     day::reactive::on_main_delayed(delay, move || {
@@ -797,7 +808,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 state.error_msg.set(String::new());
                 crate::shared::haptics::tick();
                 path.set(vec![AuthRoute::Login, AuthRoute::Password]);
-                focus_auth_route_after(AuthRoute::Password, 350);
+                focus_auth_route_after(AuthRoute::Password, 0);
             }
         }
     };
@@ -1313,6 +1324,29 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
 #[cfg(test)]
 mod auth_error_tests {
     use super::auth_error_code;
+
+    #[test]
+    fn reset_discards_credentials_focus_and_navigation() {
+        use super::{AuthRoute, get_auth_state, reset_auth_flow};
+        let auth = get_auth_state();
+        auth.username.set("test-account".into());
+        auth.password.set("test-secret".into());
+        auth.path.set(vec![AuthRoute::Login, AuthRoute::Password]);
+        auth.username_focused.set(true);
+        auth.password_focused.set(true);
+        auth.error_local.set("previous error".into());
+        auth.remember.set(false);
+        reset_auth_flow();
+        assert!(auth.username.get().is_empty());
+        assert!(auth.password.get().is_empty());
+        assert!(auth.path.get().is_empty());
+        assert!(!auth.username_focused.get());
+        assert!(!auth.password_focused.get());
+        assert!(auth.error_local.get().is_empty());
+        assert!(auth.remember.get());
+        reset_auth_flow();
+        assert!(auth.path.get().is_empty());
+    }
 
     #[test]
     fn transport_errors_are_not_bad_passwords() {

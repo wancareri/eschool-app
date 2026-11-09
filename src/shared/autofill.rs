@@ -4,14 +4,18 @@
 pub mod ios {
     use day::prelude::Signal;
     use objc2::rc::{Retained, Weak};
+    use objc2::runtime::ProtocolObject;
     use objc2::{MainThreadMarker, MainThreadOnly, Message, define_class};
     use objc2_foundation::{
         NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol, NSString,
     };
     use objc2_ui_kit::{
-        NSObjectUIAccessibility, UIReturnKeyType, UITextAutocapitalizationType, UITextAutocorrectionType, UITextField,
-        UITextInput, UITextInputTraits, UITextSmartDashesType, UITextSmartQuotesType,
-        UITextSpellCheckingType, UIView,
+        NSObjectUIAccessibility, UIAction, UIButton, UIButtonType, UIControlEvents, UIControlState,
+        UIEditMenuConfiguration, UIEditMenuInteraction, UIImage, UIReturnKeyType,
+        UITextAutocapitalizationType, UITextAutocorrectionType, UITextContentTypeNewPassword,
+        UITextContentTypePassword, UITextContentTypeUsername, UITextField, UITextFieldDelegate,
+        UITextFieldViewMode, UITextInput, UITextInputTraits, UITextSmartDashesType,
+        UITextSmartQuotesType, UITextSpellCheckingType, UIView,
     };
     use std::cell::RefCell;
 
@@ -25,18 +29,21 @@ pub mod ios {
     thread_local! {
         static FIELDS: RefCell<Vec<(Weak<UITextField>, Role)>> = const { RefCell::new(Vec::new()) };
         static VALUES: RefCell<Vec<(Weak<UITextField>, Signal<String>)>> = const { RefCell::new(Vec::new()) };
+        static RETURN_DELEGATE: RefCell<Option<Retained<ReturnKeyDelegate>>> = const { RefCell::new(None) };
         static OBSERVER: RefCell<Option<Retained<InputModeObserver>>> = const { RefCell::new(None) };
         static LAST_MODE: RefCell<Option<(usize, String)>> = const { RefCell::new(None) };
     }
 
     fn traits(field: &UITextField, role: Role) {
-        let content = match role {
-            Role::Username => "username",
-            Role::Password => "password",
-            Role::NewPassword => "newPassword",
+        let content = unsafe {
+            match role {
+                Role::Username => UITextContentTypeUsername,
+                Role::Password => UITextContentTypePassword,
+                Role::NewPassword => UITextContentTypeNewPassword,
+            }
         };
-        if field.textContentType().to_string() != content {
-            field.setTextContentType(Some(&NSString::from_str(content)));
+        if field.textContentType().to_string() != content.to_string() {
+            field.setTextContentType(Some(content));
         }
         if let Role::NewPassword = role {
             if let Some(mtm) = MainThreadMarker::new() {
@@ -56,7 +63,9 @@ pub mod ios {
         field.setAutocapitalizationType(UITextAutocapitalizationType::None);
         // Day sets No during creation, after setSecureTextEntry. Configure here
         // instead of globally changing every text field in the application.
-        field.setAutocorrectionType(UITextAutocorrectionType::Yes);
+        if field.autocorrectionType() != UITextAutocorrectionType::Yes {
+            field.setAutocorrectionType(UITextAutocorrectionType::Yes);
+        }
         field.setSpellCheckingType(UITextSpellCheckingType::No);
         field.setSmartQuotesType(UITextSmartQuotesType::No);
         field.setSmartDashesType(UITextSmartDashesType::No);
@@ -89,7 +98,9 @@ pub mod ios {
     }
 
     fn bind_value(view: &UIView, value: Signal<String>) {
-        let Some(field) = find_field(view) else { return };
+        let Some(field) = find_field(view) else {
+            return;
+        };
         VALUES.with(|values| {
             let mut values = values.borrow_mut();
             values.retain(|(weak, _)| weak.load().is_some_and(|old| !std::ptr::eq(&*old, &*field)));
@@ -100,6 +111,10 @@ pub mod ios {
     pub fn username(view: &UIView, value: Signal<String>) {
         configure(view, Role::Username);
         bind_value(view, value);
+        if let Some(field) = find_field(view) {
+            install_return_delegate(&field);
+            install_edit_menu_button(&field);
+        }
     }
 
     pub fn capture_password(view: &UIView, value: Signal<String>) {
@@ -125,12 +140,23 @@ pub mod ios {
         let updates = VALUES.with(|values| {
             let mut values = values.borrow_mut();
             values.retain(|(weak, _)| weak.load().is_some());
-            values.iter().filter_map(|(weak, value)| {
-                Some((*value, weak.load()?.text().map(|s| s.to_string()).unwrap_or_default()))
-            }).collect::<Vec<_>>()
+            values
+                .iter()
+                .filter_map(|(weak, value)| {
+                    Some((
+                        *value,
+                        weak.load()?
+                            .text()
+                            .map(|s| s.to_string())
+                            .unwrap_or_default(),
+                    ))
+                })
+                .collect::<Vec<_>>()
         });
         for (value, text) in updates {
-            if value.get_untracked() != text { value.set(text); }
+            if value.get_untracked() != text {
+                value.set(text);
+            }
         }
     }
 
@@ -143,11 +169,16 @@ pub mod ios {
 
     /// Toggle masking on ONE field. Replacing a secure field with a plain field
     /// loses focus, selection, and the password role used by Password AutoFill.
-    pub fn password(view: &UIView, shown: Signal<bool>) {
+    pub fn password(view: &UIView, shown: Signal<bool>, value: Signal<String>) {
         configure(view, Role::Password);
+        bind_value(view, value);
         let Some(field) = find_field(view) else {
             return;
         };
+        // Realize the captured value before UIKit starts the push/focus transfer.
+        field.setText(Some(&NSString::from_str(&value.get_untracked())));
+        install_return_delegate(&field);
+        install_edit_menu_button(&field);
         let weak = Weak::new(&*field);
         day::reactive::bind(
             move || shown.get(),
@@ -166,6 +197,127 @@ pub mod ios {
                 traits(&field, Role::Password);
             },
         );
+    }
+
+    /// A stable entry to UIKit's text-edit menu when QuickType is collapsed.
+    /// UIKit supplies its own AutoFill commands; no private Passwords selector.
+    fn install_edit_menu_button(field: &UITextField) {
+        if field.rightView().is_some() {
+            return;
+        }
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let button = UIButton::buttonWithType(UIButtonType::System, mtm);
+        button.setFrame(objc2_core_foundation::CGRect::new(
+            objc2_core_foundation::CGPoint::new(0.0, 0.0),
+            objc2_core_foundation::CGSize::new(36.0, 36.0),
+        ));
+        let image = UIImage::systemImageNamed(&NSString::from_str("key"));
+        button.setImage_forState(image.as_deref(), UIControlState::Normal);
+        let weak = Weak::new(field);
+        let handler = block2::RcBlock::new(move |_: std::ptr::NonNull<UIAction>| {
+            let Some(field) = weak.load() else { return };
+            field.becomeFirstResponder();
+            let bound = dispatch2::MainThreadBound::new(Weak::new(&*field), mtm);
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                let Some(mtm) = MainThreadMarker::new() else {
+                    return;
+                };
+                let Some(field) = bound.get(mtm).load() else {
+                    return;
+                };
+                if !field.isFirstResponder() || field.window().is_none() {
+                    return;
+                }
+                let existing = field.interactions().iter().find_map(|interaction| {
+                    let object: &objc2::runtime::AnyObject = interaction.as_ref();
+                    object
+                        .downcast_ref::<UIEditMenuInteraction>()
+                        .map(|menu| menu.retain())
+                });
+                let menu = existing.unwrap_or_else(|| {
+                    let menu = UIEditMenuInteraction::initWithDelegate(
+                        UIEditMenuInteraction::alloc(mtm),
+                        None,
+                    );
+                    field.addInteraction(ProtocolObject::from_ref(&*menu));
+                    menu
+                });
+                let bounds = field.bounds();
+                let configuration = unsafe {
+                    UIEditMenuConfiguration::configurationWithIdentifier_sourcePoint(
+                        None,
+                        objc2_core_foundation::CGPoint::new(bounds.size.width / 2.0, 0.0),
+                        mtm,
+                    )
+                };
+                menu.presentEditMenuWithConfiguration(&configuration);
+            });
+        });
+        let action = unsafe {
+            UIAction::actionWithTitle_image_identifier_handler(
+                &NSString::from_str(""),
+                None,
+                None,
+                block2::RcBlock::as_ptr(&handler),
+                mtm,
+            )
+        };
+        button.addAction_forControlEvents(&action, UIControlEvents::TouchUpInside);
+        let weak = Weak::new(&*button);
+        day::reactive::bind(
+            move || crate::res::str::auth_autofill().format(),
+            move |label| {
+                if let Some(button) = weak.load() {
+                    button.setAccessibilityLabel(Some(&NSString::from_str(label)), mtm);
+                }
+            },
+        );
+        field.setRightView(Some(&button));
+        field.setRightViewMode(UITextFieldViewMode::Always);
+    }
+
+    pub fn reset() {
+        // Drop native bindings before clearing signals so old credentials cannot
+        // be read back by a queued input-mode notification after logout.
+        VALUES.with(|values| values.borrow_mut().clear());
+        FIELDS.with(|fields| fields.borrow_mut().clear());
+        LAST_MODE.with(|mode| *mode.borrow_mut() = None);
+    }
+
+    define_class!(
+        #[unsafe(super(NSObject))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "EschoolAuthReturnDelegate"]
+        struct ReturnKeyDelegate;
+        unsafe impl NSObjectProtocol for ReturnKeyDelegate {}
+        unsafe impl UITextFieldDelegate for ReturnKeyDelegate {
+            #[unsafe(method(textFieldShouldReturn:))]
+            fn should_return(&self, field: &UITextField) -> bool {
+                // Submit without UIKit's automatic resign/reopen cycle between
+                // username and password. The incoming field takes focus itself.
+                field.sendActionsForControlEvents(UIControlEvents::EditingDidEndOnExit);
+                false
+            }
+        }
+    );
+
+    fn install_return_delegate(field: &UITextField) {
+        // Do not replace a delegate supplied by another component.
+        if field.delegate().is_some() {
+            return;
+        }
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        RETURN_DELEGATE.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            let delegate = slot.get_or_insert_with(|| unsafe {
+                objc2::msg_send![ReturnKeyDelegate::alloc(mtm), init]
+            });
+            field.setDelegate(Some(ProtocolObject::from_ref(&**delegate)));
+        });
     }
 
     fn restore_current_traits() {

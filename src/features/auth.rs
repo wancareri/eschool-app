@@ -54,8 +54,15 @@ fn finish_login(state: AppState, token: Token, username: &str, remember: bool) {
     state.setup_new_password_active.set(false);
     state.setup_temp_password_data.set(None);
     state.loading.set(false);
-    crate::shared::keyboard::dismiss();
+    // Leave filled native inputs intact until the auth hierarchy is removed:
+    // that removal is UIKit's signal that the credential submission succeeded.
     state.is_authenticated.set(true);
+    let ticket = session::ticket();
+    ticket.publish(|state| {
+        if state.is_authenticated.get() {
+            crate::pages::login::reset_auth_flow();
+        }
+    });
 }
 
 pub fn login(state: AppState, username: &str, password: &str, remember: bool) {
@@ -230,21 +237,28 @@ pub fn logout(state: AppState) {
     // Clear the namespace before deleting the keys identifying it.
     crate::shared::cache::clear();
     logout_keys();
-    super::diary::clear_data(state);
-    state.is_authenticated.set(false);
-    state.remember_me.set(false);
-    state.biometric_ok.set(false);
-    state.pin_lock_active.set(false);
-    state.pin_setup_active.set(false);
-    state.pin_setup_route.set(None);
-    state.pin_input.set(String::new());
-    state.pin_error.set(false);
-    state.is_parent.set(false);
-    state.parent_children.set(Vec::new());
-    state.active_child_index.set(0);
-    state.setup_new_password_active.set(false);
-    state.setup_temp_password_data.set(None);
-    state.current_section.set(crate::Section::Diary);
+    day::reactive::batch(|| {
+        super::diary::clear_data(state);
+        crate::shared::keyboard::dismiss();
+        crate::pages::login::reset_auth_flow();
+        state.error_msg.set(String::new());
+        state.loading.set(false);
+        state.settings_tab.set(0);
+        state.remember_me.set(false);
+        state.biometric_ok.set(false);
+        state.pin_lock_active.set(false);
+        state.pin_setup_active.set(false);
+        state.pin_setup_route.set(None);
+        state.pin_input.set(String::new());
+        state.pin_error.set(false);
+        state.is_parent.set(false);
+        state.parent_children.set(Vec::new());
+        state.active_child_index.set(0);
+        state.setup_new_password_active.set(false);
+        state.setup_temp_password_data.set(None);
+        state.current_section.set(crate::Section::Diary);
+        state.is_authenticated.set(false);
+    });
 }
 
 pub fn logout_keys() {

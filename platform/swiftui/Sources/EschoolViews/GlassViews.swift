@@ -360,7 +360,11 @@ final class KeyboardDismisser: NSObject, UIGestureRecognizerDelegate {
     static let shared = KeyboardDismisser()
 
     func install(on window: UIWindow?) {
-        guard let window = window else { return }
+        // Keyboard and credential-provider windows belong to UIKit. Installing
+        // our background-tap gesture there can dismiss input while selecting a
+        // saved credential or changing keyboard language.
+        guard let window = window, window.windowLevel == .normal,
+              window.rootViewController != nil else { return }
         if window.gestureRecognizers?.contains(where: { $0 is DismissKeyboardTapGesture }) == true {
             return
         }
@@ -378,6 +382,12 @@ final class KeyboardDismisser: NSObject, UIGestureRecognizerDelegate {
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard let window = gestureRecognizer.view as? UIWindow else { return false }
+        // A presented system sheet owns its gestures and input focus.
+        if window.rootViewController?.presentedViewController != nil { return false }
+        let keyboard = window.keyboardLayoutGuide.layoutFrame
+        if keyboard.height > window.safeAreaInsets.bottom + 1,
+           touch.location(in: window).y >= keyboard.minY { return false }
         // Never intercept touches intended for interactive controls (buttons, text fields, pickers)
         var v: UIView? = touch.view
         while let current = v {

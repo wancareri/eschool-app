@@ -94,3 +94,5 @@ auth_error_credentials_message = The username or password is incorrect. You can 
 
 auth_error_generic_title = Couldn’t sign in
 auth_error_generic_message = Your details are still here. Please try again.
+
+auth_autofill = AutoFill

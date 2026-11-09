@@ -85,3 +85,5 @@ auth_error_credentials_message = Лагін або пароль няправіл
 
 auth_error_generic_title = Не ўдалося ўвайсці
 auth_error_generic_message = Уведзеныя даныя засталіся ў форме. Паспрабуйце яшчэ раз.
+
+auth_autofill = Аўтазапаўненне

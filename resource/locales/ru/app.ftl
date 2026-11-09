@@ -85,3 +85,5 @@ auth_error_credentials_message = Логин или пароль не подхо�
 
 auth_error_generic_title = Не удалось войти
 auth_error_generic_message = Введённые данные сохранены в форме. Попробуйте ещё раз.
+
+auth_autofill = Автозаполнение

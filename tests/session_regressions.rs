@@ -107,8 +107,16 @@ fn switching_identity_and_logout_reject_queued_replies_and_clear_state() {
         state.full_name.set("late after logout".into());
         state.week_cache.set(HashMap::from([(0, Vec::new())]));
     });
+    state.settings_tab.set(2);
+    state.current_section.set(dayapp::Section::Settings);
+    state.loading.set(true);
+    state.error_msg.set("old login error".into());
     auth::logout(state);
     deliver();
+    assert_eq!(state.settings_tab.get(), 0);
+    assert_eq!(state.current_section.get(), dayapp::Section::Diary);
+    assert!(!state.loading.get());
+    assert!(state.error_msg.get().is_empty());
     assert!(!state.is_authenticated.get());
     assert!(state.full_name.get().is_empty());
     assert!(state.week_cache.get().is_empty());
