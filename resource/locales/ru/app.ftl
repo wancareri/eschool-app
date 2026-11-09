@@ -39,3 +39,6 @@ diary_title = Дневник
 schedule_title = Расписание
 teachers_title = Учителя
 settings_title = Настройки
+
+auth_appearance = Оформление
+auth_language = Язык

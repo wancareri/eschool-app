@@ -16,7 +16,11 @@ pub fn render() -> impl Piece {
         ),
         when(
             move || !state.is_authenticated.get() && state.setup_new_password_active.get(),
-            move || setup_password_form(state, show_logs).animation(AnimSpec::ease_out(350)).any(),
+            move || nav_stack(Signal::new(Vec::<String>::new()), setup_password_form(state, show_logs))
+                .title("Новый пароль")
+                .toolbar(|| auth_toolbar("setup"))
+                .grow()
+                .any(),
         ),
         when(
             move || !state.is_authenticated.get() && !state.setup_new_password_active.get(),
@@ -328,6 +332,7 @@ pub fn show_theme_sheet() {
         day::prefs::remove(crate::THEME_KEY);
         day::set_appearance(None);
         crate::shared::haptics::tick();
+        restore_auth_focus_after_sheet();
     });
     let a_sys = UIAlertAction::actionWithTitle_style_handler(
         Some(&NSString::from_str("Системная")),
@@ -340,6 +345,7 @@ pub fn show_theme_sheet() {
         day::prefs::set(crate::THEME_KEY, "light");
         day::set_appearance(Some(false));
         crate::shared::haptics::tick();
+        restore_auth_focus_after_sheet();
     });
     let a_light = UIAlertAction::actionWithTitle_style_handler(
         Some(&NSString::from_str("Светлая")),
@@ -352,6 +358,7 @@ pub fn show_theme_sheet() {
         day::prefs::set(crate::THEME_KEY, "dark");
         day::set_appearance(Some(true));
         crate::shared::haptics::tick();
+        restore_auth_focus_after_sheet();
     });
     let a_dark = UIAlertAction::actionWithTitle_style_handler(
         Some(&NSString::from_str("Тёмная")),
@@ -360,10 +367,13 @@ pub fn show_theme_sheet() {
         mtm,
     );
 
+    let h_cancel = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
+        restore_auth_focus_after_sheet();
+    });
     let a_cancel = UIAlertAction::actionWithTitle_style_handler(
         Some(&NSString::from_str("Отмена")),
         UIAlertActionStyle::Cancel,
-        None,
+        Some(&*h_cancel),
         mtm,
     );
 
@@ -434,18 +444,7 @@ pub fn show_lang_sheet() {
         day::prefs::set(crate::LOCALE_KEY, "ru");
         set_locale("ru");
         crate::shared::haptics::tick();
-        let auth = get_auth_state();
-        let un_set = auth.username_focused.setter();
-        let pw_set = auth.password_focused.setter();
-        let is_pw = auth.path.get_untracked().contains(&AuthRoute::Password);
-        let is_login = auth.path.get_untracked().contains(&AuthRoute::Login);
-        day::reactive::on_main_delayed(250, move || {
-            if is_pw {
-                pw_set.set(true);
-            } else if is_login {
-                un_set.set(true);
-            }
-        });
+        restore_auth_focus_after_sheet();
     });
     let a_ru = UIAlertAction::actionWithTitle_style_handler(
         Some(&NSString::from_str("Русский (RU)")),
@@ -458,18 +457,7 @@ pub fn show_lang_sheet() {
         day::prefs::set(crate::LOCALE_KEY, "be");
         set_locale("be");
         crate::shared::haptics::tick();
-        let auth = get_auth_state();
-        let un_set = auth.username_focused.setter();
-        let pw_set = auth.password_focused.setter();
-        let is_pw = auth.path.get_untracked().contains(&AuthRoute::Password);
-        let is_login = auth.path.get_untracked().contains(&AuthRoute::Login);
-        day::reactive::on_main_delayed(250, move || {
-            if is_pw {
-                pw_set.set(true);
-            } else if is_login {
-                un_set.set(true);
-            }
-        });
+        restore_auth_focus_after_sheet();
     });
     let a_be = UIAlertAction::actionWithTitle_style_handler(
         Some(&NSString::from_str("Беларуская (BE)")),
@@ -482,18 +470,7 @@ pub fn show_lang_sheet() {
         day::prefs::set(crate::LOCALE_KEY, "en");
         set_locale("en");
         crate::shared::haptics::tick();
-        let auth = get_auth_state();
-        let un_set = auth.username_focused.setter();
-        let pw_set = auth.password_focused.setter();
-        let is_pw = auth.path.get_untracked().contains(&AuthRoute::Password);
-        let is_login = auth.path.get_untracked().contains(&AuthRoute::Login);
-        day::reactive::on_main_delayed(250, move || {
-            if is_pw {
-                pw_set.set(true);
-            } else if is_login {
-                un_set.set(true);
-            }
-        });
+        restore_auth_focus_after_sheet();
     });
     let a_en = UIAlertAction::actionWithTitle_style_handler(
         Some(&NSString::from_str("English (EN)")),
@@ -502,10 +479,13 @@ pub fn show_lang_sheet() {
         mtm,
     );
 
+    let h_cancel = RcBlock::new(move |_action: NonNull<UIAlertAction>| {
+        restore_auth_focus_after_sheet();
+    });
     let a_cancel = UIAlertAction::actionWithTitle_style_handler(
         Some(&NSString::from_str("Отмена")),
         UIAlertActionStyle::Cancel,
-        None,
+        Some(&*h_cancel),
         mtm,
     );
 
@@ -625,6 +605,22 @@ pub fn glass_theme_button() -> impl Piece {
     })
 }
 
+fn auth_toolbar(page: &str) -> Vec<ToolbarEntry> {
+    let language = day::locale().get().to_lowercase();
+    let code = if language.starts_with("be") { "BE" }
+        else if language.starts_with("en") { "EN" } else { "RU" };
+    vec![
+        toolbar_button(format!("auth-{page}-language"), code)
+            .tooltip(res::str::auth_language())
+            .placement(ToolbarPlacement::Primary)
+            .action(show_lang_sheet),
+        toolbar_button(format!("auth-{page}-theme"), res::str::auth_appearance())
+            .icon(if day::dark_mode() { Symbol::Dark } else { Symbol::Light })
+            .placement(ToolbarPlacement::Primary)
+            .action(show_theme_sheet),
+    ]
+}
+
 fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
     let piece = column((
         spacer().height(16.0),
@@ -660,9 +656,6 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
         } else {
             Color::hex(0xFFFFFF)
         }
-    })
-    .on_tap(move || {
-        crate::shared::keyboard::dismiss();
     });
 
     #[cfg(target_os = "ios")]
@@ -673,7 +666,6 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
             if let Some(w) = view.window() {
                 w.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
             }
-            crate::shared::ios_nav::ios_impl::schedule_login_nav_bar(view);
         })
     };
 
@@ -820,9 +812,6 @@ fn username_step_view(
         } else {
             Color::hex(0xFFFFFF)
         }
-    })
-    .on_tap(move || {
-        crate::shared::keyboard::dismiss();
     });
 
     #[cfg(target_os = "ios")]
@@ -833,7 +822,6 @@ fn username_step_view(
             if let Some(w) = view.window() {
                 w.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
             }
-            crate::shared::ios_nav::ios_impl::schedule_login_nav_bar(view);
         })
     };
 
@@ -1022,9 +1010,6 @@ fn password_step_view(
         } else {
             Color::hex(0xFFFFFF)
         }
-    })
-    .on_tap(move || {
-        crate::shared::keyboard::dismiss();
     });
 
     #[cfg(target_os = "ios")]
@@ -1035,7 +1020,6 @@ fn password_step_view(
             if let Some(w) = view.window() {
                 w.setBackgroundColor(Some(&objc2_ui_kit::UIColor::systemBackgroundColor()));
             }
-            crate::shared::ios_nav::ios_impl::schedule_login_nav_bar(view);
         })
     };
 
@@ -1077,6 +1061,28 @@ fn get_auth_state() -> AuthState {
     })
 }
 
+fn focus_auth_route_after(route: AuthRoute, delay: u32) {
+    let ticket = crate::shared::session::ticket();
+    day::reactive::on_main_delayed(delay, move || {
+        if !ticket.is_current() { return; }
+        let Some(state) = AppState::get_main() else { return };
+        if state.is_authenticated.get() || state.setup_new_password_active.get() { return; }
+        let auth = get_auth_state();
+        if auth.path.get_untracked().last() != Some(&route) { return; }
+        match route {
+            AuthRoute::Login => auth.username_focused.set(true),
+            AuthRoute::Password => auth.password_focused.set(true),
+        }
+    });
+}
+
+#[cfg(target_os = "ios")]
+fn restore_auth_focus_after_sheet() {
+    if let Some(route) = get_auth_state().path.get_untracked().last().copied() {
+        focus_auth_route_after(route, 350);
+    }
+}
+
 fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
     let auth = get_auth_state();
     let path = auth.path;
@@ -1091,22 +1097,17 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
         let path = path;
         let error_local = error_local;
         let state = state;
-        let username_focused = username_focused;
         move || {
             crate::shared::haptics::tick();
             error_local.set(String::new());
             state.error_msg.set(String::new());
             path.set(vec![AuthRoute::Login]);
-            let set_un_foc = username_focused.setter();
-            day::reactive::on_main_delayed(350, move || {
-                set_un_foc.set(true);
-            });
+            focus_auth_route_after(AuthRoute::Login, 350);
         }
     });
 
     let proceed_username = {
         let username = username;
-        let password_focused = password_focused;
         let error_local = error_local;
         let state = state;
         let path = path;
@@ -1119,10 +1120,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 state.error_msg.set(String::new());
                 crate::shared::haptics::tick();
                 path.set(vec![AuthRoute::Login, AuthRoute::Password]);
-                let set_pw_foc = password_focused.setter();
-                day::reactive::on_main_delayed(350, move || {
-                    set_pw_foc.set(true);
-                });
+                focus_auth_route_after(AuthRoute::Password, 350);
             }
         }
     };
@@ -1154,6 +1152,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
 
     let stack = nav_stack(path, root)
         .title("ESchool")
+        .toolbar(|| auth_toolbar("intro"))
         .destination(move |route: &AuthRoute| {
             match route {
                 AuthRoute::Login => username_step_view(
@@ -1165,6 +1164,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                     state,
                     proceed_username_sub.clone(),
                 )
+                .toolbar(|| auth_toolbar("username"))
                 .any(),
                 AuthRoute::Password => password_step_view(
                     username,
@@ -1174,6 +1174,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                     state,
                     do_login_sub.clone(),
                 )
+                .toolbar(|| auth_toolbar("password"))
                 .any(),
             }
         })
@@ -1189,31 +1190,21 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
 
     day::reactive::watch(
         move || path.get(),
-        move |p, _old| {
+        move |p, old| {
             if p.is_empty() {
                 username_focused.set(false);
                 password_focused.set(false);
                 crate::shared::keyboard::dismiss();
-            }
-            #[cfg(target_os = "ios")]
-            {
-                for delay in [0, 50, 150] {
-                    day::reactive::on_main_delayed(delay, || {
-                        crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
-                    });
+            } else if old.is_some_and(|old| old.len() > p.len()) {
+                // Day reports only completed native pops. A cancelled swipe
+                // never changes the path and must not dismiss/refocus fields.
+                if p.last() == Some(&AuthRoute::Login) {
+                    password_focused.set(false);
+                    focus_auth_route_after(AuthRoute::Login, 0);
                 }
             }
         },
     );
-
-    #[cfg(target_os = "ios")]
-    {
-        for delay in [0, 20, 60, 150, 400] {
-            day::reactive::on_main_delayed(delay, || {
-                crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
-            });
-        }
-    }
 
     stack
 }

@@ -535,7 +535,11 @@ fn numpad_key(state: AppState, shake: Signal<f64>, clock: Signal<f64>, key: &str
                         let unlock = s.pin_lock_active.setter();
                         let auth = s.is_authenticated.setter();
                         let clear = s.pin_input.setter();
+                        let ticket = crate::shared::session::ticket();
                         day::reactive::on_main_delayed(800, move || {
+                            if !ticket.is_current() || crate::features::auth::get_token().is_none() {
+                                return;
+                            }
                             unlock.set(false);
                             auth.set(true);
                             clear.set(String::new());

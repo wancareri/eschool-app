@@ -10,9 +10,10 @@ pub fn render(state: AppState) -> impl Piece {
 
         row((
             super::stat_block::render(state, "Четверть", move || {
-                let idx = state.current_week_index.get();
-                let q = if idx < 9 { "I" } else if idx < 18 { "II" } else if idx < 27 { "III" } else { "IV" };
-                format!("{} четверть", q)
+                match state.current_quarter.get() {
+                    q @ 0..=3 => format!("{} четверть", ["I", "II", "III", "IV"][q]),
+                    _ => "Год".to_string(),
+                }
             }),
             super::stat_block::render(state, "Оценок", move || {
                 state.all_marks.get().len().to_string()

@@ -281,11 +281,11 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
             let q = s1.current_quarter.get();
             let idx = s2.current_week_index.get() as usize;
             if q < 4 {
-                let range = features::diary::quarter_week_indices(q);
+                let range = features::diary::quarter_week_indices(s2, q);
                 if !range.contains(&idx) {
                     let weeks = s2.all_weeks.get();
-                    if range.start < weeks.len() {
-                        features::diary::load_week(s2, range.start as i32);
+                    if let Some(&first) = range.first().filter(|&&i| i < weeks.len()) {
+                        features::diary::load_week(s2, first as i32);
                     }
                 }
             }
@@ -955,7 +955,7 @@ fn get_quarter_marks_map(state: AppState, q: usize) -> std::collections::HashMap
         }
     }
     state.week_cache.with(|c| {
-        features::diary::extract_marks_for_quarter(c, q)
+        features::diary::extract_marks_for_quarter(c, &state.week_quarters.get(), q)
     })
 }
 

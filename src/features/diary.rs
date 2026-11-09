@@ -1,678 +1,738 @@
-//! Diary data loading — all school data fetching for the diary, schedule, and teachers.
-
-use crate::app::AppState;
-use crate::app::FinalMarks;
+//! Diary loading. Workers fetch data; session-checked UI callbacks publish it.
+use crate::app::{AppState, ConnStatus, FinalMarks};
 use crate::features::auth;
-use eschool_api::client::blocking;
-use eschool_api::client::endpoints;
+use crate::shared::{cache, nslog, session, utils};
+use eschool_api::client::{blocking, endpoints};
 use eschool_api::entities::*;
-use crate::shared::{cache, nslog, utils};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex};
 
-/// Quarter ranges: weeks indices in all_weeks
-const QUARTER_RANGES: &[(usize, usize)] = &[(0, 9), (9, 18), (18, 27), (27, 36)];
+type WeekCache = HashMap<i32, Vec<DaySchedule>>;
+type Marks = HashMap<String, Vec<f64>>;
+static LOAD_REQUEST: AtomicU64 = AtomicU64::new(0);
+static MARKS_REQUEST: AtomicU64 = AtomicU64::new(0);
+static WEEK_REQUEST: AtomicU64 = AtomicU64::new(0);
+static RESPONSE_ORDER: AtomicU64 = AtomicU64::new(0);
+static LATEST_WEEK: LazyLock<Mutex<HashMap<String, u64>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
-/// Load ALL school data on a background thread. UI stays responsive.
-pub fn load_all(state: AppState) {
-    nslog::nslog("[Diary] load_all starting");
-    let token = match auth::get_token() {
-        Some(t) => t,
-        _ => {
-            nslog::nslog("[Diary] load_all: no token found");
-            return;
-        }
+fn response_order() -> u64 {
+    RESPONSE_ORDER.fetch_add(1, Ordering::AcqRel) + 1
+}
+
+fn accept_week(uuid: &str, order: u64) -> bool {
+    let mut latest = LATEST_WEEK.lock().unwrap();
+    let current = latest.entry(uuid.to_string()).or_default();
+    if order < *current {
+        return false;
+    }
+    *current = order;
+    true
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Keep school-year boundaries supplied by the API; calendar years differ
+/// from academic years between January and August.
+fn academic_year(year: u32, month: u32) -> (u32, u32) {
+    let start = if month < 9 {
+        year.saturating_sub(1)
+    } else {
+        year
     };
-    nslog::nslog(&format!("[Diary] Token length: {}", token.len()));
+    (start, start + 1)
+}
 
-    let set_loading = state.loading.setter();
-    let set_error = state.error_msg.setter();
-    let set_full_name = state.full_name.setter();
-    let set_school_name = state.school_name.setter();
-    let set_class_label = state.class_label.setter();
-    let set_is_graduating = state.is_graduating.setter();
-    let set_is_parent = state.is_parent.setter();
-    let set_parent_children = state.parent_children.setter();
-    let active_child_idx = state.active_child_index.get();
-    let set_all_weeks = state.all_weeks.setter();
-    let set_current_week_index = state.current_week_index.setter();
-    let set_current_week = state.current_week.setter();
-    let set_current_quarter = state.current_quarter.setter();
-    let set_bell_times = state.bell_times.setter();
-    let set_timetable_days = state.timetable_days.setter();
-    let set_subjects_teachers = state.subjects_teachers.setter();
-    let set_lessons = state.lessons.setter();
-    let set_quarter_all_marks = state.quarter_all_marks.setter();
-    let set_final_marks = state.final_marks.setter();
-    let set_lessons_loading = state.lessons_loading.setter();
-    let set_is_authenticated = state.is_authenticated.setter();
-    let set_conn = state.conn_status.setter();
-
-    set_loading.set(true);
-    set_error.set(String::new());
-
-    // Load cached data immediately so UI shows stale data while refreshing
-    let mut cached_cur_idx: Option<i32> = None;
-    if let Some(cached_weeks) = cache::load_json::<Vec<WeekActivity>>("all_weeks") {
-        nslog::nslog("[Cache] Loading cached weeks");
-        set_all_weeks.set(cached_weeks.clone());
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
-        if let Some(idx) = find_current_week(&cached_weeks, now_ms) {
-            let w = &cached_weeks[idx];
-            set_current_week_index.set(idx as i32);
-            set_current_week.set(w.summary.clone());
-            set_current_quarter.set(quarter_for_index(idx));
-            cached_cur_idx = Some(idx as i32);
+/// Assign weeks using actual period IDs/dates, never an assumed nine-week term.
+fn week_quarters(weeks: &[WeekActivity], periods: &[TimeActivity]) -> Vec<Option<usize>> {
+    let mut quarters: Vec<_> = periods
+        .iter()
+        .filter(|p| {
+            let kind = p
+                .activity_type
+                .as_deref()
+                .unwrap_or_default()
+                .to_uppercase();
+            let name =
+                format!("{} {}", p.title, p.summary.as_deref().unwrap_or_default()).to_lowercase();
+            kind.contains("QUARTER")
+                || (!kind.contains("VACATION")
+                    && !name.contains("каникул")
+                    && (name.contains("четверт")
+                        || name.contains("чвэрц")
+                        || name.contains("quarter")))
+        })
+        .collect();
+    quarters.sort_by_key(|p| {
+        p.start_ts
+            .or(p.start_date)
+            .map(normalize_ts)
+            .or_else(|| {
+                weeks
+                    .iter()
+                    .filter(|w| w.time_activity_id == p.uuid)
+                    .map(|w| normalize_ts(w.start_ts))
+                    .min()
+            })
+            .unwrap_or(u64::MAX)
+    });
+    if quarters.len() == 4 {
+        return weeks
+            .iter()
+            .map(|w| {
+                quarters
+                    .iter()
+                    .position(|p| p.uuid == w.time_activity_id)
+                    .or_else(|| {
+                        let start = normalize_ts(w.start_ts);
+                        quarters.iter().position(|p| {
+                            match (p.start_ts.or(p.start_date), p.end_ts.or(p.end_date)) {
+                                (Some(a), Some(b)) => {
+                                    normalize_ts(a) <= start && start <= normalize_ts(b)
+                                }
+                                _ => false,
+                            }
+                        })
+                    })
+            })
+            .collect();
+    }
+    // Some API versions expose only the period ID on each week. Four distinct
+    // parents ordered by their first week also describe the academic quarters.
+    let mut parents: Vec<(String, u64)> = Vec::new();
+    for w in weeks {
+        if w.time_activity_id.is_empty() {
+            continue;
+        }
+        if let Some(p) = parents.iter_mut().find(|p| p.0 == w.time_activity_id) {
+            p.1 = p.1.min(normalize_ts(w.start_ts));
+        } else {
+            parents.push((w.time_activity_id.clone(), normalize_ts(w.start_ts)));
         }
     }
-    if let Some(cached_wc) = cache::load_json::<std::collections::HashMap<i32, Vec<DaySchedule>>>("week_cache") {
-        nslog::nslog(&format!("[Cache] Loading cached week_cache ({} weeks)", cached_wc.len()));
-        if let Some(ci) = cached_cur_idx {
-            if let Some(ls) = cached_wc.get(&ci) {
-                set_lessons.set(ls.clone());
+    parents.sort_by_key(|p| p.1);
+    weeks
+        .iter()
+        .map(|w| {
+            if parents.len() == 4 {
+                parents.iter().position(|p| p.0 == w.time_activity_id)
+            } else {
+                None
             }
-        }
-        state.week_cache.set(cached_wc);
-    }
-    if let Some(cached_lessons) = cache::load_json::<Vec<DaySchedule>>("lessons") {
-        nslog::nslog("[Cache] Loading cached lessons");
-        if state.lessons.get().is_empty() {
-            set_lessons.set(cached_lessons.clone());
-            if let Some(ci) = cached_cur_idx {
-                let mut wc = state.week_cache.get();
-                wc.insert(ci, cached_lessons);
-                state.week_cache.set(wc);
-            }
-        }
-    }
-    if let Some(cached_bells) = cache::load_json::<Vec<BellTime>>("bell_times") {
-        nslog::nslog("[Cache] Loading cached bells");
-        set_bell_times.set(cached_bells);
-    }
-    if let Some(cached_timetable) = cache::load_json::<Vec<TimetableDay>>("timetable_days") {
-        nslog::nslog("[Cache] Loading cached timetable");
-        set_timetable_days.set(cached_timetable);
-    }
-    if let Some(cached_teachers) = cache::load_json::<Vec<SubjectWithTeacher>>("subjects_teachers") {
-        nslog::nslog("[Cache] Loading cached teachers");
-        set_subjects_teachers.set(cached_teachers);
-    }
-    let cur_q = state.current_quarter.get();
-    if let Some(cached_q_all) = cache::load_json::<Vec<std::collections::HashMap<String, Vec<f64>>>>("quarter_all_marks") {
-        if let Some(m) = cached_q_all.get(cur_q) {
-            state.quarter_marks.set(m.clone());
-        }
-        set_quarter_all_marks.clone().set(cached_q_all);
-    }
-    if let Some(cached_fm) = cache::load_json::<FinalMarks>("final_marks") {
-        nslog::nslog("[Cache] Loading cached final marks");
-        set_final_marks.clone().set(cached_fm);
-    }
-    if let Some(name) = cache::load("user_full_name") { set_full_name.set(name); }
-    if let Some(school) = cache::load("user_school_name") { set_school_name.set(school); }
+        })
+        .collect()
+}
 
-    set_conn.set(crate::app::ConnStatus::Connecting);
+fn restore_cache(state: AppState) {
+    if let Some(weeks) = cache::load_json("all_weeks") {
+        state.all_weeks.set(weeks);
+    }
+    if let Some(periods) = cache::load_json("time_activities") {
+        state.time_activities.set(periods);
+    }
+    state.week_quarters.set(week_quarters(
+        &state.all_weeks.get(),
+        &state.time_activities.get(),
+    ));
+    if let Some(wc) = cache::load_json("week_cache") {
+        state.week_cache.set(wc);
+    }
+    if let Some(idx) = find_current_week(&state.all_weeks.get(), now_ms()) {
+        select_week(state, idx);
+        state.lessons.set(
+            state
+                .week_cache
+                .with(|c| c.get(&(idx as i32)).cloned().unwrap_or_default()),
+        );
+    }
+    if let Some(v) = cache::load_json("bell_times") {
+        state.bell_times.set(v);
+    }
+    if let Some(v) = cache::load_json("timetable_days") {
+        state.timetable_days.set(v);
+    }
+    if let Some(v) = cache::load_json("subjects_teachers") {
+        state.subjects_teachers.set(v);
+    }
+    if let Some(v) = cache::load_json("final_marks") {
+        state.final_marks.set(v);
+    }
+    if let Some(v) = cache::load("user_full_name") {
+        state.full_name.set(v);
+    }
+    if let Some(v) = cache::load("user_school_name") {
+        state.school_name.set(v);
+    }
+    state
+        .lesson_notes
+        .set(crate::widgets::lesson_note::load_notes_map());
+    rebuild_marks(state);
+}
 
-    let set_conn2 = state.conn_status.setter();
+fn select_week(state: AppState, idx: usize) {
+    state.current_week_index.set(idx as i32);
+    if let Some(w) = state.all_weeks.with(|w| w.get(idx).cloned()) {
+        state.current_week.set(w.summary);
+    }
+    if let Some(q) = state.week_quarters.with(|q| q.get(idx).copied().flatten()) {
+        state.current_quarter.set(q);
+    }
+}
+
+/// Clear every student-specific value, including modals and pending indicators.
+/// The caller invalidates session tickets before invoking this.
+pub fn clear_data(state: AppState) {
+    state.full_name.set(String::new());
+    state.school_name.set(String::new());
+    state.class_label.set(String::new());
+    state.is_graduating.set(false);
+    state.lessons.set(Vec::new());
+    state.all_weeks.set(Vec::new());
+    state.time_activities.set(Vec::new());
+    state.week_quarters.set(Vec::new());
+    state.current_week.set(String::new());
+    state.current_week_index.set(0);
+    state.current_quarter.set(0);
+    state.week_cache.set(HashMap::new());
+    reset_marks(state);
+    state.year_quarter_data.set(Vec::new());
+    state.final_marks.set(FinalMarks::new());
+    state.bell_times.set(Vec::new());
+    state.timetable_days.set(Vec::new());
+    state.subjects_teachers.set(Vec::new());
+    state.lesson_notes.set(HashMap::new());
+    state.lesson_attachments.set(HashMap::new());
+    state.attachments_loading.set(Default::default());
+    state.downloading_files.set(Default::default());
+    state.active_note.set(None);
+    state.active_lesson_peek.set(None);
+    crate::widgets::grade_peek::close();
+    state.show_network_modal.set(None);
+    state.loading.set(false);
+    state.lessons_loading.set(false);
+    state.marks_loading.set(false);
+    state.schedule_loading.set(false);
+    state.teachers_loading.set(false);
+    state.error_msg.set(String::new());
+    state.conn_status.set(ConnStatus::Idle);
+}
+
+struct Loaded {
+    user: UserInfo,
+    child_idx: usize,
+    school: String,
+    profile: String,
+    name: String,
+    school_name: String,
+    class: Class,
+    weeks: Vec<WeekActivity>,
+    periods: Vec<TimeActivity>,
+    current: Option<(usize, Vec<DaySchedule>)>,
+    bells: Option<Vec<BellTime>>,
+    timetable: Option<Vec<TimetableDay>>,
+    teachers: Option<Vec<SubjectWithTeacher>>,
+    finals: Option<FinalMarks>,
+    partial_error: Option<String>,
+}
+
+pub fn load_all(state: AppState) {
+    let Some(token) = auth::get_token() else {
+        return;
+    };
+    let ticket = session::ticket();
+    let request = LOAD_REQUEST.fetch_add(1, Ordering::AcqRel) + 1;
+    let order = response_order();
+    let old_profile = auth::get_stored_ids().2;
+    let selected = state.active_child_index.get();
+    if state.all_weeks.with(|w| w.is_empty()) {
+        restore_cache(state);
+    }
+    state.loading.set(true);
+    state.lessons_loading.set(true);
+    state.schedule_loading.set(true);
+    state.teachers_loading.set(true);
+    state.error_msg.set(String::new());
+    state.conn_status.set(ConnStatus::Connecting);
     std::thread::spawn(move || {
-        set_conn2.set(crate::app::ConnStatus::Connecting);
-        let mut client = blocking::build_client(&token);
-
-        // 1 — user info (with auto-refresh on 401)
-        nslog::nslog("[Diary] Fetching /auth/me...");
-        let user = match blocking::api_get::<UserInfo>(&client, endpoints::AUTH_ME) {
-            Ok(u) => {
-                nslog::nslog(&format!("[Diary] Got user: {} ({})", u.full_name, u.school_name));
-                u
-            }
-            Err(e) if e.starts_with("HTTP 401") => {
-                nslog::nslog("[Diary] /auth/me 401, refreshing...");
-                if let Some(refreshed) = auth::try_refresh_token() {
-                    client = blocking::build_client(&refreshed);
-                    match blocking::api_get::<UserInfo>(&client, endpoints::AUTH_ME) {
-                        Ok(u) => u,
-                        Err(e) => {
-                            set_error.set(format!("Auth error: {e}"));
-                            set_loading.set(false);
-                            set_conn2.set(crate::app::ConnStatus::Error);
-                            return;
-                        }
-                    }
-                } else {
-                    set_error.set("Сессия истекла. Войдите снова.".into());
-                    set_loading.set(false);
-                    set_conn2.set(crate::app::ConnStatus::Error);
-                    // Inline logout using setters (AppState is !Send, can't move into thread)
-                    auth::logout_keys();
-                    set_is_authenticated.set(false);
-                    return;
-                }
-            }
-            Err(e) => {
-                set_error.set(format!("Auth error: {e}"));
-                set_loading.set(false);
-                set_conn2.set(crate::app::ConnStatus::Error);
+        let result = fetch_all(&token, selected, &old_profile);
+        ticket.publish(move |state| {
+            if LOAD_REQUEST.load(Ordering::Acquire) != request {
                 return;
             }
-        };
-
-        let is_parent = user.is_parent();
-        set_is_parent.set(is_parent);
-
-        let (school_id, profile_id, effective_full_name, effective_school_name) = if is_parent {
-            let children = user.children().to_vec();
-            set_parent_children.set(children.clone());
-            let active_idx = active_child_idx.min(children.len().saturating_sub(1));
-            let active_child = children.get(active_idx);
-
-            let s_id = active_child.map(|c| c.school_id.clone()).unwrap_or_default();
-            let p_id = active_child.map(|c| c.profile_id.clone()).unwrap_or_default();
-            let child_name = active_child.map(|c| c.full_name.clone()).unwrap_or_default();
-
-            let s_name = if let Ok(Some(s)) = blocking::get_school_by_id(&client, &s_id) {
-                s.short_name.or(s.short_name_be).unwrap_or_default()
-            } else {
-                user.school_name.clone()
-            };
-
-            (s_id, p_id, if !child_name.is_empty() { child_name } else { user.full_name.clone() }, s_name)
-        } else {
-            (user.school_id.clone(), user.profile_id.clone(), user.full_name.clone(), user.school_name.clone())
-        };
-
-        set_full_name.set(effective_full_name.clone());
-        set_school_name.set(effective_school_name.clone());
-        cache::save("user_full_name", &effective_full_name);
-        cache::save("user_school_name", &effective_school_name);
-
-        // 2 — school year
-        let year = blocking::api_get::<SchoolYear>(&client, endpoints::SCHOOL_YEAR).ok();
-        let school_period = year.as_ref().map(|y| y.uuid.clone());
-
-        // 3 — classes
-        let today = day_piece_datetime::DayDate::today();
-        let start_of_year = format!("01.09.{:04}", today.year);
-        let end_of_year = format!("31.05.{:04}", today.year + 1);
-
-        let class_body = serde_json::json!({
-            "school_period": school_period,
-            "from": start_of_year,
-            "to": end_of_year,
-        });
-        let class_id = if let Ok(cbd) = blocking::api_post::<ClassesByDate>(
-            &client,
-            &endpoints::classes(&school_id, &profile_id),
-            &class_body,
-        ) {
-            if let Some(c) = cbd.classes.first() {
-                let id = c.uuid.clone();
-                set_class_label.set(format!("{}{}", c.level, c.label));
-                set_is_graduating.set(c.graduating.unwrap_or(false));
-                id
-            } else {
-                fallback_class_id(&client, &school_id, &profile_id)
-            }
-        } else {
-            fallback_class_id(&client, &school_id, &profile_id)
-        };
-
-        if class_id.is_empty() {
-            set_error.set("Class not found — try opening diary.e-schools.by to sync".into());
-            set_loading.set(false);
-            set_conn2.set(crate::app::ConnStatus::Error);
-            return;
-        }
-
-        auth::store_ids(
-            &school_id,
-            &class_id,
-            &profile_id,
-            &effective_full_name,
-            &effective_school_name,
-        );
-
-        // Initialize per-quarter storage
-        {
-            let mut q_all: Vec<std::collections::HashMap<String, Vec<f64>>> = Vec::new();
-            q_all.resize(4, std::collections::HashMap::new());
-            set_quarter_all_marks.clone().set(q_all);
-        }
-
-        // 4 — week activities → current week → lessons
-        nslog::nslog("[Diary] Loading week activities...");
-        set_lessons_loading.clone().set(true);
-        match blocking::api_get::<Vec<WeekActivity>>(&client, endpoints::WEEK_ACTIVITIES) {
-            Ok(weeks) => {
-                nslog::nslog(&format!("[Diary] Got {} weeks", weeks.len()));
-                let now_ms = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis() as u64)
-                    .unwrap_or(0);
-                let cur = find_current_week(&weeks, now_ms);
-                nslog::nslog(&format!("[Diary] current week idx={cur:?}"));
-
-                set_all_weeks.set(weeks.clone());
-                cache::save_json("all_weeks", &weeks);
-
-                if let Some(idx) = cur {
-                    let week = &weeks[idx];
-                    let week_summary = week.summary.clone();
-                    set_current_week_index.set(idx as i32);
-                    set_current_week.set(week_summary);
-                    set_current_quarter.set(quarter_for_index(idx));
-
-                    // Load current week lessons
-                    let cid = class_id.clone();
-                    let week_uuid = week.uuid.clone();
-                    match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &cid, &profile_id, &week_uuid)) {
-                        Ok(raw) => {
-                            match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
-                                Ok(lessons) => {
-                                    set_lessons.set(lessons.clone());
-                                    cache::save_json("lessons", &lessons);
-                                    let ci = idx as i32;
-                                    let ls = lessons;
-                                    day::reactive::on_main(move || {
-                                        if let Some(state) = AppState::get_main() {
-                                            let mut wc = state.week_cache.get();
-                                            wc.insert(ci, ls);
-                                            cache::save_json("week_cache", &wc);
-                                            state.week_cache.set(wc);
-                                        }
-                                    });
-
-                                    // Prefetch neighbor weeks (idx - 1 and idx + 1) immediately on startup
-                                    for di in [-1i32, 1i32] {
-                                        let ni = idx as i32 + di;
-                                        if ni >= 0 && (ni as usize) < weeks.len() {
-                                            let nuuid = weeks[ni as usize].uuid.clone();
-                                            if let Ok(raw) = blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &cid, &profile_id, &nuuid)) {
-                                                if let Ok(nls) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
-                                                    nslog::nslog(&format!("[Diary] startup prefetch week idx={ni} OK ({} days)", nls.len()));
-                                                    day::reactive::on_main(move || {
-                                                        if let Some(state) = AppState::get_main() {
-                                                            let mut wc = state.week_cache.get();
-                                                            wc.insert(ni, nls);
-                                                            cache::save_json("week_cache", &wc);
-                                                            state.week_cache.set(wc);
-                                                        }
-                                                    });
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => nslog::nslog(&format!("[Diary] parse failed: {e}")),
-                            }
-                        }
-                        Err(e) => nslog::nslog(&format!("[Diary] lessons request failed: {e}")),
-                    }
-                }
-            }
-            Err(e) => nslog::nslog(&format!("[Diary] Week activities failed: {e}")),
-        }
-        set_lessons_loading.set(false);
-
-        // 5 — bell schedule
-        nslog::nslog("[Diary] Loading bells...");
-        if let Ok(bells) = blocking::api_get::<Vec<BellSchedule>>(&client, &endpoints::bells(&school_id)) {
-            if let Some(schedule) = bells.first() {
-                if let Some(day) = schedule.days_of_week.first() {
-                    set_bell_times.set(day.time_of_bells.clone());
-                    cache::save_json("bell_times", &day.time_of_bells);
-                }
-            }
-        }
-
-        // 6 — timetable
-        if let Ok(tables) = blocking::api_get::<Vec<Timetable>>(&client, &endpoints::timetable(&school_id, &class_id)) {
-            if let Some(t) = tables.first() {
-                set_timetable_days.set(t.days_of_week.clone());
-                cache::save_json("timetable_days", &t.days_of_week);
-            }
-        }
-
-        // 7 — subjects with teachers
-        nslog::nslog("[Diary] Loading teachers...");
-        let mut uuid_to_title: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-        if let Ok(subjects) = blocking::api_get::<Vec<SubjectWithTeacher>>(
-            &client,
-            &endpoints::subjects(&school_id, &profile_id, &class_id),
-        ) {
-            uuid_to_title = subjects.iter().map(|s| (s.id.clone(), s.subject_title.clone())).collect();
-            set_subjects_teachers.set(subjects.clone());
-            cache::save_json("subjects_teachers", &subjects);
-        }
-        if uuid_to_title.is_empty() {
-            // Fall back to the cached list so finals still key correctly offline.
-            if let Some(cached) = cache::load_json::<Vec<SubjectWithTeacher>>("subjects_teachers") {
-                uuid_to_title = cached.iter().map(|s| (s.id.clone(), s.subject_title.clone())).collect();
-            }
-        }
-
-        // 8 — final marks (/final/whole): the ONLY trustworthy source for the
-        // «Выставл.» column. A lesson mark carries an author and a kind on
-        // ordinary grades too, so heuristics over the lessons feed displayed
-        // marks no one had ever set as a quarter final.
-        if uuid_to_title.is_empty() {
-            // Without a subject list the uuids can't be keyed; keep whatever
-            // the cache already holds rather than overwriting it with nothing.
-            nslog::nslog("[Diary] final marks: no subject map, skipping fetch");
-        } else {
-            match blocking::api_get_raw(
-                &client,
-                &endpoints::final_marks(&school_id, &class_id, &profile_id),
-            ) {
-                Ok(raw) => match parse_final_marks(&raw, &uuid_to_title) {
-                    Some(finals) => {
-                        nslog::nslog(&format!("[Diary] final marks for {} subjects", finals.len()));
-                        set_final_marks.clone().set(finals.clone());
-                        cache::save_json("final_marks", &finals);
-                    }
-                    None => nslog::nslog("[Diary] final marks: unexpected payload shape"),
-                },
-                Err(e) => nslog::nslog(&format!("[Diary] final marks failed: {e}")),
-            }
-        }
-
-        set_loading.set(false);
-        set_conn2.set(crate::app::ConnStatus::Connected);
-        nslog::nslog("[Diary] load_all completed");
-
-        // Auto-hide the "Connected" indicator after 2 seconds — but only if
-        // no newer load took over (it would be Connecting/Connected now).
-        std::thread::sleep(std::time::Duration::from_secs(2));
-        day::reactive::on_main(move || {
-            if let Some(state) = AppState::get_main() {
-                if state.conn_status.get() == crate::app::ConnStatus::Connected {
-                    set_conn2.set(crate::app::ConnStatus::Idle);
-                }
-            }
-        });
-    });
-}
-
-fn fallback_class_id(
-    client: &reqwest::blocking::Client,
-    school_id: &str,
-    profile_id: &str,
-) -> String {
-    if let Ok(classes) = blocking::api_get::<Vec<Class>>(
-        client,
-        &endpoints::classes(school_id, profile_id),
-    ) {
-        if let Some(c) = classes.first() {
-            c.uuid.clone()
-        } else {
-            crate::shared::secure::load("auth.class_id").unwrap_or_default()
-        }
-    } else {
-        crate::shared::secure::load("auth.class_id").unwrap_or_default()
-    }
-}
-
-/// Warm week_cache[idx] without touching the current index: called at the START of a
-/// swipe animation so the incoming page can draw real lessons while it slides in
-/// instead of the spinner its `is_loaded` gate shows on a cache miss.
-pub fn prefetch_week(state: AppState, idx: i32) {
-    if idx < 0 { return; }
-    let weeks = state.all_weeks.get();
-    if idx as usize >= weeks.len() { return; }
-    if state.week_cache.with(|c| c.contains_key(&idx)) { return; }
-    let (school_id, class_id, profile_id) = auth::get_stored_ids();
-    if school_id.is_empty() || class_id.is_empty() || profile_id.is_empty() { return; }
-    let Some(token) = auth::get_token() else { return; };
-    let uuid = weeks[idx as usize].uuid.clone();
-
-    std::thread::spawn(move || {
-        let client = blocking::build_client(&token);
-        match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &uuid)) {
-            Ok(raw) => {
-                if let Ok(lessons) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
-                    day::reactive::on_main(move || {
-                        if let Some(state) = AppState::get_main() {
-                            if state.week_cache.with(|c| c.contains_key(&idx)) {
-                                return;
-                            }
-                            let mut wc = state.week_cache.get();
-                            wc.insert(idx, lessons);
-                            cache::save_json("week_cache", &wc);
-                            state.week_cache.set(wc);
-                            nslog::nslog(&format!("[Diary] prefetch idx={idx} OK"));
-                        }
+            state.loading.set(false);
+            state.lessons_loading.set(false);
+            state.schedule_loading.set(false);
+            state.teachers_loading.set(false);
+            match result {
+                Ok(data) => {
+                    // Keep a user's selection during a refresh, but return to
+                    // today after a new profile has been selected.
+                    let selected_uuid = state.all_weeks.with(|w| {
+                        w.get(state.current_week_index.get() as usize)
+                            .map(|w| w.uuid.clone())
                     });
-                }
-            }
-            Err(_) => {}
-        }
-    });
-}
-
-/// Load lessons for a specific week by index in all_weeks.
-pub fn load_week(state: AppState, new_index: i32) {
-    let weeks = state.all_weeks.get();
-    let idx = new_index as usize;
-    if idx >= weeks.len() { return; }
-
-    let (school_id, class_id, profile_id) = auth::get_stored_ids();
-    if school_id.is_empty() || class_id.is_empty() || profile_id.is_empty() { return; }
-
-    let token = match auth::get_token() {
-        Some(t) => t,
-        _ => return,
-    };
-
-    let week = &weeks[idx];
-    let week_summary = week.summary.clone();
-    let week_uuid = week.uuid.clone();
-
-    let set_current_week_index = state.current_week_index.setter();
-    let set_current_week = state.current_week.setter();
-    let set_current_quarter = state.current_quarter.setter();
-    let set_lessons = state.lessons.setter();
-    let set_lessons_loading = state.lessons_loading.setter();
-    let set_conn = state.conn_status.setter();
-
-    // Instant-serve from week_cache when present (without cloning whole HashMap)
-    let cached = state.week_cache.with(|c| c.get(&(idx as i32)).cloned());
-    let mut need_fetch = true;
-
-    day::reactive::batch(|| {
-        set_current_week_index.set(idx as i32);
-        set_current_week.set(week_summary);
-        set_current_quarter.set(quarter_for_index(idx));
-
-        if let Some(lessons) = cached {
-            set_lessons.set(lessons);
-            set_lessons_loading.set(false);
-            if state.conn_status.get() == crate::app::ConnStatus::Connecting {
-                set_conn.set(crate::app::ConnStatus::Connected);
-            }
-            need_fetch = false;
-            nslog::nslog(&format!("[Diary] load_week idx={idx} served from cache"));
-        } else {
-            set_lessons.set(Vec::new());
-            set_lessons_loading.set(true);
-            set_conn.set(crate::app::ConnStatus::Connecting);
-            nslog::nslog(&format!("[Diary] load_week idx={idx} uuid={week_uuid}"));
-        }
-    });
-
-    // Neighbor prefetch: idx±1 not already in cache
-    let mut prefetch: Vec<(i32, String)> = Vec::new();
-    state.week_cache.with(|cache| {
-        for di in [-1i32, 1i32] {
-            let ni = idx as i32 + di;
-            if ni < 0 || ni as usize >= weeks.len() {
-                continue;
-            }
-            if cache.contains_key(&ni) {
-                continue;
-            }
-            if let Some(w) = weeks.get(ni as usize) {
-                prefetch.push((ni, w.uuid.clone()));
-            }
-        }
-    });
-
-    let cur_uuid = week_uuid;
-    let cur_i = idx as i32;
-    let need_current = need_fetch;
-    let set_lessons = state.lessons.setter();
-    let set_lessons_loading = state.lessons_loading.setter();
-    let set_conn = state.conn_status.setter();
-
-    std::thread::spawn(move || {
-        let client = blocking::build_client(&token);
-
-        if need_current {
-            match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &cur_uuid)) {
-                Ok(raw) => {
-                    match serde_json::from_str::<Vec<DaySchedule>>(&raw) {
-                        Ok(lessons) => {
-                            nslog::nslog(&format!("[Diary] load_week idx={cur_i} OK ({} days)", lessons.len()));
-                            let ci = cur_i;
-                            let ls = lessons.clone();
-                            day::reactive::on_main(move || {
-                                if let Some(state) = AppState::get_main() {
-                                    if state.current_week_index.get() == ci {
-                                        state.lessons.setter().set(ls.clone());
-                                    }
-                                    let mut wc = state.week_cache.get();
-                                    wc.insert(ci, ls);
-                                    cache::save_json("week_cache", &wc);
-                                    state.week_cache.set(wc);
-                                } else {
-                                    set_lessons.set(ls);
-                                }
+                    let selected_quarter = state.current_quarter.get();
+                    let had_selection = selected_uuid.is_some();
+                    let profile_changed = auth::get_stored_ids().2 != data.profile;
+                    if profile_changed {
+                        session::invalidate();
+                        clear_data(state);
+                    }
+                    auth::store_ids(
+                        &data.school,
+                        &data.class.uuid,
+                        &data.profile,
+                        &data.name,
+                        &data.school_name,
+                    );
+                    if profile_changed {
+                        restore_cache(state);
+                    }
+                    state.is_parent.set(data.user.is_parent());
+                    state.parent_children.set(data.user.children().to_vec());
+                    state.active_child_index.set(data.child_idx);
+                    state.full_name.set(data.name.clone());
+                    state.school_name.set(data.school_name.clone());
+                    state
+                        .class_label
+                        .set(format!("{}{}", data.class.level, data.class.label));
+                    state
+                        .is_graduating
+                        .set(data.class.graduating.unwrap_or(false));
+                    cache::save("user_full_name", &data.name);
+                    cache::save("user_school_name", &data.school_name);
+                    // Index keys are valid only for this exact ordered list.
+                    let old_weeks = state.all_weeks.get();
+                    let remapped: WeekCache = state.week_cache.with(|c| {
+                        data.weeks
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, w)| {
+                                let old = old_weeks.iter().position(|v| v.uuid == w.uuid)?;
+                                Some((i as i32, c.get(&(old as i32))?.clone()))
+                            })
+                            .collect()
+                    });
+                    state.week_cache.set(remapped);
+                    state.all_weeks.set(data.weeks.clone());
+                    if !data.periods.is_empty() {
+                        state.time_activities.set(data.periods.clone());
+                    }
+                    state
+                        .week_quarters
+                        .set(week_quarters(&data.weeks, &state.time_activities.get()));
+                    cache::save_json("all_weeks", &data.weeks);
+                    cache::save_json("time_activities", &state.time_activities.get());
+                    let fetched_idx = data.current.as_ref().map(|(idx, _)| *idx);
+                    if let Some((idx, days)) = data.current {
+                        if accept_week(&data.weeks[idx].uuid, order) {
+                            state.week_cache.update(|wc| {
+                                wc.insert(idx as i32, days.clone());
                             });
+                            super::grade_checker::observe_week(&data.weeks[idx].uuid, &days);
                         }
-                        Err(e) => {
-                            nslog::nslog(&format!("[Diary] load_week parse failed: {e}"));
-                            set_conn.set(crate::app::ConnStatus::Error);
+                    }
+                    cache::save_json("week_cache", &state.week_cache.get());
+                    let idx = selected_uuid
+                        .filter(|_| !profile_changed)
+                        .and_then(|uuid| data.weeks.iter().position(|w| w.uuid == uuid))
+                        .or_else(|| find_current_week(&data.weeks, now_ms()));
+                    if let Some(idx) = idx {
+                        select_week(state, idx);
+                        if had_selection && !profile_changed {
+                            state.current_quarter.set(selected_quarter);
                         }
+                        state.lessons.set(
+                            state
+                                .week_cache
+                                .with(|c| c.get(&(idx as i32)).cloned().unwrap_or_default()),
+                        );
+                    }
+                    if let Some(v) = data.bells {
+                        cache::save_json("bell_times", &v);
+                        state.bell_times.set(v);
+                    }
+                    if let Some(v) = data.timetable {
+                        cache::save_json("timetable_days", &v);
+                        state.timetable_days.set(v);
+                    }
+                    if let Some(v) = data.teachers {
+                        cache::save_json("subjects_teachers", &v);
+                        state.subjects_teachers.set(v);
+                    }
+                    if let Some(v) = data.finals {
+                        cache::save_json("final_marks", &v);
+                        state.final_marks.set(v);
+                    }
+                    rebuild_marks(state);
+                    if let Some(e) = data.partial_error {
+                        state.error_msg.set(e);
+                        state.conn_status.set(ConnStatus::Error);
+                    } else {
+                        connected(state);
+                    }
+                    if let Some(idx) = idx {
+                        // Refresh the viewed week even when it was cached; load_all
+                        // fetched today's week, which may be a different one.
+                        if fetched_idx != Some(idx) {
+                            request_week(state, idx as i32, true);
+                        }
+                        prefetch_week(state, idx as i32 - 1);
+                        prefetch_week(state, idx as i32 + 1);
                     }
                 }
                 Err(e) => {
-                    nslog::nslog(&format!("[Diary] load_week request failed: {e}"));
-                    set_conn.set(crate::app::ConnStatus::Error);
+                    nslog::nslog(&format!("[Diary] {e}"));
+                    state.error_msg.set(e);
+                    state
+                        .conn_status
+                        .set(if state.week_cache.with(|c| !c.is_empty()) {
+                            ConnStatus::Offline
+                        } else {
+                            ConnStatus::Error
+                        });
                 }
             }
+        });
+    });
+}
 
-            day::reactive::on_main(move || {
-                set_lessons_loading.set(false);
-                if let Some(state) = AppState::get_main() {
-                    state.lessons_loading.setter().set(false);
-                    if state.conn_status.get() == crate::app::ConnStatus::Connecting {
-                        let set_c = state.conn_status.setter();
-                        set_c.set(crate::app::ConnStatus::Connected);
-                        std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_secs(2));
-                            day::reactive::on_main(move || {
-                                if let Some(s) = AppState::get_main() {
-                                    if s.conn_status.get() == crate::app::ConnStatus::Connected {
-                                        set_c.set(crate::app::ConnStatus::Idle);
-                                    }
-                                }
-                            });
-                        });
-                    }
-                }
-            });
+fn fetch_all(token: &str, selected: usize, stored_profile: &str) -> Result<Loaded, String> {
+    let mut client = blocking::build_client(token);
+    let user = match blocking::get_user_me(&client) {
+        Ok(u) => u,
+        Err(e) if e.starts_with("HTTP 401") => {
+            let token = auth::try_refresh_token()
+                .ok_or("Сессия не обновлена. Проверьте соединение или войдите заново.")?;
+            client = blocking::build_client(&token);
+            blocking::get_user_me(&client)?
         }
+        Err(e) => return Err(e),
+    };
+    let children = user.children();
+    let child_idx = children
+        .iter()
+        .position(|c| c.profile_id == stored_profile)
+        .unwrap_or(selected.min(children.len().saturating_sub(1)));
+    let (school, profile, name, school_name) = if user.is_parent() {
+        let child = children
+            .get(child_idx)
+            .ok_or("В аккаунте нет доступных учеников")?;
+        let name = blocking::get_school_by_id(&client, &child.school_id)
+            .ok()
+            .flatten()
+            .and_then(|s| s.short_name.or(s.short_name_be))
+            .unwrap_or_else(|| user.school_name.clone());
+        (
+            child.school_id.clone(),
+            child.profile_id.clone(),
+            child.full_name.clone(),
+            name,
+        )
+    } else {
+        (
+            user.school_id.clone(),
+            user.profile_id.clone(),
+            user.full_name.clone(),
+            user.school_name.clone(),
+        )
+    };
+    let year = blocking::api_get::<SchoolYear>(&client, endpoints::SCHOOL_YEAR).ok();
+    let today = day_piece_datetime::DayDate::today();
+    let (start, end) = year
+        .as_ref()
+        .map(|y| (y.start_year, y.end_year))
+        .unwrap_or_else(|| academic_year(today.year as u32, today.month as u32));
+    let body = serde_json::json!({"school_period": year.as_ref().map(|y| &y.uuid), "from": format!("01.09.{start:04}"), "to": format!("31.05.{end:04}")});
+    let classes =
+        blocking::api_post::<ClassesByDate>(&client, &endpoints::classes(&school, &profile), &body)
+            .map(|c| c.classes)
+            .or_else(|_| {
+                blocking::api_get::<Vec<Class>>(&client, &endpoints::classes(&school, &profile))
+            })?;
+    let class = classes.into_iter().next().ok_or("Класс не найден")?;
+    let weeks = blocking::api_get::<Vec<WeekActivity>>(&client, endpoints::WEEK_ACTIVITIES)?;
+    let periods = blocking::api_get::<Vec<TimeActivity>>(&client, endpoints::TIME_ACTIVITIES)
+        .unwrap_or_default();
+    let mut partial_error = None;
+    let current = find_current_week(&weeks, now_ms()).and_then(|idx| {
+        match fetch_week(&client, &school, &class.uuid, &profile, &weeks[idx].uuid) {
+            Ok(days) => Some((idx, days)),
+            Err(e) => {
+                partial_error = Some(e);
+                None
+            }
+        }
+    });
+    let mut optional = |error: String| {
+        if partial_error.is_none() {
+            partial_error = Some(error);
+        }
+    };
+    let bells = blocking::api_get::<Vec<BellSchedule>>(&client, &endpoints::bells(&school))
+        .map(|v| {
+            v.into_iter()
+                .next()
+                .and_then(|s| s.days_of_week.into_iter().next())
+                .map(|d| d.time_of_bells)
+                .unwrap_or_default()
+        })
+        .map_err(&mut optional)
+        .ok();
+    let timetable =
+        blocking::api_get::<Vec<Timetable>>(&client, &endpoints::timetable(&school, &class.uuid))
+            .map(|v| {
+                v.into_iter()
+                    .next()
+                    .map(|t| t.days_of_week)
+                    .unwrap_or_default()
+            })
+            .map_err(&mut optional)
+            .ok();
+    let teachers = blocking::api_get::<Vec<SubjectWithTeacher>>(
+        &client,
+        &endpoints::subjects(&school, &profile, &class.uuid),
+    )
+    .map_err(&mut optional)
+    .ok();
+    let titles: HashMap<String, String> = teachers
+        .as_ref()
+        .map(|v| {
+            v.iter()
+                .map(|s| (s.id.clone(), s.subject_title.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let finals = if titles.is_empty() {
+        None
+    } else {
+        blocking::api_get_raw(
+            &client,
+            &endpoints::final_marks(&school, &class.uuid, &profile),
+        )
+        .map_err(&mut optional)
+        .ok()
+        .and_then(|raw| parse_final_marks(&raw, &titles))
+    };
+    Ok(Loaded {
+        user,
+        child_idx,
+        school,
+        profile,
+        name,
+        school_name,
+        class,
+        weeks,
+        periods,
+        current,
+        bells,
+        timetable,
+        teachers,
+        finals,
+        partial_error,
+    })
+}
 
-        // Quiet neighbor prefetch
-        for (ni, nuuid) in prefetch {
-            match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, &nuuid)) {
-                Ok(raw) => {
-                    if let Ok(ls) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
-                        day::reactive::on_main(move || {
-                            if let Some(state) = AppState::get_main() {
-                                if state.current_week_index.get() == ni {
-                                    state.lessons.setter().set(ls.clone());
-                                }
-                                let mut wc = state.week_cache.get();
-                                wc.insert(ni, ls);
-                                cache::save_json("week_cache", &wc);
-                                state.week_cache.set(wc);
-                            }
-                        });
-                    }
+fn fetch_week(
+    client: &reqwest::blocking::Client,
+    school: &str,
+    class: &str,
+    profile: &str,
+    week: &str,
+) -> Result<Vec<DaySchedule>, String> {
+    blocking::api_get(client, &endpoints::lessons(school, class, profile, week))
+}
+
+fn connected(state: AppState) {
+    // Do not hide a failed sibling request with a successful neighbor prefetch.
+    if matches!(
+        state.conn_status.get(),
+        ConnStatus::Error | ConnStatus::Offline
+    ) {
+        return;
+    }
+    state.conn_status.set(ConnStatus::Connected);
+    let ticket = session::ticket();
+    day::reactive::on_main_delayed(2000, move || {
+        if ticket.is_current() {
+            if let Some(state) = AppState::get_main() {
+                if state.conn_status.get() == ConnStatus::Connected {
+                    state.conn_status.set(ConnStatus::Idle);
                 }
-                Err(e) => nslog::nslog(&format!("[Diary] prefetch {ni} failed: {e}")),
             }
         }
     });
 }
 
-/// Extract all marks for a quarter from week_cache (lesson averages only —
-/// final marks come from `/final/whole`, see [`crate::app::FinalMarks`]).
-pub fn extract_marks_for_quarter(
-    cache: &std::collections::HashMap<i32, Vec<DaySchedule>>,
-    quarter: usize,
-) -> std::collections::HashMap<String, Vec<f64>> {
-    let mut marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+pub fn prefetch_week(state: AppState, idx: i32) {
+    if idx < 0 || state.week_cache.with(|c| c.contains_key(&idx)) {
+        return;
+    }
+    request_week(state, idx, false);
+}
 
-    let (start, end) = if quarter < 4 {
-        QUARTER_RANGES[quarter]
-    } else {
-        (0, 36)
+pub fn load_week(state: AppState, idx: i32) {
+    if idx < 0 || idx as usize >= state.all_weeks.with(|w| w.len()) {
+        return;
+    }
+    select_week(state, idx as usize);
+    state.conn_status.set(ConnStatus::Connecting);
+    rebuild_marks(state);
+    state.lessons.set(
+        state
+            .week_cache
+            .with(|c| c.get(&idx).cloned().unwrap_or_default()),
+    );
+    request_week(state, idx, true);
+    prefetch_week(state, idx - 1);
+    prefetch_week(state, idx + 1);
+}
+
+fn request_week(state: AppState, idx: i32, visible: bool) {
+    let Some(week) = state.all_weeks.with(|w| w.get(idx as usize).cloned()) else {
+        return;
     };
-
-    for idx in start..end {
-        if let Some(days) = cache.get(&(idx as i32)) {
-            for day in days {
-                for slot in &day.slots {
-                    if let Some(ref lm) = slot.lesson_mark {
-                        if let Some(ref m_str) = lm.mark {
-                            let parsed = utils::parse_marks(m_str);
-                            for val in &parsed {
-                                marks.entry(slot.subject_title.clone())
-                                    .or_default()
-                                    .push(*val);
-                            }
+    let Some(token) = auth::get_token() else {
+        return;
+    };
+    let (school, class, profile) = auth::get_stored_ids();
+    if school.is_empty() || class.is_empty() || profile.is_empty() {
+        return;
+    }
+    let ticket = session::ticket();
+    let order = response_order();
+    accept_week(&week.uuid, order);
+    let request = if visible {
+        WEEK_REQUEST.fetch_add(1, Ordering::AcqRel) + 1
+    } else {
+        WEEK_REQUEST.load(Ordering::Acquire)
+    };
+    if visible {
+        state
+            .lessons_loading
+            .set(!state.week_cache.with(|c| c.contains_key(&idx)));
+        if !matches!(
+            state.conn_status.get(),
+            ConnStatus::Error | ConnStatus::Offline
+        ) {
+            state.conn_status.set(ConnStatus::Connecting);
+        }
+    }
+    std::thread::spawn(move || {
+        let result = fetch_week(
+            &blocking::build_client(&token),
+            &school,
+            &class,
+            &profile,
+            &week.uuid,
+        );
+        ticket.publish(move |state| {
+            // A refreshed list may have changed the week at this index.
+            if !state
+                .all_weeks
+                .with(|w| w.get(idx as usize).is_some_and(|w| w.uuid == week.uuid))
+            {
+                return;
+            }
+            let active = visible
+                && WEEK_REQUEST.load(Ordering::Acquire) == request
+                && state.current_week_index.get() == idx;
+            match result {
+                Ok(days) => {
+                    if !accept_week(&week.uuid, order) {
+                        if active {
+                            state.lessons_loading.set(false);
                         }
+                        return;
                     }
+                    super::grade_checker::observe_week(&week.uuid, &days);
+                    state.week_cache.update(|wc| {
+                        wc.insert(idx, days.clone());
+                    });
+                    cache::save_json("week_cache", &state.week_cache.get());
+                    if state.current_week_index.get() == idx {
+                        state.lessons.set(days);
+                    }
+                    rebuild_marks(state);
+                    if active {
+                        connected(state);
+                    }
+                }
+                Err(e) => {
+                    if active {
+                        state.error_msg.set(e);
+                        state.conn_status.set(ConnStatus::Error);
+                    }
+                }
+            }
+            if active {
+                state.lessons_loading.set(false);
+            }
+        });
+    });
+}
+
+pub fn quarter_week_indices(state: AppState, quarter: usize) -> Vec<usize> {
+    state.week_quarters.with(|v| {
+        v.iter()
+            .enumerate()
+            .filter_map(|(i, q)| (*q == Some(quarter)).then_some(i))
+            .collect()
+    })
+}
+
+pub fn extract_marks_for_quarter(
+    cache: &WeekCache,
+    quarters: &[Option<usize>],
+    quarter: usize,
+) -> Marks {
+    let mut marks = Marks::new();
+    for (idx, days) in cache {
+        if quarter < 4 && quarters.get(*idx as usize).copied().flatten() != Some(quarter) {
+            continue;
+        }
+        for day in days {
+            for slot in &day.slots {
+                if let Some(raw) = slot.lesson_mark.as_ref().and_then(|m| m.mark.as_deref()) {
+                    marks
+                        .entry(slot.subject_title.clone())
+                        .or_default()
+                        .extend(utils::parse_marks(raw));
                 }
             }
         }
     }
-
     marks
 }
 
-/// Dated lesson marks for ONE subject in a quarter — `(date, raw, parsed)`,
-/// date-sorted. Each entry is one lesson slot: the date from its day, the mark
-/// as the API spelled it (`"5"`, `"5/4"`), the parsed values for averages.
-/// Powers the Итоги peek strip; averages elsewhere use
-/// [`extract_marks_for_quarter`], which aggregates the same slots without dates.
 pub fn extract_marks_dated(
-    cache: &std::collections::HashMap<i32, Vec<DaySchedule>>,
+    cache: &WeekCache,
+    quarters: &[Option<usize>],
     quarter: usize,
     subject: &str,
 ) -> Vec<(u64, String, Vec<f64>)> {
-    let (start, end) = if quarter < 4 {
-        QUARTER_RANGES[quarter]
-    } else {
-        (0, 36)
-    };
-
-    let mut out: Vec<(u64, String, Vec<f64>)> = Vec::new();
-    for idx in start..end {
-        if let Some(days) = cache.get(&(idx as i32)) {
-            for day in days {
-                for slot in &day.slots {
-                    if slot.subject_title != subject {
-                        continue;
-                    }
-                    let Some(ref lm) = slot.lesson_mark else { continue };
-                    let Some(ref m_str) = lm.mark else { continue };
-                    let parsed = utils::parse_marks(m_str);
-                    if parsed.is_empty() {
-                        continue;
-                    }
-                    out.push((day.date, m_str.clone(), parsed));
+    let mut out = Vec::new();
+    for (idx, days) in cache {
+        if quarter < 4 && quarters.get(*idx as usize).copied().flatten() != Some(quarter) {
+            continue;
+        }
+        for day in days {
+            for slot in &day.slots {
+                if slot.subject_title != subject {
+                    continue;
+                }
+                let Some(raw) = slot.lesson_mark.as_ref().and_then(|m| m.mark.as_ref()) else {
+                    continue;
+                };
+                let parsed = utils::parse_marks(raw);
+                if !parsed.is_empty() {
+                    out.push((day.date, raw.clone(), parsed));
                 }
             }
         }
@@ -681,12 +741,165 @@ pub fn extract_marks_dated(
     out
 }
 
-/// Parse `/final/whole` into `{subject title → {period → mark}}`.
-///
-/// The payload keys marks by subject uuid:
-/// `{ "marks": { "<uuid>": { "FIRST_QUARTER": {"mark":"5"}, …, "YEAR": {…} } } }`,
-/// so uuids are mapped to titles through the subjects list; entries for
-/// subjects we don't know are skipped.
+fn rebuild_marks(state: AppState) {
+    let quarters = state.week_quarters.get();
+    let q_all: Vec<_> = state.week_cache.with(|c| {
+        (0..4)
+            .map(|q| extract_marks_for_quarter(c, &quarters, q))
+            .collect()
+    });
+    let q = state.current_quarter.get();
+    let marks = if q < 4 {
+        q_all[q].clone()
+    } else {
+        state
+            .week_cache
+            .with(|c| extract_marks_for_quarter(c, &quarters, 4))
+    };
+    state.all_marks.set(
+        marks
+            .iter()
+            .flat_map(|(subject, values)| values.iter().map(move |value| (subject.clone(), *value)))
+            .collect(),
+    );
+    state.quarter_marks.set(marks);
+    state.year_quarter_data.set(
+        q_all
+            .iter()
+            .enumerate()
+            .map(|(q, m)| {
+                (
+                    format!("{} четверть", ["I", "II", "III", "IV"][q]),
+                    m.clone(),
+                )
+            })
+            .collect(),
+    );
+    state.quarter_all_marks.set(q_all.clone());
+    cache::save_json("quarter_all_marks", &q_all);
+}
+
+pub fn load_quarter(state: AppState, quarter: usize) {
+    if quarter > 3 {
+        return;
+    }
+    state.current_quarter.set(quarter);
+    let indices = quarter_week_indices(state, quarter);
+    if indices.is_empty() {
+        state.quarter_marks.set(Marks::new());
+        MARKS_REQUEST.fetch_add(1, Ordering::AcqRel);
+        state.marks_loading.set(false);
+        state
+            .error_msg
+            .set("Не удалось определить учебные недели четверти по календарю школы".into());
+        state.conn_status.set(ConnStatus::Error);
+        return;
+    }
+    load_mark_weeks(state, indices);
+}
+
+pub fn load_year(state: AppState) {
+    state.current_quarter.set(4);
+    load_mark_weeks(state, (0..state.all_weeks.with(|w| w.len())).collect());
+}
+
+fn load_mark_weeks(state: AppState, indices: Vec<usize>) {
+    let Some(token) = auth::get_token() else {
+        return;
+    };
+    let (school, class, profile) = auth::get_stored_ids();
+    if class.is_empty() {
+        return;
+    }
+    let ticket = session::ticket();
+    let request = MARKS_REQUEST.fetch_add(1, Ordering::AcqRel) + 1;
+    let weeks = state.all_weeks.get();
+    let info: Vec<_> = indices
+        .into_iter()
+        .filter_map(|i| {
+            weeks.get(i).map(|w| {
+                let order = response_order();
+                accept_week(&w.uuid, order);
+                (i, w.uuid.clone(), order)
+            })
+        })
+        .collect();
+    rebuild_marks(state);
+    state.marks_loading.set(true);
+    state.conn_status.set(ConnStatus::Connecting);
+    std::thread::spawn(move || {
+        let client = blocking::build_client(&token);
+        let mut last_error = None;
+        for (idx, uuid, order) in info {
+            if !ticket.is_current() || MARKS_REQUEST.load(Ordering::Acquire) != request {
+                return;
+            }
+            match fetch_week(&client, &school, &class, &profile, &uuid) {
+                Ok(days) => ticket.publish(move |state| {
+                    if !state
+                        .all_weeks
+                        .with(|w| w.get(idx).is_some_and(|w| w.uuid == uuid))
+                    {
+                        return;
+                    }
+                    if !accept_week(&uuid, order) {
+                        return;
+                    }
+                    super::grade_checker::observe_week(&uuid, &days);
+                    state.week_cache.update(|wc| {
+                        wc.insert(idx as i32, days);
+                    });
+                    cache::save_json("week_cache", &state.week_cache.get());
+                    rebuild_marks(state);
+                }),
+                Err(e) => last_error = Some(e),
+            }
+        }
+        ticket.publish(move |state| {
+            if MARKS_REQUEST.load(Ordering::Acquire) != request {
+                return;
+            }
+            rebuild_marks(state);
+            state.marks_loading.set(false);
+            if let Some(e) = last_error {
+                state.error_msg.set(e);
+                state.conn_status.set(ConnStatus::Error);
+            } else {
+                connected(state);
+            }
+        });
+    });
+}
+
+pub fn reset_marks(state: AppState) {
+    state.all_marks.set(Vec::new());
+    state.loaded_mark_weeks.set(Default::default());
+    state.quarter_marks.set(Marks::new());
+    state.quarter_all_marks.set(Vec::new());
+}
+
+pub fn switch_child(state: AppState, child_idx: usize) {
+    let Some(child) = state.parent_children.with(|c| c.get(child_idx).cloned()) else {
+        return;
+    };
+    if child_idx == state.active_child_index.get() {
+        return;
+    }
+    session::invalidate();
+    clear_data(state);
+    state.active_child_index.set(child_idx);
+    // Select the new namespace BEFORE restoring any cache. Never reuse the
+    // previous child's class ID as a fallback.
+    auth::store_ids(
+        &child.school_id,
+        "",
+        &child.profile_id,
+        &child.full_name,
+        "",
+    );
+    load_all(state);
+}
+
 fn parse_final_marks(
     raw: &str,
     uuid_to_title: &std::collections::HashMap<String, String>,
@@ -695,8 +908,12 @@ fn parse_final_marks(
     let marks = v.get("marks")?.as_object()?;
     let mut out: FinalMarks = std::collections::HashMap::new();
     for (uuid, periods) in marks {
-        let Some(title) = uuid_to_title.get(uuid) else { continue };
-        let Some(periods) = periods.as_object() else { continue };
+        let Some(title) = uuid_to_title.get(uuid) else {
+            continue;
+        };
+        let Some(periods) = periods.as_object() else {
+            continue;
+        };
         for (period, cell) in periods {
             let mark = cell
                 .get("mark")
@@ -714,303 +931,14 @@ fn parse_final_marks(
     Some(out)
 }
 
-/// Load all weeks for a quarter and accumulate marks.
-pub fn load_quarter(state: AppState, quarter: usize) {
-    if quarter > 3 { return; }
-
-    let weeks = state.all_weeks.get();
-    let (start, end) = QUARTER_RANGES[quarter];
-    if start >= weeks.len() { return; }
-
-    let (school_id, class_id, profile_id) = auth::get_stored_ids();
-    if school_id.is_empty() || class_id.is_empty() || profile_id.is_empty() { return; }
-
-    let token = match auth::get_token() {
-        Some(t) => t,
-        _ => return,
-    };
-
-    let set_current_quarter = state.current_quarter.setter();
-    let set_marks_loading = state.marks_loading.setter();
-    let set_quarter_all_marks = state.quarter_all_marks.setter();
-    let set_quarter_marks = state.quarter_marks.setter();
-    let set_conn = state.conn_status.setter();
-
-    set_current_quarter.set(quarter);
-    set_marks_loading.set(true);
-    set_conn.set(crate::app::ConnStatus::Connecting);
-
-    // 1. Immediately extract any existing marks from week_cache so UI displays instantly!
-    let cached_marks = state.week_cache.with(|c| {
-        extract_marks_for_quarter(c, quarter)
-    });
-    let mut q_all = state.quarter_all_marks.get();
-    if q_all.len() <= quarter {
-        q_all.resize(quarter + 1, std::collections::HashMap::new());
-    }
-    if !cached_marks.is_empty() {
-        q_all[quarter] = cached_marks.clone();
-        set_quarter_all_marks.set(q_all.clone());
-        set_quarter_marks.set(cached_marks);
-    }
-
-    let actual_end = end.min(weeks.len());
-    let week_info: Vec<(usize, String)> = (start..actual_end)
-        .filter_map(|idx| weeks.get(idx).map(|w| (idx, w.uuid.clone())))
-        .collect();
-
-    nslog::nslog(&format!("[Diary] load_quarter q={} weeks={}", quarter + 1, week_info.len()));
-
-    let init_q_all = state.quarter_all_marks.get();
-
-    std::thread::spawn(move || {
-        let client = blocking::build_client(&token);
-        let mut all_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
-
-        if let Some(existing) = init_q_all.get(quarter) {
-            all_marks = existing.clone();
-        }
-
-        for (week_idx, week_uuid) in &week_info {
-            match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, week_uuid)) {
-                Ok(raw) => {
-                    if let Ok(days) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
-                        let w_idx = *week_idx as i32;
-                        let days_clone = days.clone();
-                        day::reactive::on_main(move || {
-                            if let Some(state) = AppState::get_main() {
-                                let mut wc = state.week_cache.get();
-                                wc.insert(w_idx, days_clone);
-                                cache::save_json("week_cache", &wc);
-                                state.week_cache.set(wc);
-                            }
-                        });
-
-                        for day in &days {
-                            for slot in &day.slots {
-                                if let Some(ref lm) = slot.lesson_mark {
-                                    if let Some(ref mark_str) = lm.mark {
-                                        let parsed = utils::parse_marks(mark_str);
-                                        for val in &parsed {
-                                            all_marks.entry(slot.subject_title.clone())
-                                                .or_default()
-                                                .push(*val);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(e) => nslog::nslog(&format!("[Diary] load_quarter week failed: {e}")),
-            }
-        }
-
-        // Store per-quarter
-        {
-            let mut q_all = init_q_all.clone();
-            if q_all.len() <= quarter {
-                q_all.resize(quarter + 1, std::collections::HashMap::new());
-            }
-            q_all[quarter] = all_marks.clone();
-            set_quarter_all_marks.set(q_all.clone());
-            cache::save_json("quarter_all_marks", &q_all);
-        }
-
-        set_quarter_marks.set(all_marks);
-
-        day::reactive::on_main(|| {
-            if let Some(state) = AppState::get_main() {
-                state.marks_loading.setter().set(false);
-                if state.conn_status.get() == crate::app::ConnStatus::Connecting {
-                    let set_c = state.conn_status.setter();
-                    set_c.set(crate::app::ConnStatus::Connected);
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_secs(2));
-                        day::reactive::on_main(move || {
-                            if let Some(s) = AppState::get_main() {
-                                if s.conn_status.get() == crate::app::ConnStatus::Connected {
-                                    set_c.set(crate::app::ConnStatus::Idle);
-                                }
-                            }
-                        });
-                    });
-                }
-            }
-        });
-
-        nslog::nslog(&format!("[Diary] Quarter {} loaded", quarter + 1));
-    });
-}
-
-/// Load all weeks for the entire year, storing marks per-quarter and total.
-pub fn load_year(state: AppState) {
-    let weeks = state.all_weeks.get();
-    if weeks.is_empty() { return; }
-
-    let (school_id, class_id, profile_id) = auth::get_stored_ids();
-    if school_id.is_empty() || class_id.is_empty() || profile_id.is_empty() { return; }
-
-    let token = match auth::get_token() {
-        Some(t) => t,
-        _ => return,
-    };
-
-    let set_current_quarter = state.current_quarter.setter();
-    let set_marks_loading = state.marks_loading.setter();
-    let set_quarter_all_marks = state.quarter_all_marks.setter();
-    let set_year_quarter_data = state.year_quarter_data.setter();
-    let set_quarter_marks = state.quarter_marks.setter();
-    let set_conn = state.conn_status.setter();
-
-    set_current_quarter.set(4);
-    set_marks_loading.set(true);
-    set_conn.set(crate::app::ConnStatus::Connecting);
-
-    let quarter_labels = ["I четверть", "II четверть", "III четверть", "IV четверть"];
-
-    // Seed year_quarter_data immediately from quarter_all_marks or week_cache
-    let mut initial_yqd: Vec<(String, std::collections::HashMap<String, Vec<f64>>)> = Vec::new();
-    let current_q_all = state.quarter_all_marks.get();
-    for q in 0..4 {
-        let m = current_q_all.get(q).filter(|m| !m.is_empty()).cloned().unwrap_or_else(|| {
-            state.week_cache.with(|c| {
-                extract_marks_for_quarter(c, q)
-            })
-        });
-        initial_yqd.push((quarter_labels[q].to_string(), m));
-    }
-    set_year_quarter_data.clone().set(initial_yqd);
-
-    let mut q_weeks: Vec<Vec<(usize, String)>> = Vec::new();
-    for q in 0..4 {
-        let (start, end) = QUARTER_RANGES[q];
-        let actual_end = end.min(weeks.len());
-        let uuids: Vec<(usize, String)> = (start..actual_end)
-            .filter_map(|idx| weeks.get(idx).map(|w| (idx, w.uuid.clone())))
-            .collect();
-        q_weeks.push(uuids);
-    }
-
-    nslog::nslog(&format!("[Diary] load_year total_weeks={}", q_weeks.iter().map(|v| v.len()).sum::<usize>()));
-
-    std::thread::spawn(move || {
-        let client = blocking::build_client(&token);
-        let mut year_data: Vec<(String, std::collections::HashMap<String, Vec<f64>>)> = Vec::new();
-        let mut all_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
-
-        let mut q_all_marks: Vec<std::collections::HashMap<String, Vec<f64>>> = Vec::new();
-
-        for q in 0..4 {
-            let mut q_marks: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
-
-            for (week_idx, week_uuid) in &q_weeks[q] {
-                match blocking::api_get_raw(&client, &endpoints::lessons(&school_id, &class_id, &profile_id, week_uuid)) {
-                    Ok(raw) => {
-                        if let Ok(days) = serde_json::from_str::<Vec<DaySchedule>>(&raw) {
-                            let w_idx = *week_idx as i32;
-                            let days_clone = days.clone();
-                            day::reactive::on_main(move || {
-                                if let Some(state) = AppState::get_main() {
-                                    let mut wc = state.week_cache.get();
-                                    wc.insert(w_idx, days_clone);
-                                    cache::save_json("week_cache", &wc);
-                                    state.week_cache.set(wc);
-                                }
-                            });
-
-                            for day in &days {
-                                for slot in &day.slots {
-                                    if let Some(ref lm) = slot.lesson_mark {
-                                        if let Some(ref mark_str) = lm.mark {
-                                            let parsed = utils::parse_marks(mark_str);
-                                            for val in &parsed {
-                                                q_marks.entry(slot.subject_title.clone())
-                                                    .or_default()
-                                                    .push(*val);
-                                                all_marks.entry(slot.subject_title.clone())
-                                                    .or_default()
-                                                    .push(*val);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => nslog::nslog(&format!("[Diary] load_year q{} week failed: {e}", q + 1)),
-                }
-            }
-
-            year_data.push((quarter_labels[q].to_string(), q_marks.clone()));
-            q_all_marks.push(q_marks);
-        }
-
-        set_quarter_all_marks.set(q_all_marks.clone());
-        set_year_quarter_data.set(year_data);
-        set_quarter_marks.set(all_marks);
-        cache::save_json("quarter_all_marks", &q_all_marks);
-
-        day::reactive::on_main(|| {
-            if let Some(state) = AppState::get_main() {
-                state.marks_loading.setter().set(false);
-                if state.conn_status.get() == crate::app::ConnStatus::Connecting {
-                    let set_c = state.conn_status.setter();
-                    set_c.set(crate::app::ConnStatus::Connected);
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_secs(2));
-                        day::reactive::on_main(move || {
-                            if let Some(s) = AppState::get_main() {
-                                if s.conn_status.get() == crate::app::ConnStatus::Connected {
-                                    set_c.set(crate::app::ConnStatus::Idle);
-                                }
-                            }
-                        });
-                    });
-                }
-            }
-        });
-
-        nslog::nslog("[Diary] Year loaded with per-quarter data");
-    });
-}
-
-/// Reset marks when switching quarters.
-pub fn reset_marks(state: AppState) {
-    state.all_marks.set(Vec::new());
-    state.loaded_mark_weeks.set(std::collections::HashSet::new());
-    state.quarter_marks.set(std::collections::HashMap::new());
-    state.quarter_all_marks.set(Vec::new());
-}
-
-/// Switch active child for a parent account and reload the diary.
-pub fn switch_child(state: AppState, child_idx: usize) {
-    let children = state.parent_children.get();
-    if child_idx < children.len() {
-        state.active_child_index.set(child_idx);
-        state.week_cache.set(std::collections::HashMap::new());
-        state.lessons.set(Vec::new());
-        state.quarter_marks.set(std::collections::HashMap::new());
-        state.final_marks.set(crate::app::FinalMarks::new());
-        load_all(state);
-    }
-}
-
-/// Get week indices for a quarter.
-pub fn quarter_week_indices(quarter: usize) -> std::ops::Range<usize> {
-    let (start, end) = QUARTER_RANGES[quarter];
-    start..end
-}
-
-/// Determine which quarter a week index belongs to.
-pub fn quarter_for_index(idx: usize) -> usize {
-    if idx < 9 { 0 } else if idx < 18 { 1 } else if idx < 27 { 2 } else { 3 }
-}
-
 /// School API timestamps may arrive as seconds or milliseconds — everything
 /// compares in ms, so anything below ~2001-09 in magnitude is seconds.
 fn normalize_ts(ts: u64) -> u64 {
-    if ts < 1_000_000_000_000 { ts * 1000 } else { ts }
+    if ts < 1_000_000_000_000 {
+        ts * 1000
+    } else {
+        ts
+    }
 }
 
 /// The week the app opens on: the one containing `now_ms`; when none does
@@ -1076,5 +1004,79 @@ mod tests {
         let future = vec![week(now + day, now + 2 * day)];
         assert_eq!(find_current_week(&future, now), None);
         assert_eq!(find_current_week(&[], now), None);
+    }
+    fn marked_days(raw: &str) -> Vec<DaySchedule> {
+        serde_json::from_value(serde_json::json!([{
+            "day_of_week": 1, "date": 1794171600000_u64,
+            "slots": [{"lesson_uuid":"lesson", "subject_title":"Математика", "lesson_mark":{"mark":raw}}]
+        }])).unwrap()
+    }
+
+    #[test]
+    fn refreshing_a_week_replaces_marks_instead_of_accumulating() {
+        let mut cache = WeekCache::from([(0, marked_days("8"))]);
+        assert_eq!(
+            extract_marks_for_quarter(&cache, &[Some(0)], 0)["Математика"],
+            vec![8.0]
+        );
+        cache.insert(0, marked_days("8/10"));
+        assert_eq!(
+            extract_marks_for_quarter(&cache, &[Some(0)], 0)["Математика"],
+            vec![8.0, 10.0]
+        );
+        // The same refresh is idempotent; a corrected/deleted grade replaces it.
+        cache.insert(0, marked_days("8/10"));
+        assert_eq!(
+            extract_marks_for_quarter(&cache, &[Some(0)], 0)["Математика"],
+            vec![8.0, 10.0]
+        );
+        cache.insert(0, marked_days("9"));
+        assert_eq!(
+            extract_marks_for_quarter(&cache, &[Some(0)], 0)["Математика"],
+            vec![9.0]
+        );
+        assert!(extract_marks_for_quarter(&cache, &[Some(1)], 0).is_empty());
+    }
+
+    #[test]
+    fn academic_year_spans_calendar_year_boundary() {
+        assert_eq!(academic_year(2027, 2), (2026, 2027));
+        assert_eq!(academic_year(2027, 8), (2026, 2027));
+        assert_eq!(academic_year(2027, 9), (2027, 2028));
+    }
+
+    #[test]
+    fn unequal_quarters_follow_period_ids_and_year_includes_late_weeks() {
+        let mut weeks = Vec::new();
+        for (q, count) in [8, 7, 11, 12].into_iter().enumerate() {
+            for _ in 0..count {
+                let mut w = week(1_790_000_000 + weeks.len() as u64 * 604800, 1_900_000_000);
+                w.time_activity_id = format!("q{q}");
+                weeks.push(w);
+            }
+        }
+        let quarters = week_quarters(&weeks, &[]);
+        assert_eq!(quarters[7], Some(0));
+        assert_eq!(quarters[8], Some(1));
+        assert_eq!(quarters[15], Some(2));
+        assert_eq!(quarters[37], Some(3));
+        let cache = WeekCache::from([(37, marked_days("10"))]);
+        assert_eq!(
+            extract_marks_for_quarter(&cache, &quarters, 3)["Математика"],
+            vec![10.0]
+        );
+        assert_eq!(
+            extract_marks_for_quarter(&cache, &quarters, 4)["Математика"],
+            vec![10.0]
+        );
+        assert!(extract_marks_for_quarter(&cache, &quarters, 0).is_empty());
+        assert_eq!(week_quarters(&[week(1, 2)], &[]), vec![None]);
+    }
+
+    #[test]
+    fn older_week_response_cannot_overwrite_a_newer_one() {
+        assert!(accept_week("test-response-order", 100));
+        assert!(accept_week("test-response-order", 102));
+        assert!(!accept_week("test-response-order", 101));
     }
 }

@@ -35,15 +35,6 @@ pub fn root() -> impl Piece {
     day::register_preferences(pages::settings::settings_body);
     day::register_new_window(|| window_shell(false));
 
-    // Start background token refresh if authenticated
-    let has_token = crate::shared::secure::load("auth.token").is_some();
-    if has_token {
-        crate::features::auth::start_background_refresh();
-        crate::features::grade_checker::start_grade_checker();
-        #[cfg(target_os = "ios")]
-        crate::shared::notifications::ios::request_permission();
-    }
-
     window_shell(true)
 }
 
@@ -52,30 +43,8 @@ fn window_shell(primary: bool) -> impl Piece {
         state.register_main();
         day::window_title(move || res::str::app_title().format());
 
-        // Auto-lock: save background timestamp periodically + re-lock after 5 min
         #[cfg(target_os = "ios")]
-        {
-            use std::sync::atomic::{AtomicBool, Ordering};
-            static BG_WATCHER_STARTED: AtomicBool = AtomicBool::new(false);
-            if !BG_WATCHER_STARTED.swap(true, Ordering::Relaxed) {
-                nslog::nslog("[App] Starting background timestamp saver (30s)");
-                let lock_sig = state.pin_lock_active.setter();
-                let auth_sig = state.is_authenticated.setter();
-                std::thread::spawn(move || {
-                    loop {
-                        std::thread::sleep(std::time::Duration::from_secs(30));
-                        crate::shared::pin::save_last_background();
-                        if crate::shared::pin::is_enabled()
-                            && crate::shared::pin::should_auto_lock()
-                        {
-                            nslog::nslog("[PIN] Auto-lock triggered");
-                            auth_sig.set(false);
-                            lock_sig.set(true);
-                        }
-                    }
-                });
-            }
-        }
+        crate::shared::pin::install_lifecycle_observers();
 
         // Reactive: trigger load_all when is_authenticated transitions to true
         day::reactive::watch(
@@ -83,10 +52,23 @@ fn window_shell(primary: bool) -> impl Piece {
             move |&auth, old| {
                 if auth && old != Some(&true) {
                     nslog::nslog("[App] is_authenticated changed true, triggering load_all");
+                    crate::features::auth::start_background_refresh();
+                    crate::features::grade_checker::start_grade_checker();
+                    #[cfg(target_os = "ios")]
+                    crate::shared::notifications::ios::request_permission();
                     crate::features::diary::load_all(state);
                 }
             },
         );
+
+        // `watch` skips its initial value; load an unlocked stored session once.
+        if state.is_authenticated.get() {
+            crate::features::auth::start_background_refresh();
+            crate::features::grade_checker::start_grade_checker();
+            #[cfg(target_os = "ios")]
+            crate::shared::notifications::ios::request_permission();
+            crate::features::diary::load_all(state);
+        }
 
         // Watch biometric signal — set by Setter from Face ID reply block
         day::reactive::watch(
@@ -206,8 +188,6 @@ fn window_shell(primary: bool) -> impl Piece {
                     let st = AppState::ambient();
                     if st.is_authenticated.get() {
                         crate::shared::ios_nav::ios_impl::setup_status_nav_bar(None, st);
-                    } else {
-                        crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
                     }
                 });
             }
@@ -219,8 +199,6 @@ fn window_shell(primary: bool) -> impl Piece {
                             let st = AppState::ambient();
                             if auth {
                                 crate::shared::ios_nav::ios_impl::setup_status_nav_bar(None, st);
-                            } else {
-                                crate::shared::ios_nav::ios_impl::setup_login_nav_bar(None);
                             }
                         });
                     }

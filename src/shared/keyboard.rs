@@ -61,7 +61,9 @@ pub fn set_keyboard_height(h: f64) {
 pub fn set_keyboard_height_with_duration(h: f64, duration_ms: u32) {
     let sig = keyboard_height_signal();
     if (sig.get() - h).abs() > 0.5 {
-        crate::shared::nslog::nslog(&format!("[Keyboard] Height updated to: {h:.1} in {duration_ms}ms"));
+        crate::shared::nslog::nslog(&format!(
+            "[Keyboard] Height updated to: {h:.1} in {duration_ms}ms"
+        ));
         sig.set(h);
     }
 }
@@ -124,77 +126,229 @@ pub fn register_content_view(_view: &()) {}
 
 #[cfg(target_os = "ios")]
 mod ios {
-    use objc2::rc::Retained;
-    use objc2::runtime::{AnyClass, AnyObject, Imp, NSObject, NSObjectProtocol, Sel};
-    use objc2::{define_class, MainThreadMarker, MainThreadOnly};
-    use objc2_core_foundation::{CGFloat, CGAffineTransform};
+    use objc2::rc::{Retained, Weak};
+    use objc2::runtime::{
+        AnyClass, AnyObject, Imp, NSObject, NSObjectProtocol, ProtocolObject, Sel,
+    };
+    use objc2::{MainThreadMarker, MainThreadOnly, define_class};
+    use objc2_core_foundation::{CGAffineTransform, CGFloat};
     use objc2_foundation::NSNotification;
-    use objc2_ui_kit::{NSValueUIGeometryExtensions, UIKeyboardFrameEndUserInfoKey, UIViewAnimationOptions};
+    use objc2_ui_kit::{
+        NSValueUIGeometryExtensions, UIKeyboardFrameEndUserInfoKey, UIView, UIViewAnimationOptions,
+        UIViewController, UIViewControllerTransitionCoordinator,
+        UIViewControllerTransitionCoordinatorContext,
+    };
     use std::cell::{Cell, RefCell};
     use std::sync::atomic::{AtomicBool, Ordering};
 
     static INSTALLED: AtomicBool = AtomicBool::new(false);
 
+    #[derive(Clone, Copy)]
+    enum FollowerKind {
+        Content,
+        Sticker,
+    }
+
+    #[derive(Clone, Copy)]
+    struct KeyboardFrame {
+        visible_height: f64,
+        duration: f64,
+        curve: usize,
+    }
+
     thread_local! {
         static OBSERVER: Cell<Option<Retained<KeyboardObserver>>> = const { Cell::new(None) };
-        static HARDWARE_FOLLOWER: RefCell<Option<Retained<objc2_ui_kit::UIView>>> = const { RefCell::new(None) };
-        static HARDWARE_STICKER: RefCell<Option<Retained<objc2_ui_kit::UIView>>> = const { RefCell::new(None) };
-        static HARDWARE_CONTENT: RefCell<Option<Retained<objc2_ui_kit::UIView>>> = const { RefCell::new(None) };
+        // Both pages stay mounted during an interactive pop. Keep each page's
+        // followers synchronized, without retaining popped pages indefinitely.
+        static FOLLOWERS: RefCell<Vec<(Weak<UIView>, FollowerKind)>> = const { RefCell::new(Vec::new()) };
         static CURRENT_LIFT: Cell<CGFloat> = const { Cell::new(0.0) };
+        static PENDING_FRAME: Cell<Option<KeyboardFrame>> = const { Cell::new(None) };
+        static WAITING_FOR_TRANSITION: Cell<bool> = const { Cell::new(false) };
     }
 
-    pub fn register_follower_view(view: &Retained<objc2_ui_kit::UIView>) {
-        let lift = CURRENT_LIFT.with(|l| l.get());
-        if lift > 0.0 {
-            let transform = CGAffineTransform {
-                a: 1.0, b: 0.0,
-                c: 0.0, d: 1.0,
-                tx: 0.0, ty: -lift,
-            };
-            unsafe {
-                let _: () = objc2::msg_send![&**view, setTransform: transform];
-            }
+    fn transform(kind: FollowerKind, lift: CGFloat) -> CGAffineTransform {
+        match kind {
+            FollowerKind::Sticker if lift > 0.0 => CGAffineTransform {
+                a: 0.48,
+                b: 0.0,
+                c: 0.0,
+                d: 0.48,
+                tx: 0.0,
+                ty: -(lift * 0.50),
+            },
+            _ => CGAffineTransform {
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                tx: 0.0,
+                ty: -lift,
+            },
         }
-        HARDWARE_FOLLOWER.with(|c| {
-            *c.borrow_mut() = Some(view.clone());
-        });
-        crate::shared::nslog::nslog("[Keyboard] Registered hardware follower view for instant 120fps keyboard tracking");
     }
 
-    pub fn register_sticker_view(view: &Retained<objc2_ui_kit::UIView>) {
-        let lift = CURRENT_LIFT.with(|l| l.get());
-        if lift > 0.0 {
-            let transform = CGAffineTransform {
-                a: 0.48, b: 0.0,
-                c: 0.0, d: 0.48,
-                tx: 0.0, ty: -(lift * 0.50),
-            };
-            unsafe {
-                let _: () = objc2::msg_send![&**view, setTransform: transform];
-            }
+    fn register_view(view: &Retained<UIView>, kind: FollowerKind) {
+        let lift = CURRENT_LIFT.with(Cell::get);
+        unsafe {
+            let _: () = objc2::msg_send![&**view, setTransform: transform(kind, lift)];
         }
-        HARDWARE_STICKER.with(|c| {
-            *c.borrow_mut() = Some(view.clone());
+        FOLLOWERS.with(|all| {
+            let mut all = all.borrow_mut();
+            all.retain(|(weak, _)| weak.load().is_some_and(|v| !std::ptr::eq(&*v, &**view)));
+            all.push((Weak::new(&**view), kind));
         });
-        crate::shared::nslog::nslog("[Keyboard] Registered hardware sticker view for smooth scaling");
     }
 
-    pub fn register_content_view(view: &Retained<objc2_ui_kit::UIView>) {
-        let lift = CURRENT_LIFT.with(|l| l.get());
-        if lift > 0.0 {
-            let transform = CGAffineTransform {
-                a: 1.0, b: 0.0,
-                c: 0.0, d: 1.0,
-                tx: 0.0, ty: -lift,
-            };
-            unsafe {
-                let _: () = objc2::msg_send![&**view, setTransform: transform];
+    pub fn register_follower_view(view: &Retained<UIView>) {
+        register_view(view, FollowerKind::Content);
+    }
+    pub fn register_sticker_view(view: &Retained<UIView>) {
+        register_view(view, FollowerKind::Sticker);
+    }
+    pub fn register_content_view(view: &Retained<UIView>) {
+        register_view(view, FollowerKind::Content);
+    }
+
+    fn visible_followers() -> Vec<(Retained<UIView>, FollowerKind)> {
+        FOLLOWERS.with(|all| {
+            let mut all = all.borrow_mut();
+            all.retain(|(weak, _)| weak.load().is_some());
+            all.iter()
+                .filter_map(|(weak, kind)| {
+                    let view = weak.load()?;
+                    view.window().is_some().then_some((view, *kind))
+                })
+                .collect()
+        })
+    }
+
+    fn interactive_coordinator()
+    -> Option<Retained<ProtocolObject<dyn UIViewControllerTransitionCoordinator>>> {
+        for (view, _) in visible_followers() {
+            let mut responder = view.nextResponder();
+            while let Some(current) = responder {
+                if let Some(vc) = current.downcast_ref::<UIViewController>() {
+                    let coordinator = vc.transitionCoordinator().or_else(|| {
+                        vc.navigationController()
+                            .and_then(|nav| nav.transitionCoordinator())
+                    });
+                    if let Some(coordinator) = coordinator.filter(|c| c.initiallyInteractive()) {
+                        return Some(coordinator);
+                    }
+                }
+                responder = current.nextResponder();
             }
         }
-        HARDWARE_CONTENT.with(|c| {
-            *c.borrow_mut() = Some(view.clone());
-        });
-        crate::shared::nslog::nslog("[Keyboard] Registered hardware content view for smooth follower lifting");
+        None
+    }
+
+    /// UIKit can announce the destination keyboard frame at the START of an
+    /// interactive pop while the keyboard itself is still stationary. Leave the
+    /// forms at their current lift until UIKit commits or cancels the transition.
+    fn defer_interactive_frame(frame: KeyboardFrame) -> bool {
+        let Some(coordinator) = interactive_coordinator() else {
+            return false;
+        };
+        PENDING_FRAME.with(|pending| pending.set(Some(frame)));
+        if WAITING_FOR_TRANSITION.with(|waiting| waiting.replace(true)) {
+            return true;
+        }
+        let completion = block2::RcBlock::new(
+            move |context: std::ptr::NonNull<
+                ProtocolObject<dyn UIViewControllerTransitionCoordinatorContext>,
+            >| {
+                let cancelled = unsafe { context.as_ref().isCancelled() };
+                dispatch2::DispatchQueue::main().exec_async(move || {
+                    WAITING_FOR_TRANSITION.with(|waiting| waiting.set(false));
+                    let pending = PENDING_FRAME.with(Cell::take);
+                    if !cancelled {
+                        if let Some(mut frame) = pending {
+                            // Read UIKit's settled geometry: another field on the
+                            // revealed page may have kept the keyboard on screen.
+                            frame.visible_height =
+                                settled_keyboard_height().unwrap_or(frame.visible_height);
+                            frame.duration = 0.0;
+                            apply_keyboard_frame(frame);
+                        }
+                    }
+                });
+            },
+        );
+        if coordinator.animateAlongsideTransition_completion(None, Some(&completion)) {
+            true
+        } else {
+            WAITING_FOR_TRANSITION.with(|waiting| waiting.set(false));
+            PENDING_FRAME.with(Cell::take);
+            false
+        }
+    }
+
+    fn settled_keyboard_height() -> Option<f64> {
+        let window = visible_followers()
+            .into_iter()
+            .find_map(|(view, _)| view.window())?;
+        let frame = window.keyboardLayoutGuide().layoutFrame();
+        if frame.size.height == 0.0 && frame.origin.y == 0.0 {
+            return None;
+        }
+        if frame.size.height <= window.safeAreaInsets().bottom + 0.5 {
+            return Some(0.0);
+        }
+        Some((window.bounds().size.height - frame.origin.y).clamp(0.0, window.bounds().size.height))
+    }
+
+    fn apply_keyboard_frame(frame: KeyboardFrame) {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let lift =
+            (frame.visible_height - super::get_safe_area_bottom()).clamp(0.0, 340.0) as CGFloat;
+        CURRENT_LIFT.with(|current| current.set(lift));
+        let views = visible_followers();
+        // Create the layout guide on the first notification, so it is already
+        // tracking UIKit's keyboard geometry when a later navigation completes.
+        if let Some(window) = views.iter().find_map(|(view, _)| view.window()) {
+            let _ = window.keyboardLayoutGuide();
+        }
+        if frame.duration > 0.0 {
+            // MainThreadBound owns the native objects for the animation block.
+            let views = dispatch2::MainThreadBound::new(views, mtm);
+            let animations = block2::RcBlock::new(move || {
+                let mtm = MainThreadMarker::new().expect("UIKit animations run on main");
+                for (view, kind) in views.get(mtm) {
+                    unsafe {
+                        let _: () = objc2::msg_send![&**view, setTransform: transform(*kind, lift)];
+                    }
+                }
+            });
+            UIView::animateWithDuration_delay_options_animations_completion(
+                frame.duration,
+                0.0,
+                UIViewAnimationOptions((frame.curve << 16) | (1 << 1) | (1 << 2)),
+                &animations,
+                None,
+                mtm,
+            );
+        } else {
+            for (view, kind) in views {
+                unsafe {
+                    let _: () = objc2::msg_send![&*view, setTransform: transform(kind, lift)];
+                }
+            }
+        }
+        super::set_keyboard_height_with_duration(
+            frame.visible_height,
+            (frame.duration * 1000.0).round() as u32,
+        );
+    }
+
+    // Disable Day's root-frame resizing. Only our dedicated observer processes
+    // the notification; handling it here too would start every animation twice.
+    unsafe extern "C-unwind" fn suppress_day_keyboard_resize(
+        _this: *mut AnyObject,
+        _cmd: Sel,
+        _notification: *mut NSNotification,
+    ) {
     }
 
     define_class!(
@@ -241,13 +395,13 @@ mod ios {
             0.0
         };
 
-        let dur_key = objc2_foundation::NSString::from_str("UIKeyboardAnimationDurationUserInfoKey");
+        let dur_key =
+            objc2_foundation::NSString::from_str("UIKeyboardAnimationDurationUserInfoKey");
         let duration_sec = info
             .objectForKey(&dur_key)
             .and_then(|o| o.downcast::<objc2_foundation::NSNumber>().ok())
             .map(|n| n.as_f64())
             .unwrap_or(0.25);
-        let duration_ms = (duration_sec * 1000.0).round() as u32;
 
         let curve_key = objc2_foundation::NSString::from_str("UIKeyboardAnimationCurveUserInfoKey");
         let curve = info
@@ -256,157 +410,14 @@ mod ios {
             .map(|n| n.as_isize())
             .unwrap_or(7);
 
-        let safe_b = super::get_safe_area_bottom();
-        // Clamp lift to at most 340.0 pt. When iOS Password Manager / AutoFill modal sheet pops up,
-        // UIKeyboardFrameEndUserInfoKey reports a full-screen or massive height,
-        // which previously caused the button to shoot up to the very top of the screen.
-        let max_lift = 340.0;
-        let lift = if visible_h > 0.0 {
-            (visible_h - safe_b).max(0.0).min(max_lift)
-        } else {
-            0.0
+        let frame = KeyboardFrame {
+            visible_height: visible_h,
+            duration: duration_sec,
+            curve: curve as usize,
         };
-
-        CURRENT_LIFT.with(|l| l.set(lift as CGFloat));
-
-        // Hardware instant 120fps GPU follower translation:
-        // Runs in the exact same CoreAnimation transaction as the keyboard!
-        HARDWARE_FOLLOWER.with(|c| {
-            if let Some(follower) = c.borrow().as_ref() {
-                if follower.window().is_some() {
-                    if let Some(mtm) = MainThreadMarker::new() {
-                        let transform = if lift > 0.0 {
-                            CGAffineTransform {
-                                a: 1.0, b: 0.0,
-                                c: 0.0, d: 1.0,
-                                tx: 0.0, ty: -(lift as CGFloat),
-                            }
-                        } else {
-                            CGAffineTransform {
-                                a: 1.0, b: 0.0,
-                                c: 0.0, d: 1.0,
-                                tx: 0.0, ty: 0.0,
-                            }
-                        };
-                        if duration_sec > 0.0 {
-                            let options = ((curve as usize) << 16) | (1usize << 1);
-                            let follower_clone = follower.clone();
-                            let anim = block2::RcBlock::new(move || {
-                                unsafe {
-                                    let _: () = objc2::msg_send![&*follower_clone, setTransform: transform];
-                                }
-                            });
-                            objc2_ui_kit::UIView::animateWithDuration_delay_options_animations_completion(
-                                duration_sec,
-                                0.0,
-                                UIViewAnimationOptions(options),
-                                &anim,
-                                None,
-                                mtm,
-                            );
-                        } else {
-                            unsafe {
-                                let _: () = objc2::msg_send![&**follower, setTransform: transform];
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        // Hardware smooth 120fps GPU sticker scaling:
-        HARDWARE_STICKER.with(|c| {
-            if let Some(sticker) = c.borrow().as_ref() {
-                if sticker.window().is_some() {
-                    if let Some(mtm) = MainThreadMarker::new() {
-                        let transform = if lift > 0.0 {
-                            // Scale down smoothly to ~48% and shift up towards top bar:
-                            // Centers the duck in the remaining space above the content!
-                            let ty = -((lift * 0.50) as CGFloat);
-                            CGAffineTransform {
-                                a: 0.48, b: 0.0,
-                                c: 0.0, d: 0.48,
-                                tx: 0.0, ty,
-                            }
-                        } else {
-                            CGAffineTransform {
-                                a: 1.0, b: 0.0,
-                                c: 0.0, d: 1.0,
-                                tx: 0.0, ty: 0.0,
-                            }
-                        };
-                        if duration_sec > 0.0 {
-                            let options = ((curve as usize) << 16) | (1usize << 1);
-                            let sticker_clone = sticker.clone();
-                            let anim = block2::RcBlock::new(move || {
-                                unsafe {
-                                    let _: () = objc2::msg_send![&*sticker_clone, setTransform: transform];
-                                }
-                            });
-                            objc2_ui_kit::UIView::animateWithDuration_delay_options_animations_completion(
-                                duration_sec,
-                                0.0,
-                                UIViewAnimationOptions(options),
-                                &anim,
-                                None,
-                                mtm,
-                            );
-                        } else {
-                            unsafe {
-                                let _: () = objc2::msg_send![&**sticker, setTransform: transform];
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        // Hardware smooth 120fps GPU content follower:
-        // Pinned to the bottom! Moves up in exact 1:1 sync with the button and keyboard!
-        HARDWARE_CONTENT.with(|c| {
-            if let Some(content) = c.borrow().as_ref() {
-                if content.window().is_some() {
-                    if let Some(mtm) = MainThreadMarker::new() {
-                        let transform = if lift > 0.0 {
-                            CGAffineTransform {
-                                a: 1.0, b: 0.0,
-                                c: 0.0, d: 1.0,
-                                tx: 0.0, ty: -(lift as CGFloat),
-                            }
-                        } else {
-                            CGAffineTransform {
-                                a: 1.0, b: 0.0,
-                                c: 0.0, d: 1.0,
-                                tx: 0.0, ty: 0.0,
-                            }
-                        };
-                        if duration_sec > 0.0 {
-                            let options = ((curve as usize) << 16) | (1usize << 1);
-                            let content_clone = content.clone();
-                            let anim = block2::RcBlock::new(move || {
-                                unsafe {
-                                    let _: () = objc2::msg_send![&*content_clone, setTransform: transform];
-                                }
-                            });
-                            objc2_ui_kit::UIView::animateWithDuration_delay_options_animations_completion(
-                                duration_sec,
-                                0.0,
-                                UIViewAnimationOptions(options),
-                                &anim,
-                                None,
-                                mtm,
-                            );
-                        } else {
-                            unsafe {
-                                let _: () = objc2::msg_send![&**content, setTransform: transform];
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        super::set_keyboard_height_with_duration(visible_h, duration_ms);
+        if !defer_interactive_frame(frame) {
+            apply_keyboard_frame(frame);
+        }
     }
 
     pub fn install() {
@@ -418,23 +429,24 @@ mod ios {
         // In day-uikit, DayAppDelegate::keyboard_will_change shrinks root_view.frame
         // to clamp to the keyboard top, which forces the UITabBarController's tab bar
         // to float up above the keyboard.
-        // By replacing the method with our own handler:
-        // 1. Day's original root_view shrinking is bypassed completely — the tab bar
-        //    stays at the bottom of the screen and NEVER jumps up.
-        // 2. Our handler gets the keyboard end frame directly from UIKit and updates
-        //    our reactive `keyboard_height` signal, allowing modal bottom sheets
-        //    to smoothly shift up and remain fully visible above the keyboard.
+        // Suppress its resize handler; the dedicated observer below owns keyboard
+        // geometry and animations. Processing both callbacks would animate twice.
         let cls = AnyClass::get(c"DayAppDelegate");
         if let Some(cls) = cls {
             let sel = objc2::sel!(keyboardWillChange:);
             if let Some(method) = cls.instance_method(sel) {
-                let imp: Imp = unsafe { std::mem::transmute(swizzled_keyboard_will_change as *const ()) };
+                let imp: Imp =
+                    unsafe { std::mem::transmute(suppress_day_keyboard_resize as *const ()) };
                 unsafe {
                     method.set_implementation(imp);
                 }
-                crate::shared::nslog::nslog("[Keyboard] Successfully swizzled DayAppDelegate keyboardWillChange:");
+                crate::shared::nslog::nslog(
+                    "[Keyboard] Successfully swizzled DayAppDelegate keyboardWillChange:",
+                );
             } else {
-                crate::shared::nslog::nslog("[Keyboard] WARNING: keyboardWillChange: method not found on DayAppDelegate");
+                crate::shared::nslog::nslog(
+                    "[Keyboard] WARNING: keyboardWillChange: method not found on DayAppDelegate",
+                );
             }
         } else {
             crate::shared::nslog::nslog("[Keyboard] WARNING: DayAppDelegate class not found");
@@ -444,7 +456,8 @@ mod ios {
         // This is the canonical master notification that covers show, hide, orientation,
         // and accessory/QuickType bar transitions with full animation duration and curve.
         if let Some(mtm) = MainThreadMarker::new() {
-            let obs: Retained<KeyboardObserver> = unsafe { objc2::msg_send![KeyboardObserver::alloc(mtm), init] };
+            let obs: Retained<KeyboardObserver> =
+                unsafe { objc2::msg_send![KeyboardObserver::alloc(mtm), init] };
             let center = objc2_foundation::NSNotificationCenter::defaultCenter();
             unsafe {
                 center.addObserver_selector_name_object(
@@ -455,7 +468,9 @@ mod ios {
                 );
             }
             OBSERVER.with(|c| c.set(Some(obs)));
-            crate::shared::nslog::nslog("[Keyboard] Registered KeyboardObserver for UIKeyboardWillChangeFrameNotification");
+            crate::shared::nslog::nslog(
+                "[Keyboard] Registered KeyboardObserver for UIKeyboardWillChangeFrameNotification",
+            );
         }
 
         // Swizzle UITextField setBorderStyle: to force UITextBorderStyleNone (0) so text fields have no native border/outline
@@ -465,22 +480,29 @@ mod ios {
             if let Some(method) = cls.instance_method(sel) {
                 let orig: Imp = method.implementation();
                 ORIG_SET_BORDER_STYLE.store(orig as *mut (), std::sync::atomic::Ordering::Release);
-                let imp: Imp = unsafe { std::mem::transmute(swizzled_set_border_style as *const ()) };
+                let imp: Imp =
+                    unsafe { std::mem::transmute(swizzled_set_border_style as *const ()) };
                 unsafe {
                     method.set_implementation(imp);
                 }
-                crate::shared::nslog::nslog("[TextField] Successfully swizzled UITextField setBorderStyle: to force None");
+                crate::shared::nslog::nslog(
+                    "[TextField] Successfully swizzled UITextField setBorderStyle: to force None",
+                );
             }
 
             let sel_sec = objc2::sel!(setSecureTextEntry:);
             if let Some(method) = cls.instance_method(sel_sec) {
                 let orig: Imp = method.implementation();
-                ORIG_SET_SECURE_TEXT_ENTRY.store(orig as *mut (), std::sync::atomic::Ordering::Release);
-                let imp: Imp = unsafe { std::mem::transmute(swizzled_set_secure_text_entry as *const ()) };
+                ORIG_SET_SECURE_TEXT_ENTRY
+                    .store(orig as *mut (), std::sync::atomic::Ordering::Release);
+                let imp: Imp =
+                    unsafe { std::mem::transmute(swizzled_set_secure_text_entry as *const ()) };
                 unsafe {
                     method.set_implementation(imp);
                 }
-                crate::shared::nslog::nslog("[TextField] Successfully swizzled UITextField setSecureTextEntry:");
+                crate::shared::nslog::nslog(
+                    "[TextField] Successfully swizzled UITextField setSecureTextEntry:",
+                );
             }
         }
     }

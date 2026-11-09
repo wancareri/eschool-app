@@ -48,3 +48,6 @@ diary_title = Diary
 schedule_title = Schedule
 teachers_title = Teachers
 settings_title = Settings
+
+auth_appearance = Appearance
+auth_language = Language

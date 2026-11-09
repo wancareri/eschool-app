@@ -12,5 +12,6 @@ pub mod notifications;
 pub mod nslog;
 pub mod pin;
 pub mod secure;
+pub mod session;
 pub mod utils;
 pub mod widget;

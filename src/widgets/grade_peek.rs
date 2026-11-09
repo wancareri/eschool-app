@@ -93,7 +93,7 @@ pub fn open(subject: String, quarter: usize) {
 
 fn subject_marks(state: AppState, subject: &str, quarter: usize) -> Vec<f64> {
     state.week_cache.with(|c| {
-        let dated = crate::features::diary::extract_marks_dated(c, quarter, subject);
+        let dated = crate::features::diary::extract_marks_dated(c, &state.week_quarters.get(), quarter, subject);
         dated.iter().flat_map(|(_, _, p)| p.iter().copied()).collect()
     })
 }
@@ -342,7 +342,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         let subj = pk.subject.get().unwrap_or_default();
         state
             .week_cache
-            .with(|c| crate::features::diary::extract_marks_dated(c, q, &subj))
+            .with(|c| crate::features::diary::extract_marks_dated(c, &state.week_quarters.get(), q, &subj))
             .into_iter()
             .map(|(date, raw, parsed)| {
                 let pavg = parsed.iter().sum::<f64>() / parsed.len().max(1) as f64;
@@ -642,3 +642,5 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     .spacing(10.0)
     .grow_w()
 }
+
+pub fn close() { peek().close(); }

@@ -39,3 +39,6 @@ diary_title = Дзённік
 schedule_title = Расклад
 teachers_title = Настаўнікі
 settings_title = Налады
+
+auth_appearance = Афармленне
+auth_language = Мова

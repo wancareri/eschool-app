@@ -66,6 +66,8 @@ pub struct AppState {
     pub lessons_loading: Signal<bool>,
     pub current_week: Signal<String>,
     pub all_weeks: Signal<Vec<WeekActivity>>,
+    pub time_activities: Signal<Vec<TimeActivity>>,
+    pub week_quarters: Signal<Vec<Option<usize>>>,
     pub current_week_index: Signal<i32>,
     pub week_cache: Signal<std::collections::HashMap<i32, Vec<DaySchedule>>>,
     pub all_marks: Signal<Vec<(String, f64)>>,
@@ -127,6 +129,8 @@ impl Ambient for AppState {
     fn create() -> Self {
         nslog::nslog("[App] AppState::create()");
         let has_token = secure::load(TOKEN_KEY).is_some();
+        crate::features::auth::ensure_account_id();
+        crate::shared::cache::migrate_legacy_notes();
 
         let remember = secure::load("auth.remember_me")
             .map(|v| v == "true")
@@ -171,6 +175,8 @@ impl Ambient for AppState {
             lessons_loading: Signal::new(false),
             current_week: Signal::new(String::new()),
             all_weeks: Signal::new(Vec::new()),
+            time_activities: Signal::new(Vec::new()),
+            week_quarters: Signal::new(Vec::new()),
             current_week_index: Signal::new(0),
             week_cache: Signal::new(std::collections::HashMap::new()),
             all_marks: Signal::new(Vec::new()),
@@ -205,9 +211,7 @@ impl Ambient for AppState {
 
         state.register_main();
 
-        if has_token && !lock_active {
-            crate::features::diary::load_all(state);
-        } else if biometric_lock {
+        if biometric_lock {
             nslog::nslog("[App] Biometric lock active, waiting for Face ID");
         } else if pin_lock {
             nslog::nslog("[App] PIN lock active, waiting for PIN");

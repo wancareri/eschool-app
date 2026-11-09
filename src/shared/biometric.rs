@@ -26,10 +26,10 @@ pub fn set_enabled(enabled: bool) {
 
 /// Trigger Face ID / Touch ID / biometric prompt.
 pub fn authenticate_async(_state: crate::app::AppState) {
-    let set_biometric_ok = _state.biometric_ok.setter();
+    let ticket = crate::shared::session::ticket();
     nslog::nslog("[Biometric] authenticate_async: calling day::biometrics::authenticate");
     day::biometrics::authenticate("Вход в приложение", move |ok, _err| {
         nslog::nslog(&format!("[Biometric] Reply: success={ok}"));
-        set_biometric_ok.set(ok);
+        ticket.publish(move |state| state.biometric_ok.set(ok));
     });
 }

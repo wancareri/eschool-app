@@ -1,58 +1,97 @@
-//! Background grade checker — detects new marks and sends local notifications.
+//! Detect changed marks only after a successful server response for that week.
+use crate::shared::{cache, notifications};
+use eschool_api::entities::DaySchedule;
+use std::collections::HashMap;
 
-use crate::app::AppState;
-use crate::shared::{nslog, notifications};
+type Snapshot = HashMap<String, String>;
+type History = HashMap<String, Snapshot>;
+const HISTORY_KEY: &str = "grade_check.last_marks";
 
-/// Check for new grades by comparing current state with stored marks.
-pub fn check_new_grades(state: AppState) {
-    nslog::nslog("[GradeCheck] Checking for new grades...");
+fn snapshot(days: &[DaySchedule]) -> Snapshot {
+    days.iter()
+        .flat_map(|d| {
+            d.slots.iter().filter_map(move |slot| {
+                let mark = slot.lesson_mark.as_ref()?.mark.as_ref()?;
+                if crate::shared::utils::parse_marks(mark).is_empty() {
+                    return None;
+                }
+                let id = if slot.lesson_uuid.is_empty() {
+                    format!(
+                        "{}:{}:{}:{}",
+                        d.date, slot.number, slot.subject_id, slot.subject_title
+                    )
+                } else {
+                    slot.lesson_uuid.clone()
+                };
+                Some((id, mark.clone()))
+            })
+        })
+        .collect()
+}
 
-    let current_marks: Vec<String> = state.all_marks.get()
-        .iter()
-        .map(|(uuid, _)| uuid.clone())
-        .collect();
+fn changed_count(previous: Option<&Snapshot>, current: &Snapshot) -> usize {
+    // First observation is a baseline, including a previously unseen old week.
+    previous
+        .map(|old| {
+            current
+                .iter()
+                .filter(|(id, value)| old.get(*id) != Some(*value))
+                .count()
+        })
+        .unwrap_or(0)
+}
 
-    let stored_json = day::prefs::get("grade_check.last_marks").unwrap_or_default();
-    let stored_marks: Vec<String> = serde_json::from_str(&stored_json)
-        .unwrap_or_default();
-
-    // Find new marks (in current but not in stored)
-    let new_count = current_marks.iter()
-        .filter(|m| !stored_marks.contains(m))
-        .count();
-
-    if new_count > 0 {
-        let message = format!("Новых оценок: {new_count}");
-        notifications::ios::send_notification("Eschool", &message);
-        nslog::nslog(&format!("[GradeCheck] Found {new_count} new marks"));
+/// Must run in the session-checked UI callback, with the selected cache namespace.
+pub fn observe_week(uuid: &str, days: &[DaySchedule]) {
+    let mut history: History = cache::load_json(HISTORY_KEY).unwrap_or_default();
+    let current = snapshot(days);
+    let count = changed_count(history.get(uuid), &current);
+    if count > 0 {
+        notifications::ios::send_notification(
+            "ESchool",
+            &format!("Новых или обновлённых оценок: {count}"),
+        );
     }
-
-    // Store current marks
-    if let Ok(json) = serde_json::to_string(&current_marks) {
-        day::prefs::set("grade_check.last_marks", &json);
-    }
+    history.insert(uuid.to_string(), current);
+    cache::save_json(HISTORY_KEY, &history);
 }
 
 static CHECKER_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Start background grade checking (runs every 15 minutes).
+/// Refresh while the process is running. iOS may suspend this thread in the
+/// background; this is not an OS background-fetch entitlement or remote push.
 pub fn start_grade_checker() {
-    if CHECKER_STARTED.swap(true, std::sync::atomic::Ordering::AcqRel) {
+    use std::sync::atomic::Ordering;
+    if CHECKER_STARTED.swap(true, Ordering::AcqRel) {
         return;
     }
-    nslog::nslog("[GradeCheck] Starting background checker (every 15 min)");
-
     std::thread::spawn(|| {
         loop {
             std::thread::sleep(std::time::Duration::from_secs(15 * 60));
-
             day::reactive::on_main(|| {
-                if let Some(state) = AppState::get_main() {
-                    if state.is_authenticated.get() && !state.all_marks.get().is_empty() {
-                        check_new_grades(state);
+                if let Some(state) = crate::app::AppState::get_main() {
+                    if state.is_authenticated.get() && !state.loading.get() {
+                        super::diary::load_all(state);
                     }
                 }
             });
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn baseline_navigation_and_repeated_refresh_do_not_notify() {
+        let old = Snapshot::from([("lesson".into(), "8".into())]);
+        assert_eq!(changed_count(None, &old), 0);
+        assert_eq!(changed_count(Some(&old), &old), 0);
+        let mut current = old.clone();
+        current.insert("second".into(), "10".into());
+        assert_eq!(changed_count(Some(&old), &current), 1);
+        current.insert("lesson".into(), "9".into());
+        assert_eq!(changed_count(Some(&old), &current), 2);
+        assert_eq!(changed_count(Some(&current), &Snapshot::new()), 0);
+    }
 }

@@ -73,7 +73,17 @@ fn sanitize_filename(name: &str) -> String {
     let clean: String = name
         .chars()
         .map(|c| {
-            if c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|' || c == '\0' {
+            if c == '/'
+                || c == '\\'
+                || c == ':'
+                || c == '*'
+                || c == '?'
+                || c == '"'
+                || c == '<'
+                || c == '>'
+                || c == '|'
+                || c == '\0'
+            {
                 '_'
             } else {
                 c
@@ -86,11 +96,20 @@ fn sanitize_filename(name: &str) -> String {
     } else {
         trimmed.replace("..", "_")
     };
-    if sanitized.len() > 200 {
-        sanitized.chars().take(200).collect()
-    } else {
-        sanitized
+    // Filesystems limit bytes, not Unicode scalar values.
+    let mut end = sanitized.len().min(180);
+    while !sanitized.is_char_boundary(end) {
+        end -= 1;
     }
+    sanitized[..end].to_string()
+}
+
+fn may_send_token(url: &reqwest::Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str() == Some("diary.e-schools.by")
+        && url.port_or_known_default() == Some(443)
+        && url.username().is_empty()
+        && url.password().is_none()
 }
 
 pub fn parse_attachments(raw_json: &str) -> Vec<LessonAttachment> {
@@ -100,12 +119,22 @@ pub fn parse_attachments(raw_json: &str) -> Vec<LessonAttachment> {
 
     let mut result = Vec::new();
 
-    fn parse_single_item(item: &serde_json::Value, default_is_link: bool) -> Option<LessonAttachment> {
-        let id = item.get("id").or_else(|| item.get("uuid"))
-            .and_then(|v| v.as_str().map(|s| s.to_string()).or_else(|| v.as_i64().map(|n| n.to_string())))
+    fn parse_single_item(
+        item: &serde_json::Value,
+        default_is_link: bool,
+    ) -> Option<LessonAttachment> {
+        let id = item
+            .get("id")
+            .or_else(|| item.get("uuid"))
+            .and_then(|v| {
+                v.as_str()
+                    .map(|s| s.to_string())
+                    .or_else(|| v.as_i64().map(|n| n.to_string()))
+            })
             .unwrap_or_default();
 
-        let title = item.get("title")
+        let title = item
+            .get("title")
             .or_else(|| item.get("name"))
             .or_else(|| item.get("file_name"))
             .or_else(|| item.get("filename"))
@@ -114,7 +143,8 @@ pub fn parse_attachments(raw_json: &str) -> Vec<LessonAttachment> {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        let raw_url = item.get("url")
+        let raw_url = item
+            .get("url")
             .or_else(|| item.get("file_url"))
             .or_else(|| item.get("file"))
             .or_else(|| item.get("link"))
@@ -137,7 +167,11 @@ pub fn parse_attachments(raw_json: &str) -> Vec<LessonAttachment> {
                 is_link = false;
             }
         }
-        if item.get("is_link").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if item
+            .get("is_link")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             is_link = true;
         }
 
@@ -154,12 +188,15 @@ pub fn parse_attachments(raw_json: &str) -> Vec<LessonAttachment> {
         let clean_title = if !title.trim().is_empty() {
             title.trim().to_string()
         } else if let Some(last) = full_url.split('/').last().filter(|s| !s.is_empty()) {
-            urlencoding::decode(last).map(|s| s.into_owned()).unwrap_or_else(|_| last.to_string())
+            urlencoding::decode(last)
+                .map(|s| s.into_owned())
+                .unwrap_or_else(|_| last.to_string())
         } else {
             "Файл".to_string()
         };
 
-        let file_size = item.get("file_size")
+        let file_size = item
+            .get("file_size")
             .or_else(|| item.get("size"))
             .or_else(|| item.get("bytes"))
             .and_then(|v| v.as_u64())
@@ -183,7 +220,11 @@ pub fn parse_attachments(raw_json: &str) -> Vec<LessonAttachment> {
             }
         }
         serde_json::Value::Object(map) => {
-            if let Some(serde_json::Value::Array(arr)) = map.get("attachments").or_else(|| map.get("files")).or_else(|| map.get("items")) {
+            if let Some(serde_json::Value::Array(arr)) = map
+                .get("attachments")
+                .or_else(|| map.get("files"))
+                .or_else(|| map.get("items"))
+            {
                 for it in arr {
                     if let Some(att) = parse_single_item(it, false) {
                         result.push(att);
@@ -218,7 +259,10 @@ pub fn download_to_path(token: &str, file_url: &str, dest_path: &Path) -> Result
         format!("https://diary.e-schools.by/{file_url}")
     };
 
-    crate::shared::nslog::nslog(&format!("[Attachments] Downloading: {full_url} -> {:?}", dest_path));
+    crate::shared::nslog::nslog(&format!(
+        "[Attachments] Downloading: {full_url} -> {:?}",
+        dest_path
+    ));
 
     if let Some(parent) = dest_path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -226,12 +270,24 @@ pub fn download_to_path(token: &str, file_url: &str, dest_path: &Path) -> Result
 
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
-        .redirect(reqwest::redirect::Policy::limited(10))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 10 {
+                attempt.error("Too many redirects")
+            } else if attempt.url().scheme() != "https" {
+                attempt.error("Insecure attachment redirect")
+            } else {
+                attempt.follow()
+            }
+        }))
         .build()
         .map_err(|e| format!("Client build error: {e}"))?;
 
-    let mut req = client.get(&full_url);
-    if !token.is_empty() && (full_url.contains("e-schools.by") || full_url.contains("schools.by")) {
+    let url = reqwest::Url::parse(&full_url).map_err(|e| format!("Invalid URL: {e}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("Unsupported attachment URL scheme".into());
+    }
+    let mut req = client.get(url.clone());
+    if !token.is_empty() && may_send_token(&url) {
         req = req.header(reqwest::header::AUTHORIZATION, token);
     }
 
@@ -243,11 +299,39 @@ pub fn download_to_path(token: &str, file_url: &str, dest_path: &Path) -> Result
 
     // Limit download size to max 100 MB to prevent disk exhaustion
     use std::io::Read;
-    let mut file = std::fs::File::create(dest_path).map_err(|e| format!("File create error ({:?}): {e}", dest_path))?;
-    let mut limited_reader = resp.take(100 * 1024 * 1024);
-    let bytes_copied = std::io::copy(&mut limited_reader, &mut file).map_err(|e| format!("File write error: {e}"))?;
+    let limit = 100 * 1024 * 1024;
+    if resp.content_length().is_some_and(|size| size > limit) {
+        return Err("Attachment exceeds 100 MB".into());
+    }
+    // Publish only complete files. Failed/interrupted downloads must never
+    // pass the existing-file check on the next open.
+    let temp_path = dest_path.with_extension(format!("{}.part", rand::random::<u64>()));
+    let result: Result<u64, String> = (|| {
+        let mut file =
+            std::fs::File::create(&temp_path).map_err(|e| format!("File create error: {e}"))?;
+        let mut limited_reader = resp.take(limit + 1);
+        let bytes = std::io::copy(&mut limited_reader, &mut file)
+            .map_err(|e| format!("File write error: {e}"))?;
+        if bytes > limit {
+            return Err("Attachment exceeds 100 MB".into());
+        }
+        if bytes == 0 {
+            return Err("Attachment is empty".into());
+        }
+        file.sync_all()
+            .map_err(|e| format!("File sync error: {e}"))?;
+        std::fs::rename(&temp_path, dest_path).map_err(|e| format!("File rename error: {e}"))?;
+        Ok(bytes)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp_path);
+    }
+    let bytes_copied = result?;
 
-    crate::shared::nslog::nslog(&format!("[Attachments] Successfully saved {bytes_copied} bytes to {:?}", dest_path));
+    crate::shared::nslog::nslog(&format!(
+        "[Attachments] Successfully saved {bytes_copied} bytes to {:?}",
+        dest_path
+    ));
 
     dest_path
         .to_str()
@@ -273,7 +357,18 @@ pub fn get_local_path_for_attachment(att: &LessonAttachment) -> PathBuf {
             }
         }
     }
-    base_dir.join(&safe_name)
+    use sha2::{Digest, Sha256};
+    let identity = serde_json::to_vec(&(
+        crate::shared::secure::load("auth.account_id"),
+        crate::shared::secure::load("auth.school_id"),
+        crate::shared::secure::load("auth.profile_id"),
+        &att.id,
+        &att.url,
+    ))
+    .unwrap();
+    base_dir
+        .join(format!("{:x}", Sha256::digest(identity)))
+        .join(&safe_name)
 }
 
 pub fn is_attachment_downloaded(att: &LessonAttachment) -> bool {
@@ -288,14 +383,22 @@ pub fn open_or_preview_attachment(state: AppState, att: &LessonAttachment) {
     }
 
     let target_path = get_local_path_for_attachment(att);
-    if target_path.exists() && std::fs::metadata(&target_path).map(|m| m.len() > 0).unwrap_or(false) {
+    if target_path.exists()
+        && std::fs::metadata(&target_path)
+            .map(|m| m.len() > 0)
+            .unwrap_or(false)
+    {
         if let Some(path_str) = target_path.to_str() {
             native_quicklook(path_str);
         }
         return;
     }
 
-    let att_id = if !att.id.is_empty() { att.id.clone() } else { att.url.clone() };
+    let att_id = if !att.id.is_empty() {
+        att.id.clone()
+    } else {
+        att.url.clone()
+    };
     let mut cur = state.downloading_files.get();
     cur.insert(att_id.clone());
     state.downloading_files.set(cur);
@@ -304,10 +407,11 @@ pub fn open_or_preview_attachment(state: AppState, att: &LessonAttachment) {
     let id_clone = att_id.clone();
     let token = crate::shared::secure::load("auth.token").unwrap_or_default();
 
+    let request = crate::shared::session::ticket();
     std::thread::spawn(move || {
         let res = download_to_path(&token, &url, &target_path);
 
-        day::reactive::on_main(move || {
+        request.publish(move |_| {
             if let Some(state) = AppState::get_main() {
                 let mut cur = state.downloading_files.get();
                 cur.remove(&id_clone);
@@ -333,14 +437,22 @@ pub fn share_attachment(state: AppState, att: &LessonAttachment) {
     }
 
     let target_path = get_local_path_for_attachment(att);
-    if target_path.exists() && std::fs::metadata(&target_path).map(|m| m.len() > 0).unwrap_or(false) {
+    if target_path.exists()
+        && std::fs::metadata(&target_path)
+            .map(|m| m.len() > 0)
+            .unwrap_or(false)
+    {
         if let Some(path_str) = target_path.to_str() {
             native_share(path_str);
         }
         return;
     }
 
-    let att_id = if !att.id.is_empty() { att.id.clone() } else { att.url.clone() };
+    let att_id = if !att.id.is_empty() {
+        att.id.clone()
+    } else {
+        att.url.clone()
+    };
     let mut cur = state.downloading_files.get();
     cur.insert(att_id.clone());
     state.downloading_files.set(cur);
@@ -349,10 +461,11 @@ pub fn share_attachment(state: AppState, att: &LessonAttachment) {
     let id_clone = att_id.clone();
     let token = crate::shared::secure::load("auth.token").unwrap_or_default();
 
+    let request = crate::shared::session::ticket();
     std::thread::spawn(move || {
         let res = download_to_path(&token, &url, &target_path);
 
-        day::reactive::on_main(move || {
+        request.publish(move |_| {
             if let Some(state) = AppState::get_main() {
                 let mut cur = state.downloading_files.get();
                 cur.remove(&id_clone);
@@ -364,7 +477,9 @@ pub fn share_attachment(state: AppState, att: &LessonAttachment) {
                     native_share(&path);
                 }
                 Err(err) => {
-                    crate::shared::nslog::nslog(&format!("[Attachments] Download for share failed: {err}"));
+                    crate::shared::nslog::nslog(&format!(
+                        "[Attachments] Download for share failed: {err}"
+                    ));
                 }
             }
         });
@@ -393,9 +508,11 @@ pub fn fetch_attachments_async(state: AppState, lesson_uuid: &str) {
     let class_id = crate::shared::secure::load("auth.class_id").unwrap_or_default();
     let profile_id = crate::shared::secure::load("auth.profile_id").unwrap_or_default();
 
+    let request = crate::shared::session::ticket();
     std::thread::spawn(move || {
         let client = eschool_api::client::blocking::build_client(&token);
-        let path = eschool_api::client::endpoints::attachments(&school_id, &class_id, &profile_id, &uuid);
+        let path =
+            eschool_api::client::endpoints::attachments(&school_id, &class_id, &profile_id, &uuid);
         crate::shared::nslog::nslog(&format!("[Attachments] Fetching: {path}"));
 
         match eschool_api::client::blocking::api_get_raw(&client, &path) {
@@ -405,9 +522,12 @@ pub fn fetch_attachments_async(state: AppState, lesson_uuid: &str) {
                     raw.len()
                 ));
                 let parsed = parse_attachments(&raw);
-                crate::shared::nslog::nslog(&format!("[Attachments] Parsed {} items for {uuid}", parsed.len()));
+                crate::shared::nslog::nslog(&format!(
+                    "[Attachments] Parsed {} items for {uuid}",
+                    parsed.len()
+                ));
 
-                day::reactive::on_main(move || {
+                request.publish(move |_| {
                     if let Some(state) = AppState::get_main() {
                         let mut atts = state.lesson_attachments.get();
                         atts.insert(uuid.clone(), parsed);
@@ -421,7 +541,7 @@ pub fn fetch_attachments_async(state: AppState, lesson_uuid: &str) {
             }
             Err(e) => {
                 crate::shared::nslog::nslog(&format!("[Attachments] Fetch failed for {uuid}: {e}"));
-                day::reactive::on_main(move || {
+                request.publish(move |_| {
                     if let Some(state) = AppState::get_main() {
                         let mut loading = state.attachments_loading.get();
                         loading.remove(&uuid);
@@ -431,4 +551,47 @@ pub fn fetch_attachments_async(state: AppState, lesson_uuid: &str) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tokens_are_only_sent_to_the_exact_https_origin() {
+        for url in [
+            "https://example.com/schools.by/file",
+            "https://diary.e-schools.by.evil.test/file",
+            "https://diary.e-schools.by@evil.test/file",
+            "http://diary.e-schools.by/file",
+            "https://diary.e-schools.by:8443/file",
+        ] {
+            assert!(!may_send_token(&reqwest::Url::parse(url).unwrap()), "{url}");
+        }
+        assert!(may_send_token(
+            &reqwest::Url::parse("https://diary.e-schools.by/file").unwrap()
+        ));
+    }
+
+    #[test]
+    fn identically_named_attachments_do_not_share_a_file() {
+        let a = LessonAttachment {
+            id: "a".into(),
+            title: "Задание.pdf".into(),
+            url: "https://diary.e-schools.by/a".into(),
+            is_link: false,
+            file_size: None,
+        };
+        let mut b = a.clone();
+        b.id = "b".into();
+        b.url = "https://diary.e-schools.by/b".into();
+        assert_ne!(
+            get_local_path_for_attachment(&a),
+            get_local_path_for_attachment(&b)
+        );
+        assert_eq!(
+            get_local_path_for_attachment(&a),
+            get_local_path_for_attachment(&a)
+        );
+    }
 }

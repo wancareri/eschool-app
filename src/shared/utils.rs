@@ -44,7 +44,11 @@ pub fn format_date_short(ts: u64) -> String {
 pub fn format_date_header(dow: u32, ts: u64) -> String {
     let epoch_days = ((ts + 12 * 3600 * 1000) / 86_400_000) as i64;
     let calc_dow = ((epoch_days + 3) % 7 + 1) as u32;
-    let dow_name = weekday_name(if (1..=7).contains(&calc_dow) { calc_dow } else { dow });
+    let dow_name = weekday_name(if (1..=7).contains(&calc_dow) {
+        calc_dow
+    } else {
+        dow
+    });
     format!("{}, {}", dow_name, format_date_short(ts))
 }
 
@@ -52,7 +56,11 @@ pub fn format_date_header(dow: u32, ts: u64) -> String {
 pub fn format_date_full(dow: u32, ts: u64) -> String {
     let epoch_days = ((ts + 12 * 3600 * 1000) / 86_400_000) as i64;
     let calc_dow = ((epoch_days + 3) % 7 + 1) as u32;
-    let dow_name = weekday_name(if (1..=7).contains(&calc_dow) { calc_dow } else { dow });
+    let dow_name = weekday_name(if (1..=7).contains(&calc_dow) {
+        calc_dow
+    } else {
+        dow
+    });
     let d = day_piece_datetime::DayDate::from_epoch_days(epoch_days);
     let month_name = match d.month {
         1 => "января",
@@ -78,18 +86,22 @@ pub fn today_dow() -> u32 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let epoch_days = ((secs + 12 * 3600) / 86_400) as i64;
+    weekday_at(secs)
+}
+
+fn weekday_at(secs: u64) -> u32 {
+    let epoch_days = ((secs + 3 * 3600) / 86_400) as i64;
     (((epoch_days + 3) % 7 + 1) as u32).clamp(1, 7)
 }
 
 pub fn grade_color(mark: &str) -> Color {
     match mark.trim().parse::<u32>() {
         Ok(9..=10) => colors::GRADE_EXCELLENT,
-        Ok(7..=8)  => colors::GRADE_GOOD,
-        Ok(5..=6)  => colors::GRADE_SATISFACTORY,
-        Ok(3..=4)  => colors::GRADE_POOR,
-        Ok(1..=2)  => colors::GRADE_FAILING,
-        _          => colors::GRAY_400,
+        Ok(7..=8) => colors::GRADE_GOOD,
+        Ok(5..=6) => colors::GRADE_SATISFACTORY,
+        Ok(3..=4) => colors::GRADE_POOR,
+        Ok(1..=2) => colors::GRADE_FAILING,
+        _ => colors::GRAY_400,
     }
 }
 
@@ -109,7 +121,9 @@ pub fn avg_grade_color(avg: f64) -> Color {
 
 pub fn parse_marks(mark_str: &str) -> Vec<f64> {
     let mut result = Vec::new();
-    for part in mark_str.split(|c: char| c == '/' || c == ',' || c == ';' || c == ' ' || c == '(' || c == ')') {
+    for part in mark_str
+        .split(|c: char| c == '/' || c == ',' || c == ';' || c == ' ' || c == '(' || c == ')')
+    {
         let trimmed = part.trim();
         if let Ok(val) = trimmed.parse::<f64>() {
             if val >= 1.0 && val <= 100.0 {
@@ -125,3 +139,16 @@ pub fn strip_seconds(t: &str) -> String {
     t.get(..5).unwrap_or(t).to_string()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn minsk_weekday_changes_at_local_midnight() {
+        // 2026-11-09 is Monday; UTC midnight is 03:00 in Minsk.
+        let monday = 20_766 * 86_400;
+        assert_eq!(weekday_at(monday + 12 * 3600), 1); // 15:00 Monday
+        assert_eq!(weekday_at(monday + 21 * 3600 - 1), 1);
+        assert_eq!(weekday_at(monday + 21 * 3600), 2);
+    }
+}

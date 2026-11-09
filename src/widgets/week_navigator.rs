@@ -23,9 +23,9 @@ pub fn render(state: AppState) -> impl Piece {
 
         row((
             quarter_tab(state, "I", 0),
-            quarter_tab(state, "II", 9),
-            quarter_tab(state, "III", 18),
-            quarter_tab(state, "IV", 27),
+            quarter_tab(state, "II", 1),
+            quarter_tab(state, "III", 2),
+            quarter_tab(state, "IV", 3),
         ))
         .spacing(6.0)
         .padding(Insets { top: 0.0, leading: 16.0, bottom: 8.0, trailing: 16.0 }),
@@ -33,18 +33,18 @@ pub fn render(state: AppState) -> impl Piece {
     .spacing(4.0)
 }
 
-fn quarter_tab(state: AppState, label: &'static str, from_week: i32) -> impl Piece {
+fn quarter_tab(state: AppState, label: &'static str, quarter: usize) -> impl Piece {
     let s1 = state;
     let s2 = state;
     let lbl = label.to_string();
     button(move || {
-        let idx = s1.current_week_index.get();
-        let is_active = idx >= from_week && idx < from_week + 9;
+        let is_active = s1.current_quarter.get() == quarter;
         if is_active { format!("[{}]", lbl) } else { lbl.clone() }
     })
     .action(move || {
-        features::diary::reset_marks(s2);
-        features::diary::load_week(s2, from_week);
+        if let Some(&idx) = features::diary::quarter_week_indices(s2, quarter).first() {
+            features::diary::load_week(s2, idx as i32);
+        }
     })
     .id(format!("q-{label}"))
 }

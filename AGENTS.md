@@ -96,6 +96,7 @@ eschool-app/
   Omit `.on_back`. UIKit handles the interactive pop gesture 100% natively. If the user completes the pop, Day updates `path: Signal<Vec<AuthRoute>>`. Observe completed pops using `day::reactive::watch(move || path.get(), ...)`.
 
 ### B. Navigation Bar Buttons in iOS 16+ (`trailingItemGroups`)
+- **Login pages declare their buttons through Day's `.toolbar(...)` with `ToolbarPlacement::Primary`:** declare them on the stack root and each destination. Day owns the native `UINavigationItem` and reapplies its toolbar during reconciliation and transitions. Delayed manual `setup_login_nav_bar` mutations were overwritten by that reconciliation and left the welcome page without buttons. Do not reintroduce them.
 - In iOS 16+, `day-uikit` manages `trailingItemGroups` on `UINavigationItem`. When `trailingItemGroups` has any value, UIKit **completely ignores `rightBarButtonItems`**!
 - To attach bar buttons natively, wrap the `UIBarButtonItem` slice using `UIBarButtonItemGroup`:
   ```rust
@@ -111,6 +112,10 @@ eschool-app/
   Always build native bar items using `UIBarButtonItem::initWithPrimaryAction(...)` with style `Plain`. Custom `UIButton`s wrapped in `initWithCustomView` collapse to 0×0 width in `trailingItemGroups` unless manual AutoLayout constraints are established. Native items behave identically to the Back button.
 
 ### C. Keyboard & Duck Sticker Synchronization
+- Keep keyboard followers per mounted page using weak view references: the outgoing and incoming pages coexist during an interactive pop. A single global content/sticker view loses the revealed page and retains popped views.
+- While the native transition coordinator reports `initiallyInteractive`, defer keyboard end-frame updates until transition completion. On cancellation keep the previous lift; after a committed pop use UIKit's settled keyboard layout guide. Do not animate the form towards a predicted hidden keyboard while the swipe is still cancellable.
+- Suppress DayAppDelegate's root-resize callback without processing the frame there again. The dedicated keyboard observer owns the one animation.
+- Authentication pages use the global control-aware tap-to-dismiss recognizer. Do not add ancestor `.on_tap(dismiss)` recognizers over input fields and buttons.
 - In `keyboard.rs`, only observe `UIKeyboardWillChangeFrameNotification`. Do NOT register redundant observers for `didShow`, `didHide`, or `didChangeFrame` — `didShow` has `duration = 0.0`, which causes an instant jump after the smooth animation ends.
 - Apply hardware translations via `CGAffineTransform` within `UIView::animateWithDuration` using the keyboard notification's duration and curve.
 - In `intro_view`, when starting the login transition to `username_step_view`, delay focusing by ~350ms (`on_main_delayed(350, ...)`) to let the page push finish before the keyboard slides up.
@@ -135,3 +140,5 @@ eschool-app/
   - Converted Theme and Language buttons to native `UIBarButtonItem`s with SF Symbols (`sun.max`, `globe`, `RU/BE/EN`) attached directly to `UINavigationBar` (including on `intro_view`).
   - Removed `.on_back(...)` to eliminate the interactive back-swipe keyboard hide/show glitch.
   - Removed overlapping companion password fields and enforced `autocorrectionType = Yes` with automatic refocusing on language change to restore AutoFill Passwords.
+
+- **Build 64:** Native declarative theme/language toolbar on welcome and all login steps; interactive-pop keyboard updates wait for commit/cancel; weak per-page followers; guarded delayed focus and refocus after completed password-to-login pops.

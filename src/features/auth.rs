@@ -1,8 +1,8 @@
-//! Authentication — login, logout, token refresh.
-//! Uses secure keychain/keystore for sensitive data.
-
+//! Authentication. Credential changes are committed only for the current session.
 use crate::app::AppState;
-use crate::shared::{nslog, secure};
+use crate::shared::{nslog, secure, session};
+use eschool_api::auth::{Auth, ParentLoginResult, Token};
+use std::sync::Mutex;
 
 const TOKEN_KEY: &str = "auth.token";
 const REFRESH_KEY: &str = "auth.refresh_token";
@@ -14,92 +14,103 @@ const SCHOOL_NAME_KEY: &str = "auth.school_name";
 const USERNAME_KEY: &str = "auth.username";
 const PASSWORD_KEY: &str = "auth.password";
 const REMEMBER_KEY: &str = "auth.remember_me";
+const ACCOUNT_KEY: &str = "auth.account_id";
+// Never hold the storage lock during a network call or UI callback.
+static TOKEN_STORE: Mutex<()> = Mutex::new(());
+static REFRESH_LOCK: Mutex<()> = Mutex::new(());
+
+fn persist_tokens(token: &Token) {
+    let _lock = TOKEN_STORE.lock().unwrap();
+    secure::save(TOKEN_KEY, &token.access_token);
+    secure::save(REFRESH_KEY, &token.refresh_token);
+}
+
+pub fn ensure_account_id() {
+    if secure::load(ACCOUNT_KEY).is_none() {
+        if let Some(token) = get_token() {
+            use sha2::{Digest, Sha256};
+            let id = eschool_api::auth::extract_token_usi(&token)
+                .unwrap_or_else(|| format!("{:x}", Sha256::digest(token.as_bytes())));
+            secure::save(ACCOUNT_KEY, &id);
+        }
+    }
+}
+
+fn remember_user(state: AppState, username: &str, remember: bool) {
+    if remember {
+        secure::save(USERNAME_KEY, username);
+    } else {
+        secure::delete(USERNAME_KEY);
+    }
+    secure::save(REMEMBER_KEY, if remember { "true" } else { "false" });
+    secure::delete(PASSWORD_KEY);
+    state.remember_me.set(remember);
+}
+
+fn finish_login(state: AppState, token: Token, username: &str, remember: bool) {
+    persist_tokens(&token);
+    ensure_account_id();
+    remember_user(state, username, remember);
+    state.setup_new_password_active.set(false);
+    state.setup_temp_password_data.set(None);
+    state.loading.set(false);
+    crate::shared::keyboard::dismiss();
+    state.is_authenticated.set(true);
+}
 
 pub fn login(state: AppState, username: &str, password: &str, remember: bool) {
-    let set_loading = state.loading.setter();
-    let set_error = state.error_msg.setter();
-    let set_authenticated = state.is_authenticated.setter();
-    let set_setup_active = state.setup_new_password_active.setter();
-    let set_setup_data = state.setup_temp_password_data.setter();
-
-    let u = username.to_string();
-    let p = password.to_string();
-    let r = remember;
-
-    set_loading.set(true);
-    set_error.set(String::new());
-
+    session::invalidate();
+    let ticket = session::ticket();
+    super::diary::clear_data(state);
+    // A password login starts a new account context; no old student IDs survive.
+    logout_keys();
+    state.loading.set(true);
+    let username = username.to_string();
+    let password = password.to_string();
     std::thread::spawn(move || {
-        let auth = eschool_api::auth::Auth::new();
-
-        // If username consists solely of digits, try parent login first to detect initial password setup
-        let is_digits = !u.is_empty() && u.chars().all(|c| c.is_ascii_digit());
-        if is_digits {
-            if let Ok(res) = auth.login_parent_with_status_blocking(&u, &p) {
-                match res {
-                    eschool_api::auth::ParentLoginResult::RequiresNewPassword { token, parent_uuid, temp_password } => {
-                        secure::save(TOKEN_KEY, &token.access_token);
-                        secure::save(REFRESH_KEY, &token.refresh_token);
-                        let old_pwd = temp_password.unwrap_or_else(|| p.clone());
-                        day::reactive::on_main(move || {
-                            crate::shared::keyboard::dismiss();
-                            set_loading.set(false);
-                            set_setup_active.set(true);
-                            set_setup_data.set(Some((parent_uuid, old_pwd, u)));
-                        });
-                        return;
-                    }
-                    eschool_api::auth::ParentLoginResult::Success(token) => {
-                        secure::save(TOKEN_KEY, &token.access_token);
-                        secure::save(REFRESH_KEY, &token.refresh_token);
-                        if r {
-                            secure::save(USERNAME_KEY, &u);
-                            secure::save(REMEMBER_KEY, "true");
-                        } else {
-                            secure::delete(USERNAME_KEY);
-                            secure::save(REMEMBER_KEY, "false");
-                        }
-                        secure::delete(PASSWORD_KEY);
-                        day::reactive::on_main(move || {
-                            crate::shared::keyboard::dismiss();
-                            set_loading.set(false);
-                            nslog::nslog("[Auth] Parent login OK, setting is_authenticated=true");
-                            set_authenticated.set(true);
-                        });
-                        return;
-                    }
-                }
+        let auth = Auth::new();
+        let numeric = !username.is_empty() && username.chars().all(|c| c.is_ascii_digit());
+        let result = if numeric {
+            auth.login_parent_with_status_blocking(&username, &password)
+                .or_else(|parent_error| {
+                    auth.login_student_blocking(&username, &password)
+                        .map(ParentLoginResult::Success)
+                        .map_err(|_| parent_error)
+                })
+        } else {
+            auth.login_student_blocking(&username, &password)
+                .map(ParentLoginResult::Success)
+                .or_else(|student_error| {
+                    auth.login_parent_with_status_blocking(&username, &password)
+                        .map_err(|_| student_error)
+                })
+        };
+        ticket.publish(move |state| match result {
+            Ok(ParentLoginResult::Success(token)) => {
+                finish_login(state, token, &username, remember)
             }
-        }
-
-        match auth.login_blocking(&u, &p) {
-            Ok(token) => {
-                secure::save(TOKEN_KEY, &token.access_token);
-                secure::save(REFRESH_KEY, &token.refresh_token);
-                if r {
-                    secure::save(USERNAME_KEY, &u);
-                    secure::save(REMEMBER_KEY, "true");
-                } else {
-                    secure::delete(USERNAME_KEY);
-                    secure::save(REMEMBER_KEY, "false");
-                }
-                secure::delete(PASSWORD_KEY);
-                day::reactive::on_main(move || {
-                    crate::shared::keyboard::dismiss();
-                    set_loading.set(false);
-                    nslog::nslog("[Auth] Login OK, setting is_authenticated=true on main thread");
-                    // Set is_authenticated LAST — triggers the reactive watch in window_shell
-                    // which will call load_all.
-                    set_authenticated.set(true);
-                });
+            Ok(ParentLoginResult::RequiresNewPassword {
+                token,
+                parent_uuid,
+                temp_password,
+            }) => {
+                persist_tokens(&token);
+                ensure_account_id();
+                remember_user(state, &username, remember);
+                state.setup_temp_password_data.set(Some((
+                    parent_uuid,
+                    temp_password.unwrap_or(password),
+                    username,
+                )));
+                state.setup_new_password_active.set(true);
+                state.loading.set(false);
+                crate::shared::keyboard::dismiss();
             }
             Err(e) => {
-                day::reactive::on_main(move || {
-                    set_error.set(format!("Ошибка входа: {e}"));
-                    set_loading.set(false);
-                });
+                state.error_msg.set(format!("Ошибка входа: {e}"));
+                state.loading.set(false);
             }
-        }
+        });
     });
 }
 
@@ -111,73 +122,51 @@ pub fn complete_parent_new_password(
     username: &str,
     remember: bool,
 ) {
-    let set_loading = state.loading.setter();
-    let set_error = state.error_msg.setter();
-    let set_authenticated = state.is_authenticated.setter();
-    let set_setup_active = state.setup_new_password_active.setter();
-    let set_setup_data = state.setup_temp_password_data.setter();
-
     if let Err(e) = eschool_api::auth::validate_parent_password(new_password) {
-        set_error.set(e);
+        state.error_msg.set(e);
         return;
     }
-
-    set_loading.set(true);
-    set_error.set(String::new());
-
-    let puuid = parent_uuid.to_string();
-    let old_p = old_password.to_string();
-    let new_p = new_password.to_string();
-    let u = username.to_string();
-    let r = remember;
-
+    let Some(token) = get_token() else {
+        state
+            .error_msg
+            .set("Сессия истекла. Начните вход заново.".into());
+        return;
+    };
+    let ticket = session::ticket();
+    state.loading.set(true);
+    state.error_msg.set(String::new());
+    let (parent, old, new, username) = (
+        parent_uuid.to_string(),
+        old_password.to_string(),
+        new_password.to_string(),
+        username.to_string(),
+    );
     std::thread::spawn(move || {
-        let token = match get_token() {
-            Some(t) => t,
-            None => {
-                day::reactive::on_main(move || {
-                    set_error.set("Сессия истекла. Пожалуйста, начните вход заново.".into());
-                    set_loading.set(false);
-                });
-                return;
-            }
-        };
-
         let client = eschool_api::client::blocking::build_client(&token);
-        match eschool_api::client::blocking::change_parent_temp_password(&client, &puuid, &old_p, &new_p) {
+        let result = eschool_api::client::blocking::change_parent_temp_password(
+            &client, &parent, &old, &new,
+        );
+        match result {
             Ok(()) => {
-                let auth = eschool_api::auth::Auth::new();
-                match auth.login_parent_blocking(&u, &new_p) {
-                    Ok(new_token) => {
-                        secure::save(TOKEN_KEY, &new_token.access_token);
-                        secure::save(REFRESH_KEY, &new_token.refresh_token);
-                        if r {
-                            secure::save(USERNAME_KEY, &u);
-                            secure::save(REMEMBER_KEY, "true");
-                        }
-                        secure::delete(PASSWORD_KEY);
-                        day::reactive::on_main(move || {
-                            crate::shared::keyboard::dismiss();
-                            set_setup_active.set(false);
-                            set_setup_data.set(None);
-                            set_loading.set(false);
-                            set_authenticated.set(true);
-                        });
-                    }
+                let result = Auth::new().login_parent_blocking(&username, &new);
+                ticket.publish(move |state| match result {
+                    Ok(token) => finish_login(state, token, &username, remember),
                     Err(e) => {
-                        day::reactive::on_main(move || {
-                            set_error.set(format!("Пароль изменён, но ошибка входа: {e}"));
-                            set_loading.set(false);
-                        });
+                        // The old temporary password is no longer valid. Return to
+                        // login instead of inviting the user to submit it again.
+                        logout(state);
+                        state
+                            .error_msg
+                            .set(format!("Пароль изменён. Войдите с новым паролем: {e}"));
                     }
-                }
-            }
-            Err(e) => {
-                day::reactive::on_main(move || {
-                    set_error.set(format!("Не удалось установить пароль: {e}"));
-                    set_loading.set(false);
                 });
             }
+            Err(e) => ticket.publish(move |state| {
+                state
+                    .error_msg
+                    .set(format!("Не удалось установить пароль: {e}"));
+                state.loading.set(false);
+            }),
         }
     });
 }
@@ -188,129 +177,135 @@ pub fn change_logged_in_parent_password(
     new_password: &str,
     on_success: impl Fn() + Send + 'static,
 ) {
-    let set_loading = state.loading.setter();
-    let set_error = state.error_msg.setter();
-
     if let Err(e) = eschool_api::auth::validate_parent_password(new_password) {
-        set_error.set(e);
+        state.error_msg.set(e);
         return;
     }
-
-    set_loading.set(true);
-    set_error.set(String::new());
-
-    let old_p = old_password.to_string();
-    let new_p = new_password.to_string();
-
+    let Some(token) = get_token() else {
+        state
+            .error_msg
+            .set("Сессия истекла. Войдите заново.".into());
+        return;
+    };
+    let Some(parent) = eschool_api::auth::extract_token_usi(&token) else {
+        state
+            .error_msg
+            .set("Не удалось определить ID родителя.".into());
+        return;
+    };
+    let ticket = session::ticket();
+    let username = secure::load(USERNAME_KEY);
+    let (old, new) = (old_password.to_string(), new_password.to_string());
+    state.loading.set(true);
+    state.error_msg.set(String::new());
     std::thread::spawn(move || {
-        let token = match get_token() {
-            Some(t) => t,
-            None => {
-                day::reactive::on_main(move || {
-                    set_error.set("Сессия истекла. Войдите заново.".into());
-                    set_loading.set(false);
-                });
-                return;
-            }
-        };
-
-        let parent_uuid = match eschool_api::auth::extract_token_usi(&token) {
-            Some(u) => u,
-            None => {
-                day::reactive::on_main(move || {
-                    set_error.set("Не удалось определить ID родителя.".into());
-                    set_loading.set(false);
-                });
-                return;
-            }
-        };
-
         let client = eschool_api::client::blocking::build_client(&token);
-        match eschool_api::client::blocking::change_parent_password(&client, &parent_uuid, &old_p, &new_p) {
-            Ok(()) => {
-                if let Some(u) = secure::load(USERNAME_KEY) {
-                    let auth = eschool_api::auth::Auth::new();
-                    if let Ok(new_token) = auth.login_parent_blocking(&u, &new_p) {
-                        secure::save(TOKEN_KEY, &new_token.access_token);
-                        secure::save(REFRESH_KEY, &new_token.refresh_token);
+        let result =
+            eschool_api::client::blocking::change_parent_password(&client, &parent, &old, &new);
+        let renewed = if result.is_ok() {
+            username.and_then(|u| Auth::new().login_parent_blocking(&u, &new).ok())
+        } else {
+            None
+        };
+        ticket.publish(move |state| {
+            state.loading.set(false);
+            match result {
+                Ok(()) => {
+                    if let Some(token) = renewed {
+                        persist_tokens(&token);
                     }
-                }
-                secure::delete(PASSWORD_KEY);
-                day::reactive::on_main(move || {
-                    set_loading.set(false);
+                    secure::delete(PASSWORD_KEY);
                     on_success();
-                });
+                }
+                Err(e) => state
+                    .error_msg
+                    .set(format!("Не удалось сменить пароль: {e}")),
             }
-            Err(e) => {
-                day::reactive::on_main(move || {
-                    set_error.set(format!("Не удалось сменить пароль: {e}"));
-                    set_loading.set(false);
-                });
-            }
-        }
+        });
     });
 }
 
 pub fn logout(state: AppState) {
-    logout_keys();
+    session::invalidate();
+    // Clear the namespace before deleting the keys identifying it.
     crate::shared::cache::clear();
+    logout_keys();
+    super::diary::clear_data(state);
     state.is_authenticated.set(false);
     state.remember_me.set(false);
-    state.full_name.set(String::new());
-    state.school_name.set(String::new());
-    state.class_label.set(String::new());
+    state.biometric_ok.set(false);
+    state.pin_lock_active.set(false);
+    state.pin_setup_active.set(false);
+    state.pin_setup_route.set(None);
+    state.pin_input.set(String::new());
+    state.pin_error.set(false);
     state.is_parent.set(false);
     state.parent_children.set(Vec::new());
     state.active_child_index.set(0);
     state.setup_new_password_active.set(false);
     state.setup_temp_password_data.set(None);
-    state.lessons.set(Vec::new());
-    state.bell_times.set(Vec::new());
-    state.timetable_days.set(Vec::new());
-    state.subjects_teachers.set(Vec::new());
-    state.final_marks.set(crate::app::FinalMarks::new());
+    state.current_section.set(crate::Section::Diary);
 }
 
 pub fn logout_keys() {
-    let keep_creds = crate::shared::biometric::is_enabled();
+    let _lock = TOKEN_STORE.lock().unwrap();
     for key in [
-        TOKEN_KEY, REFRESH_KEY, SCHOOL_ID_KEY, PROFILE_ID_KEY, CLASS_ID_KEY, FULL_NAME_KEY,
-        SCHOOL_NAME_KEY, REMEMBER_KEY, PASSWORD_KEY,
+        TOKEN_KEY,
+        REFRESH_KEY,
+        SCHOOL_ID_KEY,
+        PROFILE_ID_KEY,
+        CLASS_ID_KEY,
+        FULL_NAME_KEY,
+        SCHOOL_NAME_KEY,
+        REMEMBER_KEY,
+        PASSWORD_KEY,
+        ACCOUNT_KEY,
     ] {
         secure::delete(key);
     }
-    if !keep_creds {
+    if !crate::shared::biometric::is_enabled() {
         secure::delete(USERNAME_KEY);
     }
 }
 
 pub fn save_token(state: AppState, access: &str, refresh: &str) {
-    secure::save(TOKEN_KEY, access);
-    secure::save(REFRESH_KEY, refresh);
-    state.is_authenticated.set(true);
-    super::diary::load_all(state);
+    persist_tokens(&Token {
+        access_token: access.into(),
+        refresh_token: refresh.into(),
+    });
+    ensure_account_id();
+    if state.is_authenticated.get() {
+        super::diary::load_all(state);
+    } else {
+        state.is_authenticated.set(true);
+    }
 }
 
-/// Try to refresh the token via OAuth refresh flow.
+/// Serialize refresh requests and refuse to resurrect logged-out credentials.
 pub fn try_refresh_token() -> Option<String> {
-    nslog::nslog("[Auth] Attempting token refresh...");
-
-    if let Some(refresh_str) = secure::load(REFRESH_KEY) {
-        match eschool_api::auth::refresh_access_token(&refresh_str) {
-            Ok((new_access, new_refresh)) => {
-                nslog::nslog("[Auth] Token refresh OK");
-                secure::save(TOKEN_KEY, &new_access);
-                secure::save(REFRESH_KEY, &new_refresh);
-                return Some(new_access);
+    let _refresh = REFRESH_LOCK.lock().unwrap();
+    let (old_refresh, account) = {
+        let _store = TOKEN_STORE.lock().unwrap();
+        (secure::load(REFRESH_KEY)?, secure::load(ACCOUNT_KEY))
+    };
+    let result = eschool_api::auth::refresh_access_token(&old_refresh);
+    match result {
+        Ok((access, refresh)) => {
+            let _store = TOKEN_STORE.lock().unwrap();
+            if secure::load(REFRESH_KEY).as_deref() != Some(&old_refresh)
+                || secure::load(ACCOUNT_KEY) != account
+            {
+                return None;
             }
-            Err(e) => {
-                nslog::nslog(&format!("[Auth] Refresh failed: {e}"));
-            }
+            secure::save(TOKEN_KEY, &access);
+            secure::save(REFRESH_KEY, &refresh);
+            Some(access)
+        }
+        Err(e) => {
+            nslog::nslog(&format!("[Auth] Refresh failed: {e}"));
+            None
         }
     }
-
-    nslog::nslog("[Auth] All auth methods failed, need manual login");
-    None
 }
 
 pub fn get_token() -> Option<String> {
@@ -343,32 +338,21 @@ pub fn store_ids(
     secure::save(SCHOOL_NAME_KEY, school_name);
 }
 
-static BG_REFRESH_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static BG_REFRESH_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
-/// Start background token refresh — every 55 minutes.
+/// The process-wide worker survives logout and temporary network failures.
+/// It reads the current credentials each time, so a later login needs no restart.
 pub fn start_background_refresh() {
-    if BG_REFRESH_STARTED.swap(true, std::sync::atomic::Ordering::AcqRel) {
+    use std::sync::atomic::Ordering;
+    if BG_REFRESH_STARTED.swap(true, Ordering::AcqRel) {
         return;
     }
     std::thread::spawn(|| {
-        nslog::nslog("[Auth] Background refresh started (55 min interval)");
         loop {
             std::thread::sleep(std::time::Duration::from_secs(55 * 60));
-
-            if secure::load(TOKEN_KEY).is_none() {
-                nslog::nslog("[Auth] Background refresh: no token, stopping");
-                BG_REFRESH_STARTED.store(false, std::sync::atomic::Ordering::Release);
-                break;
-            }
-
-            nslog::nslog("[Auth] Background refresh: refreshing token...");
-            match try_refresh_token() {
-                Some(_) => nslog::nslog("[Auth] Background refresh: OK"),
-                None => {
-                    nslog::nslog("[Auth] Background refresh: FAILED, need manual login");
-                    BG_REFRESH_STARTED.store(false, std::sync::atomic::Ordering::Release);
-                    break;
-                }
+            if get_token().is_some() {
+                let _ = try_refresh_token();
             }
         }
     });

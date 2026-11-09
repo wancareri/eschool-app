@@ -27,11 +27,7 @@ pub fn remaining_lockout_secs() -> Option<u64> {
     let until = day::prefs::get(PIN_LOCKOUT_KEY)
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
-    if until > now {
-        Some(until - now)
-    } else {
-        None
-    }
+    if until > now { Some(until - now) } else { None }
 }
 
 /// Save a 4-digit PIN (hashes with random salt and key stretching).
@@ -79,7 +75,8 @@ pub fn verify(pin: &str) -> bool {
     } else {
         let attempts = day::prefs::get(PIN_ATTEMPTS_KEY)
             .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(0) + 1;
+            .unwrap_or(0)
+            + 1;
         day::prefs::set(PIN_ATTEMPTS_KEY, &attempts.to_string());
 
         if attempts >= 5 {
@@ -117,9 +114,11 @@ pub fn should_auto_lock() -> bool {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let elapsed = now.saturating_sub(last);
-    let should_lock = elapsed > LOCK_TIMEOUT_SECS;
+    let should_lock = lock_due(last, now);
     if should_lock {
-        nslog::nslog(&format!("[PIN] Auto-lock: elapsed {elapsed}s > {LOCK_TIMEOUT_SECS}s"));
+        nslog::nslog(&format!(
+            "[PIN] Auto-lock: elapsed {elapsed}s > {LOCK_TIMEOUT_SECS}s"
+        ));
     }
     should_lock
 }
@@ -144,4 +143,89 @@ fn hash_pin(pin: &str, salt: &str) -> String {
         current = hasher.finalize().to_vec();
     }
     current.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn lock_due(last: u64, now: u64) -> bool {
+    last != 0 && (now < last || now - last >= LOCK_TIMEOUT_SECS)
+}
+
+#[cfg(target_os = "ios")]
+pub fn install_lifecycle_observers() {
+    use objc2::rc::Retained;
+    use objc2::{MainThreadMarker, MainThreadOnly, define_class};
+    use objc2_foundation::{NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol};
+
+    define_class!(
+        #[unsafe(super(NSObject))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "EschoolLockLifecycleObserver"]
+        struct LockObserver;
+        unsafe impl NSObjectProtocol for LockObserver {}
+        impl LockObserver {
+            #[unsafe(method(didEnterBackground:))]
+            fn did_enter_background(&self, _notification: &NSNotification) {
+                save_last_background();
+            }
+            #[unsafe(method(willEnterForeground:))]
+            fn will_enter_foreground(&self, _notification: &NSNotification) {
+                let Some(state) = crate::app::AppState::get_main() else { return };
+                if !state.is_authenticated.get() || !should_auto_lock() { return; }
+                let pin = is_enabled();
+                let biometric = crate::shared::biometric::is_enabled()
+                    && crate::shared::biometric::is_available();
+                if !pin && !biometric { return; }
+                crate::shared::session::invalidate();
+                crate::features::diary::clear_data(state);
+                state.biometric_ok.set(false);
+                state.pin_input.set(String::new());
+                state.pin_error.set(false);
+                state.is_authenticated.set(false);
+                state.pin_lock_active.set(pin);
+                // The pin_lock_active watcher handles the PIN+Face ID case.
+                if biometric && !pin { crate::shared::biometric::authenticate_async(state); }
+            }
+        }
+    );
+    thread_local! {
+        static OBSERVER: std::cell::RefCell<Option<Retained<LockObserver>>> = const { std::cell::RefCell::new(None) };
+    }
+    OBSERVER.with(|slot| {
+        if slot.borrow().is_some() {
+            return;
+        }
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let observer: Retained<LockObserver> =
+            unsafe { objc2::msg_send![LockObserver::alloc(mtm), init] };
+        let center = NSNotificationCenter::defaultCenter();
+        unsafe {
+            center.addObserver_selector_name_object(
+                &observer,
+                objc2::sel!(didEnterBackground:),
+                Some(objc2_ui_kit::UIApplicationDidEnterBackgroundNotification),
+                None,
+            );
+            center.addObserver_selector_name_object(
+                &observer,
+                objc2::sel!(willEnterForeground:),
+                Some(objc2_ui_kit::UIApplicationWillEnterForegroundNotification),
+                None,
+            );
+        }
+        *slot.borrow_mut() = Some(observer);
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn relocks_after_five_minutes_in_background() {
+        assert!(!lock_due(1_000, 1_299));
+        assert!(lock_due(1_000, 1_300));
+        assert!(lock_due(1_000, 5_000));
+        assert!(!lock_due(0, 5_000));
+        assert!(lock_due(1_000, 900)); // Clock rollback must not bypass the lock.
+    }
 }
