@@ -1,5 +1,23 @@
 //! Explicit AutoFill roles for authentication inputs. Apply after Day realizes
 //! the UITextField, because its default traits otherwise override our settings.
+/// Deliver the navigation focus request after UIKit's completion callback.
+#[cfg(any(target_os = "ios", test))]
+fn complete_navigation_focus(
+    cancelled: bool,
+    keyboard_visible: bool,
+    post: impl FnOnce(Box<dyn FnOnce()>),
+    focus: impl FnOnce() + 'static,
+) {
+    if cancelled {
+        return;
+    }
+    if keyboard_visible {
+        focus();
+    } else {
+        post(Box::new(focus));
+    }
+}
+
 #[cfg(target_os = "ios")]
 pub mod ios {
     use day::prelude::Signal;
@@ -368,6 +386,7 @@ pub mod ios {
                         responder = current.nextResponder();
                     }
                     field.layoutIfNeeded();
+                    trace_traits(&field, role, "navigation-focus-before");
                     let focus = block2::RcBlock::new(|| {
                         field.becomeFirstResponder();
                     });
@@ -380,7 +399,27 @@ pub mod ios {
                     } else {
                         field.becomeFirstResponder();
                     }
+                    trace_traits(&field, role, "navigation-focus-after");
                 };
+                let finish = Rc::new(finish);
+                let complete = Rc::new(move |cancelled| {
+                    let keyboard_visible = crate::shared::keyboard::get_keyboard_height()
+                        > crate::shared::keyboard::get_safe_area_bottom();
+                    crate::shared::nslog::nslog(&format!(
+                        "[AutoFill] event=navigation-complete cancelled={cancelled} keyboard_visible={keyboard_visible}"
+                    ));
+                    let finish = finish.clone();
+                    super::complete_navigation_focus(cancelled, keyboard_visible, move |focus| {
+                        // Exit the transition callback before opening a new keyboard
+                        // session. Keep native objects confined to the main thread.
+                        let bound = dispatch2::MainThreadBound::new(focus, mtm);
+                        dispatch2::DispatchQueue::main().exec_async(move || {
+                            if let Some(mtm) = MainThreadMarker::new() {
+                                bound.into_inner(mtm)();
+                            }
+                        });
+                    }, move || finish());
+                });
                 let mut responder = field.nextResponder();
                 while let Some(current) = responder {
                     if let Some(vc) = current.downcast_ref::<objc2_ui_kit::UIViewController>() {
@@ -393,23 +432,20 @@ pub mod ios {
                                 UIViewControllerTransitionCoordinator,
                                 UIViewControllerTransitionCoordinatorContext,
                             };
-                            let finish = std::rc::Rc::new(finish);
-                            let on_complete = finish.clone();
+                            let on_complete = complete.clone();
                             let completion = block2::RcBlock::new(
                                 move |context: std::ptr::NonNull<
                                     ProtocolObject<
                                         dyn UIViewControllerTransitionCoordinatorContext,
                                     >,
                                 >| {
-                                    if !unsafe { context.as_ref().isCancelled() } {
-                                        on_complete();
-                                    }
+                                    on_complete(unsafe { context.as_ref().isCancelled() });
                                 },
                             );
                             if !coordinator
                                 .animateAlongsideTransition_completion(None, Some(&completion))
                             {
-                                finish();
+                                complete(false);
                             }
                             return;
                         }
@@ -417,7 +453,7 @@ pub mod ios {
                     }
                     responder = current.nextResponder();
                 }
-                finish();
+                complete(false);
             });
         }
         enqueue(role, Rc::new(allowed), true);
@@ -607,4 +643,78 @@ pub fn current_password(node: day::RNode) {
     let _ = day_uikit::with_native(node, |view, _, _| ios::configure(view, ios::Role::Password));
     #[cfg(not(target_os = "ios"))]
     let _ = node;
+}
+
+#[cfg(test)]
+mod navigation_focus_tests {
+    use super::complete_navigation_focus;
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+    };
+    type Pending = Rc<RefCell<Vec<Box<dyn FnOnce()>>>>;
+
+    #[test]
+    fn first_keyboard_focus_waits_until_after_completion_and_rechecks_route() {
+        let queue: Pending = Rc::default();
+        let deliveries = queue.clone();
+        let allowed = Rc::new(Cell::new(true));
+        let guard = allowed.clone();
+        let focused = Rc::new(Cell::new(false));
+        let focus = focused.clone();
+        complete_navigation_focus(
+            false,
+            false,
+            move |f| deliveries.borrow_mut().push(f),
+            move || {
+                if guard.get() {
+                    focus.set(true);
+                }
+            },
+        );
+        assert!(
+            !focused.get(),
+            "initial focus must not run inside transition completion"
+        );
+        assert_eq!(queue.borrow().len(), 1);
+        allowed.set(false); // Navigation/logout happened before the queued delivery.
+        let callback = queue.borrow_mut().pop().unwrap();
+        callback();
+        assert!(!focused.get(), "stale route must not receive delayed focus");
+
+        let queue: Pending = Rc::default();
+        let deliveries = queue.clone();
+        let focus = focused.clone();
+        complete_navigation_focus(
+            false,
+            false,
+            move |f| deliveries.borrow_mut().push(f),
+            move || focus.set(true),
+        );
+        let callback = queue.borrow_mut().pop().unwrap();
+        callback();
+        assert!(
+            focused.get(),
+            "a valid request must receive focus after completion"
+        );
+    }
+
+    #[test]
+    fn visible_keyboard_handoff_is_immediate_and_cancelled_navigation_never_focuses() {
+        let focused = Rc::new(Cell::new(0));
+        let focus = focused.clone();
+        complete_navigation_focus(
+            false,
+            true,
+            |_| panic!("visible keyboard handoff must not be delayed"),
+            move || focus.set(focus.get() + 1),
+        );
+        assert_eq!(focused.get(), 1);
+        complete_navigation_focus(
+            true,
+            false,
+            |_| panic!("cancelled navigation must not enqueue focus"),
+            || panic!("cancelled navigation must not focus"),
+        );
+    }
 }

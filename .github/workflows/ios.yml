@@ -29,6 +29,13 @@ jobs:
         with:
           targets: aarch64-apple-ios
 
+      # Restore Rust first so its post-job binary cleanup runs AFTER day-cli
+      # has been saved by actions/cache (post steps run in reverse order).
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          targets: aarch64-apple-ios
+
       - name: Cache day-cli binary
         uses: actions/cache@v4
         id: cache-day
@@ -39,11 +46,6 @@ jobs:
       - name: Install day-cli
         if: steps.cache-day.outputs.cache-hit != 'true'
         run: cargo install day-cli --version ${{ env.DAY_CLI_VERSION }} --locked
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          targets: aarch64-apple-ios
 
       - name: Build and Pack iOS App
         run: day pack -t ios-uikit --profile release --no-sign --verbose
