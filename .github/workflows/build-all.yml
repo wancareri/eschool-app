@@ -7,6 +7,9 @@ on:
     branches: [master]
   workflow_dispatch:
 
+env:
+  DAY_CLI_VERSION: "0.7.1"
+
 jobs:
   ios:
     runs-on: macos-15
@@ -25,8 +28,8 @@ jobs:
             ~/.cargo/git
             target
           key: cargo-${{ runner.os }}-ios-${{ hashFiles('Cargo.lock') }}
-      - run: cargo install day-cli
-      - run: day pack -p ios-uikit --profile release --no-sign --verbose
+      - run: cargo install day-cli --version ${{ env.DAY_CLI_VERSION }} --locked
+      - run: day pack -t ios-uikit --profile release --no-sign --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
@@ -48,8 +51,8 @@ jobs:
             ~/.cargo/git
             target
           key: cargo-${{ runner.os }}-macos-${{ hashFiles('Cargo.lock') }}
-      - run: cargo install day-cli
-      - run: day pack -p macos-appkit --profile release --no-sign --verbose
+      - run: cargo install day-cli --version ${{ env.DAY_CLI_VERSION }} --locked
+      - run: day pack -t macos-appkit --profile release --no-sign --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
@@ -70,8 +73,8 @@ jobs:
             ~/.cargo/git
             target
           key: cargo-${{ runner.os }}-android-${{ hashFiles('Cargo.lock') }}
-      - run: cargo install day-cli
-      - run: day pack -p android-mdc --profile release --verbose
+      - run: cargo install day-cli --version ${{ env.DAY_CLI_VERSION }} --locked
+      - run: day pack -t android-material --profile release --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
@@ -91,8 +94,8 @@ jobs:
             target
           key: cargo-${{ runner.os }}-linux-${{ hashFiles('Cargo.lock') }}
       - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
-      - run: cargo install day-cli
-      - run: day pack -p linux-gtk --profile release --verbose
+      - run: cargo install day-cli --version ${{ env.DAY_CLI_VERSION }} --locked
+      - run: day pack -t linux-gtk --profile release --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
@@ -111,8 +114,8 @@ jobs:
             ~/.cargo/git
             target
           key: cargo-${{ runner.os }}-windows-${{ hashFiles('Cargo.lock') }}
-      - run: cargo install day-cli
-      - run: day pack -p windows-xaml --profile release --verbose
+      - run: cargo install day-cli --version ${{ env.DAY_CLI_VERSION }} --locked
+      - run: day pack -t windows-xaml --profile release --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: windows-exe

@@ -7,6 +7,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+env:
+  DAY_CLI_VERSION: "0.7.1"
+
 jobs:
   build-ios:
     runs-on: macos-15
@@ -31,11 +34,11 @@ jobs:
         id: cache-day
         with:
           path: ~/.cargo/bin/day
-          key: ${{ runner.os }}-day-cli-0.5.0
+          key: ${{ runner.os }}-day-cli-${{ env.DAY_CLI_VERSION }}
 
       - name: Install day-cli
         if: steps.cache-day.outputs.cache-hit != 'true'
-        run: cargo install day-cli --version 0.5.0 --locked
+        run: cargo install day-cli --version ${{ env.DAY_CLI_VERSION }} --locked
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
@@ -43,7 +46,7 @@ jobs:
           targets: aarch64-apple-ios
 
       - name: Build and Pack iOS App
-        run: day pack -p ios-uikit --profile release --no-sign --verbose
+        run: day pack -t ios-uikit --profile release --no-sign --verbose
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4

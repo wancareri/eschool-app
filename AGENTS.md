@@ -128,7 +128,7 @@ eschool-app/
 - **System save prompts:** setting text traits improves AutoFill heuristics; it does not establish ownership of a third-party website. Guaranteed domain credential sharing/saving requires associated domains, matching signing entitlements and the website's AASA configuration. Do not promise that an unsigned/sideloaded build can force Apple Passwords to save credentials for e-schools.by.
 - Do not call `reloadInputViews` on input-mode changes: it can interrupt the active Password AutoFill session. Preserve the existing content type when it already matches.
 - **Locking Assistant Bar:**
-  Set `inputAssistantItem.setAllowsHidingShortcuts: false` so iOS does not collapse the shortcut bar.
+  `inputAssistantItem.setAllowsHidingShortcuts: false` concerns the iPad shortcuts bar. Apple documents that iPhone ignores assistant-item contents; this is not a supported way to pin iPhone Password AutoFill suggestions. It also does not affect built-in auto-hiding logic. Do not treat it as a confirmed Passwords fix.
 - **Language changes:** update localized text and native page titles in place. Keep the authentication stack, focus and field values alive. Do not apply a whole-form `.animation(...)` to the auth form; menu changes must not replay its entrance animation.
 
 ---
@@ -175,3 +175,17 @@ eschool-app/
 - Current diagnostic patch avoids reassigning `allowsHidingShortcuts` when already false, and records `[AutoFill]` events before/after input-mode reconciliation. This is an unverified hypothesis, not a confirmed fix.
 - Settings → Dev → Input diagnostics exports only dedicated trait snapshots, including in release builds. Diagnostics must never read credential text, selection or lengths, and must exclude general authentication/API logs.
 - Need actual device reproduction/logs to determine whether fields lose credential traits or UIKit loses its candidate session. USB device access is currently unavailable; the user cannot connect the iPhone now.
+
+### AutoFill documentation investigation after build 70
+- Current Day documentation exposes `.input_purpose(InputPurpose::Username/Password)`. The app’s pinned Day 0.4.3 revision does not expose `InputPurpose`; its UIKit renderer sets initial content type from `secure`, while app-owned `shared/autofill.rs` restores explicit UIKit credential constants after realization. Do not paste APIs from current docs into this older fork without checking source compatibility.
+- Apple explicitly supports separate-page username/password AutoFill with corresponding content types. Multi-step login alone does not establish the cause of the intermittent empty strip.
+- The login ellipsis menu now includes Copy input diagnostics so it can be exported before authentication, with no modal, form reset or forced responder handoff. Empty logs copy the localized explanation instead of leaving stale clipboard text. Included in the build 71 migration.
+- References: https://daybrite.dev/docs/reference/textfield/ ; https://daybrite.dev/docs/reference/cli/ ; https://developer.apple.com/documentation/security/enabling-password-autofill-on-a-text-input-view ; https://developer.apple.com/documentation/uikit/uitextinputassistantitem
+
+### Day CLI 0.7.1 migration (build 71)
+- Latest stable `day-cli` verified against crates.io: 0.7.1. Both CI workflows pin it with `--locked`; iOS binary cache keys include that version. Commands now use `-t/--target`, since `-p/--platform` was removed.
+- The application framework remains the pinned Day 0.4.3 fork. CLI installation does not change the runtime or introduce `InputPurpose`; do not describe this migration as a Passwords fix.
+- CLI 0.7.1 requires Xcode 27 JSON5 `project.xcproj` files. Native iOS/macOS projects use the new official host templates; iOS retains `nslog_bridge.m` in compile sources. The old `project.pbxproj` is legacy, not the CLI's canonical configuration.
+- iOS deployment target is 16.0. `[permissions] biometrics` in Day.toml owns the Face ID usage description; the CLI regenerates it in Info.plist. Do not hand-edit only the generated key.
+- `android-material` is the canonical CLI target. The app's `material` feature aliases the existing `mdc` feature for compatibility with its older runtime and Lottie piece.
+- Build 71 includes the previously prepared login-menu diagnostic-copy action.

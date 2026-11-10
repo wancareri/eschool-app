@@ -280,7 +280,20 @@ pub fn auth_toolbar() -> Vec<ToolbarEntry> {
         menu_item(res::str::auth_theme_dark().format()).id("auth-theme-dark").icon(Symbol::Dark)
             .checked(theme.as_deref() == Some("dark")).action(|| choose_auth_theme(Some(true))),
     ]).icon(if dark { Symbol::Dark } else { Symbol::Light });
-    vec![toolbar_menu("auth-options", res::str::auth_options(), vec![language, appearance])
+    let diagnostics = menu_item(res::str::autofill_diagnostics_copy().format())
+        .id("auth-copy-input-diagnostics")
+        .icon(Symbol::Copy)
+        .action(|| {
+            let report = crate::shared::nslog::autofill_diagnostics();
+            let report = if report.is_empty() {
+                res::str::autofill_diagnostics_empty().format()
+            } else {
+                report
+            };
+            day_part_clipboard::set_text(&report);
+            crate::shared::haptics::tick();
+        });
+    vec![toolbar_menu("auth-options", res::str::auth_options(), vec![language, appearance, diagnostics])
         .icon(Symbol::More).placement(ToolbarPlacement::Primary)]
 }
 

@@ -14,6 +14,8 @@ gtk = ["day/gtk"]
 qt = ["day/qt"]
 uikit = ["day/uikit", "day-piece-lottie/uikit"]
 mdc = ["day/mdc", "day-piece-lottie/mdc"]
+# Day CLI 0.7 names this toolkit material; keep the Day 0.4 backend.
+material = ["mdc"]
 xaml = ["day/xaml"]
 arkui = ["day/arkui"]
 dom = ["day/dom"]
