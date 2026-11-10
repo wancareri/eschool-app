@@ -104,3 +104,10 @@ status_error_title = Памылка падключэння
 status_error_message = Не ўдалося падключыцца да сервера. Захаваныя даныя могуць быць неактуальныя.
 status_ready_title = Даныя абноўлены
 status_ready_message = Падключэнне працуе. Даступныя апошнія загружаныя даныя.
+
+# Credential keyboard diagnostics
+autofill_diagnostics_title = Дыягностыка ўводу
+autofill_diagnostics_hint = Пасля паўтарэння праблемы з Passwords скапіруйце журнал. Ён змяшчае толькі параметры палёў і раскладкі, без лагіна і пароля.
+autofill_diagnostics_copy = Скапіраваць дыягностыку ўводу
+autofill_diagnostics_empty = Запісаў пакуль няма. Адкрыйце форму ўваходу і пераключыце раскладку.
+autofill_diagnostics_copied = Дыягностыка скапіравана

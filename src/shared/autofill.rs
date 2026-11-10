@@ -19,7 +19,7 @@ pub mod ios {
     };
     use std::cell::RefCell;
 
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     pub enum Role {
         Username,
         Password,
@@ -94,7 +94,10 @@ pub mod ios {
         if field.returnKeyType() != return_key {
             field.setReturnKeyType(return_key);
         }
-        field.inputAssistantItem().setAllowsHidingShortcuts(false);
+        let assistant = field.inputAssistantItem();
+        if assistant.allowsHidingShortcuts() {
+            assistant.setAllowsHidingShortcuts(false);
+        }
     }
 
     fn find_field(view: &UIView) -> Option<Retained<UITextField>> {
@@ -109,6 +112,7 @@ pub mod ios {
             return;
         };
         traits(&field, role);
+        trace_traits(&field, role, "configured");
         FIELDS.with(|all| {
             let mut all = all.borrow_mut();
             all.retain(|(weak, _)| weak.load().is_some_and(|f| !std::ptr::eq(&*f, &*field)));
@@ -183,7 +187,7 @@ pub mod ios {
     pub fn refresh_active() {
         dispatch2::DispatchQueue::main().exec_async(|| {
             LAST_MODE.with(|last| *last.borrow_mut() = None);
-            restore_current_traits();
+            restore_current_traits("app-language");
         });
     }
 
@@ -461,7 +465,31 @@ pub mod ios {
         });
     }
 
-    fn restore_current_traits() {
+    fn trace_traits(field: &UITextField, role: Role, event: &str) {
+        // Deliberately never read field.text(), selection, or credential lengths.
+        let language = field
+            .textInputMode()
+            .and_then(|mode| mode.primaryLanguage())
+            .map(|value| value.to_string())
+            .unwrap_or_default();
+        let prediction = if field.respondsToSelector(objc2::sel!(inlinePredictionType)) {
+            field.inlinePredictionType().0.to_string()
+        } else {
+            "unsupported".into()
+        };
+        crate::shared::nslog::nslog(&format!(
+            "[AutoFill] event={event} role={role:?} language={language} content_type={} secure={} focused={} autocorrection={} spellcheck={} inline_prediction={} allows_hiding_shortcuts={}",
+            field.textContentType(),
+            field.isSecureTextEntry(),
+            field.isFirstResponder(),
+            field.autocorrectionType().0,
+            field.spellCheckingType().0,
+            prediction,
+            field.inputAssistantItem().allowsHidingShortcuts(),
+        ));
+    }
+
+    fn restore_current_traits(event: &str) {
         let current = FIELDS.with(|all| {
             let mut all = all.borrow_mut();
             all.retain(|(weak, _)| weak.load().is_some());
@@ -470,7 +498,11 @@ pub mod ios {
                 field.isFirstResponder().then_some((field, *role))
             })
         });
-        let Some((field, role)) = current else { return };
+        let Some((field, role)) = current else {
+            crate::shared::nslog::nslog(&format!("[AutoFill] event={event} active_field=none"));
+            return;
+        };
+        trace_traits(&field, role, event);
         let language = field
             .textInputMode()
             .and_then(|mode| mode.primaryLanguage())
@@ -488,7 +520,9 @@ pub mod ios {
         // Input-mode changes do not require rebuilding the keyboard. Doing so
         // interrupts the credential suggestion session on multilingual keyboards.
         if changed {
+            trace_traits(&field, role, "mode-before-reconcile");
             traits(&field, role);
+            trace_traits(&field, role, "mode-after-reconcile");
         }
     }
 
@@ -513,10 +547,11 @@ pub mod ios {
             }
 
             #[unsafe(method(inputModeChanged:))]
-            fn input_mode_changed(&self, _notification: &NSNotification) {
+            fn input_mode_changed(&self, notification: &NSNotification) {
                 // UIKit has to finish changing input modes before traits and
                 // the assistant bar can be reconciled. Never resign/refocus.
-                dispatch2::DispatchQueue::main().exec_async(restore_current_traits);
+                let event = notification.name().to_string();
+                dispatch2::DispatchQueue::main().exec_async(move || restore_current_traits(&event));
             }
         }
     );

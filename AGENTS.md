@@ -169,3 +169,9 @@ eschool-app/
 - `widgets::notice` is the shared message UI using the same modal shell. `bind_error` consumes an error source once and presents it, so repeating the same failed action can show the error again. `presenter(state)` exposes Send-safe setters for async success callbacks.
 - Global app errors, login validation, password creation/change and biometric setup notices use this shell. Network-status text and shared actions are localized in RU/BE/EN. PIN keypad validation remains part of the PIN form.
 - Logout closes notice/network routes and clears their payload. The user subsequently requested publishing these accumulated changes to GitHub as build 69.
+
+### Unresolved Passwords strip after keyboard-language changes
+- User confirmed build 69 still loses Passwords on iOS 27: the strip remains visible but empty. Disabling autocorrection did not resolve credential-suggestion retention. Do not claim otherwise.
+- Current diagnostic patch avoids reassigning `allowsHidingShortcuts` when already false, and records `[AutoFill]` events before/after input-mode reconciliation. This is an unverified hypothesis, not a confirmed fix.
+- Settings → Dev → Input diagnostics exports only dedicated trait snapshots, including in release builds. Diagnostics must never read credential text, selection or lengths, and must exclude general authentication/API logs.
+- Need actual device reproduction/logs to determine whether fields lose credential traits or UIKit loses its candidate session. USB device access is currently unavailable; the user cannot connect the iPhone now.

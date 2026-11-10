@@ -41,7 +41,8 @@ fn push_log(msg: &str) {
 }
 
 pub fn get_logs() -> String {
-    LOG_BUFFER.lock()
+    LOG_BUFFER
+        .lock()
         .map(|buf| buf.join("\n"))
         .unwrap_or_default()
 }
@@ -49,5 +50,35 @@ pub fn get_logs() -> String {
 pub fn clear_logs() {
     if let Ok(mut buf) = LOG_BUFFER.lock() {
         buf.clear();
+    }
+}
+
+/// Export only the dedicated trait diagnostics, excluding general app/API logs.
+pub fn autofill_diagnostics() -> String {
+    filter_autofill_diagnostics(&get_logs())
+}
+
+fn filter_autofill_diagnostics(logs: &str) -> String {
+    logs.lines()
+        .filter(|line| {
+            line.split_once("] ")
+                .is_some_and(|(_, message)| message.starts_with("[AutoFill] "))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::filter_autofill_diagnostics;
+
+    #[test]
+    fn export_excludes_general_logs_and_embedded_autofill_tags() {
+        let logs = "[1] [Auth] token=private\n[2] [AutoFill] role=Username language=ru\n[3] [Auth] response contains [AutoFill] password=private\n[4] [AutoFill] role=Password language=en\n";
+        assert_eq!(
+            filter_autofill_diagnostics(logs),
+            "[2] [AutoFill] role=Username language=ru\n[4] [AutoFill] role=Password language=en"
+        );
+        assert_eq!(filter_autofill_diagnostics("[5] [API] private"), "");
     }
 }

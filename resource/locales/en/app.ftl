@@ -113,3 +113,10 @@ status_error_title = Connection error
 status_error_message = Couldn’t connect to the server. Saved data may be out of date.
 status_ready_title = Data updated
 status_ready_message = Connected. The latest downloaded data is available.
+
+# Credential keyboard diagnostics
+autofill_diagnostics_title = Input diagnostics
+autofill_diagnostics_hint = After reproducing the Passwords issue, copy the log. It contains only field and keyboard settings, without your username or password.
+autofill_diagnostics_copy = Copy input diagnostics
+autofill_diagnostics_empty = No entries yet. Open the sign-in form and switch keyboard layouts.
+autofill_diagnostics_copied = Diagnostics copied

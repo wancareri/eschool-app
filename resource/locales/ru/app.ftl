@@ -104,3 +104,10 @@ status_error_title = Ошибка подключения
 status_error_message = Не удалось подключиться к серверу. Сохранённые данные могут быть неактуальны.
 status_ready_title = Данные обновлены
 status_ready_message = Подключение работает. Доступны последние загруженные данные.
+
+# Credential keyboard diagnostics
+autofill_diagnostics_title = Диагностика ввода
+autofill_diagnostics_hint = После воспроизведения проблемы с Passwords скопируйте журнал. Он содержит только параметры полей и раскладки, без логина и пароля.
+autofill_diagnostics_copy = Скопировать диагностику ввода
+autofill_diagnostics_empty = Записей пока нет. Откройте форму входа и переключите раскладку.
+autofill_diagnostics_copied = Диагностика скопирована

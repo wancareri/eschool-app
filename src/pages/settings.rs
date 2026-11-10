@@ -518,6 +518,7 @@ fn dev_settings(state: AppState) -> impl Piece {
                     .color(colors::SECONDARY),
             )
         ).title("Логи"),
+        input_diagnostics(),
     ))
     .padding(Insets { top: 16.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
@@ -531,7 +532,27 @@ fn dev_settings(_state: AppState) -> impl Piece {
                 label("Версия: v0.1.0"),
             )
         ).title("Информация"),
+        input_diagnostics(),
     ))
     .padding(Insets { top: 16.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
+fn input_diagnostics() -> impl Piece {
+    let result = Signal::new(String::new());
+    section((
+        label(res::str::autofill_diagnostics_hint()).font(Font::Subheadline).secondary(),
+        button(res::str::autofill_diagnostics_copy()).action(move || {
+            let diagnostics = nslog::autofill_diagnostics();
+            if diagnostics.is_empty() {
+                result.set(res::str::autofill_diagnostics_empty().format());
+            } else {
+                day_part_clipboard::set_text(&diagnostics);
+                result.set(res::str::autofill_diagnostics_copied().format());
+                crate::shared::haptics::tick();
+            }
+        }),
+        when(move || !result.get().is_empty(), move || {
+            label(move || result.get()).font(Font::Caption).secondary().any()
+        }),
+    )).title(res::str::autofill_diagnostics_title())
+}
