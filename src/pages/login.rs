@@ -370,6 +370,17 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
     piece
 }
 
+// Native field configuration and flexible sizing must share this boundary.
+#[cfg(any(target_os = "ios", test))]
+fn native_auth_input(
+    field: impl Decorate,
+    configure: impl FnOnce(day::RNode) + 'static,
+) -> impl Piece {
+    // grow_w/height/frame return layout-only nodes in Day 0.4. Configure
+    // the leaf before wrapping it, otherwise with_native silently returns None.
+    field.tweak(configure).grow_w()
+}
+
 fn username_step_view(
     username: Signal<String>,
     password: Signal<String>,
@@ -396,17 +407,17 @@ fn username_step_view(
     let input_field = text_field(username)
         .placeholder(res::str::auth_username_placeholder())
         .focused(username_focused)
-        .grow_w()
         .log_pos("Auth:UsernameField")
         .on_submit(on_sub);
 
     #[cfg(target_os = "ios")]
-    let input_field = {
-        use day_uikit::UiKitExt;
-        input_field.uikit(move |view, _, _| {
+    let input_field = native_auth_input(input_field, move |node| {
+        let _ = day_uikit::with_native(node, move |view, _, _| {
             crate::shared::autofill::ios::username(view, username);
-        })
-    };
+        });
+    });
+    #[cfg(not(target_os = "ios"))]
+    let input_field = input_field.grow_w();
 
     let input_card = row((
         vector(res::vectors::tab_login)
@@ -445,13 +456,12 @@ fn username_step_view(
     // password field on the destination page. It has no hit/accessibility target.
     #[cfg(target_os = "ios")]
     let credential_capture = {
-        use day_uikit::UiKitExt;
         when(move || get_auth_state().path.get().last() == Some(&AuthRoute::Login), move || {
-            text_field(password).secure().height(1.0).grow_w()
-                .uikit(move |view, _, _| {
+            native_auth_input(text_field(password).secure(), move |node| {
+                let _ = day_uikit::with_native(node, move |view, _, _| {
                     crate::shared::autofill::ios::capture_password(view, password);
-                })
-                .any()
+                });
+            }).height(1.0).any()
         })
     };
     #[cfg(not(target_os = "ios"))]
@@ -568,16 +578,16 @@ fn password_step_view(
         .secure()
         .placeholder(res::str::auth_password_placeholder())
         .focused(password_focused)
-        .grow_w()
         .id("password-field")
         .log_pos("Auth:PasswordField")
         .on_submit(on_submit.clone());
 
     #[cfg(target_os = "ios")]
-    let pw_field = {
-        use day_uikit::UiKitExt;
-        pw_field.uikit(move |view, _, _| crate::shared::autofill::ios::password(view, show_password, password))
-    };
+    let pw_field = native_auth_input(pw_field, move |node| {
+        let _ = day_uikit::with_native(node, move |view, _, _| {
+            crate::shared::autofill::ios::password(view, show_password, password);
+        });
+    });
 
     #[cfg(not(target_os = "ios"))]
     let pw_field = {
@@ -1301,6 +1311,35 @@ mod auth_error_tests {
         assert!(auth.remember.get());
         reset_auth_flow();
         assert!(auth.path.get().is_empty());
+    }
+
+    #[cfg(feature = "mock")]
+    #[test]
+    fn credential_configuration_receives_the_native_field_before_layout_wrappers() {
+        use day::prelude::*;
+        use std::{cell::Cell, rc::Rc};
+        let configured = Rc::new(Cell::new(0));
+        let observed = configured.clone();
+        let (mock, _) = day_mock::MockToolkit::new();
+        day_core::uninstall_tree();
+        day_core::launch_with(mock, day_spec::WindowOptions::default(), move || {
+            let input = |secure| {
+                let observed = observed.clone();
+                let value = Signal::new(String::new());
+                let field = if secure { text_field(value).secure() } else { text_field(value) };
+                super::native_auth_input(field, move |node| {
+                    day_core::with_tree(|tree| {
+                        assert!(tree.node_handle_any(node).is_some(),
+                            "credential configuration was given a layout node without a native handle");
+                        assert_eq!(tree.node_kind(node), Some(day_spec::kinds::TEXT_FIELD));
+                    });
+                    observed.set(observed.get() + 1);
+                }).height(44.0).any()
+            };
+            column((input(false), input(true), input(true))).any()
+        });
+        assert_eq!(configured.get(), 3, "username, password and capture field must all configure");
+        day_core::uninstall_tree();
     }
 
     #[test]

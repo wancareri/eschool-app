@@ -189,3 +189,9 @@ eschool-app/
 - iOS deployment target is 16.0. `[permissions] biometrics` in Day.toml owns the Face ID usage description; the CLI regenerates it in Info.plist. Do not hand-edit only the generated key.
 - `android-material` is the canonical CLI target. The app's `material` feature aliases the existing `mdc` feature for compatibility with its older runtime and Lottie piece.
 - Build 71 includes the previously prepared login-menu diagnostic-copy action.
+
+### Native credential hooks skipped by layout wrappers (build 72)
+- Device report from build 71: after opening the username field and switching layouts, Copy input diagnostics returned the empty-log explanation.
+- Confirmed source-level cause: in Day 0.4, `.grow_w()`, `.height()` and `.frame()` create layout-only RNodes without a native handle. `.uikit()`/`with_native` applied after those wrappers silently skips its callback. The username, password, and capture-field AutoFill callbacks had this ordering error; their traits, registration, and input-mode observer were not installed. Earlier AutoFill configuration changes therefore did not reach these fields.
+- `native_auth_input` in login.rs applies the native tweak to the leaf, then adds `.grow_w()`. All three auth fields use it; capture-field height wraps the result. Keep native configuration before layout-only wrappers. The password id now also belongs to the field itself.
+- A regression test mounts all three field shapes with the mock toolkit and asserts the configuration callback receives a TEXT_FIELD node with a native handle. It failed with the old ordering and passes after the fix. This verifies hook targeting, not UIKit QuickType visibility; on-device testing is still required.
