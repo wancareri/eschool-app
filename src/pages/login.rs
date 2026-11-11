@@ -334,20 +334,7 @@ pub fn auth_toolbar() -> Vec<ToolbarEntry> {
         menu_item(res::str::auth_theme_dark().format()).id(day::id!(auth_theme_dark)).icon(Symbol::Dark)
             .checked(theme.as_deref() == Some("dark")).action(|| choose_auth_theme(Some(true))),
     ]).icon(if dark { Symbol::Dark } else { Symbol::Light });
-    let diagnostics = menu_item(res::str::autofill_diagnostics_copy().format())
-        .id(day::id!(auth_copy_input_diagnostics))
-        .icon(Symbol::Copy)
-        .action(|| {
-            let report = crate::shared::nslog::autofill_diagnostics();
-            let report = if report.is_empty() {
-                res::str::autofill_diagnostics_empty().format()
-            } else {
-                report
-            };
-            day_part_clipboard::set_text(&report);
-            crate::shared::haptics::tick();
-        });
-    vec![toolbar_menu(day::id!(auth_options), res::str::auth_options(), vec![language, appearance, diagnostics])
+    vec![toolbar_menu(day::id!(auth_options), res::str::auth_options(), vec![language, appearance])
         .icon(Symbol::More).placement(ToolbarPlacement::Primary)]
 }
 
@@ -435,6 +422,18 @@ fn native_auth_input(
     field.tweak(configure).grow(Dimension::Width)
 }
 
+/// Only the action follows the keyboard. The compact sticker and input card
+/// retain their top positions throughout keyboard presentation and dismissal.
+fn auth_keyboard_dock(action: impl Piece) -> impl Piece {
+    let dock = column((action,)).spacing(0.0);
+    #[cfg(target_os = "ios")]
+    let dock = {
+        use day_uikit::UiKitExt;
+        dock.uikit(|view, _, _| crate::shared::keyboard::register_follower_view(view))
+    };
+    dock.grow(Dimension::Width)
+}
+
 fn username_step_view(
     username: Signal<String>,
     password: Signal<String>,
@@ -445,17 +444,9 @@ fn username_step_view(
 ) -> impl Piece {
     let sticker = row((
         spacer().grow(Dimension::Both),
-        crate::widgets::lottie_view::duck_login_animation(230.0),
+        crate::widgets::lottie_view::duck_login_animation(116.0),
         spacer().grow(Dimension::Both),
     ));
-
-    #[cfg(target_os = "ios")]
-    let sticker = {
-        use day_uikit::UiKitExt;
-        sticker.uikit(|view, _class, _mtm| {
-            crate::shared::keyboard::register_sticker_view(view);
-        })
-    };
 
     let on_sub = on_submit.clone();
     let input_field = text_field(username)
@@ -545,29 +536,19 @@ fn username_step_view(
     ));
 
 
-    let bottom_section = column((
-        label(res::str::auth_step_username()).font(Font::Caption).secondary()
-            .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
-        content,
-        auth_action_button(res::str::auth_continue(),
-            move || !username.get().trim().is_empty() && !state.loading.get(), on_submit),
-        spacer().height(8.0),
-    ));
-
-    #[cfg(target_os = "ios")]
-    let bottom_section = {
-        use day_uikit::UiKitExt;
-        bottom_section.uikit(|view, _class, _mtm| {
-            crate::shared::keyboard::register_content_view(view);
-        })
-    };
+    let action = auth_keyboard_dock(auth_action_button(res::str::auth_continue(),
+        move || !username.get().trim().is_empty() && !state.loading.get(), on_submit));
 
     let piece = column((
-        spacer().grow(Dimension::Both),
+        spacer().height(20.0),
         sticker,
+        label(res::str::auth_step_username()).font(Font::Headline).secondary()
+            .padding(Insets { top: 16.0, leading: 20.0, bottom: 16.0, trailing: 20.0 }),
+        content,
         spacer().grow(Dimension::Both),
-        bottom_section,
+        action,
     ))
+    .spacing(0.0)
     .grow(Dimension::Both)
     .background(move || {
         if day::dark_mode() {
@@ -601,17 +582,9 @@ fn password_step_view(
 ) -> impl Piece {
     let sticker = row((
         spacer().grow(Dimension::Both),
-        crate::widgets::lottie_view::duck_password_animation(230.0),
+        crate::widgets::lottie_view::duck_password_animation(116.0),
         spacer().grow(Dimension::Both),
     ));
-
-    #[cfg(target_os = "ios")]
-    let sticker = {
-        use day_uikit::UiKitExt;
-        sticker.uikit(|view, _class, _mtm| {
-            crate::shared::keyboard::register_sticker_view(view);
-        })
-    };
 
     let show_password = Signal::new(false);
 
@@ -700,30 +673,21 @@ fn password_step_view(
         }
     };
 
-    let bottom_section = column((
-        label(res::str::auth_step_password()).font(Font::Caption).secondary(),
-        label(move || username.get()).font(Font::Subheadline).bold()
-            .padding(Insets { top: 4.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
-        content,
-        auth_action_button(btn_title,
-            move || !password.get().trim().is_empty() && !state.loading.get(), on_submit),
-        spacer().height(8.0),
-    ));
-
-    #[cfg(target_os = "ios")]
-    let bottom_section = {
-        use day_uikit::UiKitExt;
-        bottom_section.uikit(|view, _class, _mtm| {
-            crate::shared::keyboard::register_content_view(view);
-        })
-    };
+    let action = auth_keyboard_dock(auth_action_button(btn_title,
+        move || !password.get().trim().is_empty() && !state.loading.get(), on_submit));
 
     let piece = column((
-        spacer().grow(Dimension::Both),
+        spacer().height(20.0),
         sticker,
+        label(res::str::auth_step_password()).font(Font::Headline).secondary()
+            .padding(Insets { top: 16.0, leading: 20.0, bottom: 4.0, trailing: 20.0 }),
+        label(move || username.get()).font(Font::Subheadline).bold()
+            .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
+        content,
         spacer().grow(Dimension::Both),
-        bottom_section,
+        action,
     ))
+    .spacing(0.0)
     .grow(Dimension::Both)
     .background(move || {
         if day::dark_mode() {
@@ -1343,6 +1307,54 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
 #[cfg(test)]
 mod auth_error_tests {
     use super::auth_error_code;
+
+    #[cfg(feature = "mock")]
+    #[test]
+    fn auth_steps_keep_inputs_below_compact_sticker_and_action_at_bottom() {
+        use day::prelude::*;
+        for password_step in [false, true] {
+            day_core::uninstall_tree();
+            let (mock, probe) = day_mock::MockToolkit::new();
+            day_core::launch_with(mock, day_spec::WindowOptions {
+                size: Size::new(390.0, 600.0), ..Default::default()
+            }, move || {
+                let state = crate::app::AppState::create();
+                if password_step {
+                    super::password_step_view(Signal::new("account".into()),
+                        Signal::new(String::new()), Signal::new(false), state, || {}).any()
+                } else {
+                    super::username_step_view(Signal::new(String::new()), Signal::new(String::new()),
+                        Signal::new(true), Signal::new(false), state, || {}).any()
+                }
+            });
+            let state = probe.state.borrow();
+            let bounds = |handle: u64| {
+                let mut frame = state.widgets[&handle].frame;
+                let mut child = handle;
+                while let Some((parent, widget)) = state.widgets.iter()
+                    .find(|(_, widget)| widget.children.contains(&child)) {
+                    frame.origin.x += widget.frame.origin.x;
+                    frame.origin.y += widget.frame.origin.y;
+                    child = *parent;
+                }
+                frame
+            };
+            let sticker = probe.find_by_kind("day.piece.lottie")[0].0;
+            let field = probe.find_by_kind(day_spec::kinds::TEXT_FIELD)[0].0;
+            let button = probe.find_by_kind(day_spec::kinds::BUTTON)[0].0;
+            let sticker = bounds(sticker.0);
+            let field = bounds(field.0);
+            let button = bounds(button.0);
+            assert!((110.0..=120.0).contains(&sticker.size.height), "sticker: {sticker:?}");
+            assert!((16.0..=24.0).contains(&sticker.origin.y), "top spacing: {sticker:?}");
+            assert!(field.origin.y > sticker.origin.y + sticker.size.height);
+            assert!(field.origin.y < 240.0, "input must follow sticker: {field:?}");
+            assert!((button.origin.y + button.size.height - 592.0).abs() < 0.5,
+                "action must be docked 8pt above safe-area bottom: {button:?}");
+            drop(state);
+            day_core::uninstall_tree();
+        }
+    }
 
     #[cfg(feature = "mock")]
     #[test]

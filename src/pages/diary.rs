@@ -99,44 +99,43 @@ pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let show_summary = Signal::new(false);
     let refreshing = Signal::new(false);
+    let period_revision = Signal::new(0u64);
 
-    let piece = zstack((
-        pull_to_refresh(refreshing, scroll(column((
-                column((
-                    child_switcher(state),
-                ))
-                .grow(Dimension::Width)
-                .padding(Insets { top: 8.0, leading: PAD, bottom: 4.0, trailing: PAD }),
-
-                sub_tabs(state, show_summary),
-                quarter_tabs(state),
-
-                when(
-                    move || !show_summary.get(),
-                    move || rebuild_on_class_change(move || week_view(state)),
-                ),
-                when(
-                    move || show_summary.get(),
-                    move || rebuild_on_class_change(move || summary_view(state)),
-                ),
-                spacer().frame(0.0, 16.0),
-            ))
-            .spacing(0.0)
-            .grow(Dimension::Both)))
-            .on_refresh(move || {
-                haptics::tick();
-                let state = AppState::ambient();
-                if state.is_authenticated.get() {
-                    features::diary::load_all(state);
-                }
-            })
-            .grow(Dimension::Both),
+    column((
+        // Period controls stay directly under the native title while lessons scroll.
+        column((
+            child_switcher(state),
+            sub_tabs(state, show_summary, period_revision),
+            quarter_tabs(state, show_summary, period_revision),
+        ))
+        .spacing(0.0)
+        .padding(Insets { top: 8.0, leading: 0.0, bottom: 4.0, trailing: 0.0 })
+        .grow(Dimension::Width),
+        when(
+            move || !show_summary.get(),
+            move || rebuild_on_class_change(move || week_view(state, refreshing, period_revision))
+                .grow(Dimension::Both),
+        ),
+        when(
+            move || show_summary.get(),
+            move || diary_scroll(state, refreshing,
+                rebuild_on_class_change(move || summary_view(state, period_revision))),
+        ),
     ))
-    .align(Alignment::TopLeading)
-    .grow(Dimension::Both);
+    .spacing(0.0)
+    .grow(Dimension::Both)
+}
 
-
-    piece
+fn diary_scroll(state: AppState, refreshing: Signal<bool>, content: impl Piece) -> impl Piece {
+    pull_to_refresh(refreshing, scroll(column((content, spacer().height(16.0)))
+        .spacing(0.0).grow(Dimension::Width)))
+        .on_refresh(move || {
+            haptics::tick();
+            if state.is_authenticated.get() {
+                features::diary::load_all(state);
+            }
+        })
+        .grow(Dimension::Both)
 }
 
 fn child_switcher(state: AppState) -> impl Piece {
@@ -188,16 +187,70 @@ fn child_switcher(state: AppState) -> impl Piece {
 
 // ── Quarter / Year tabs ────────────────────────────────────────────────
 
-fn quarter_tabs(state: AppState) -> impl Piece {
-    row((
-        quarter_btn(state, "I", 0),
-        quarter_btn(state, "II", 1),
-        quarter_btn(state, "III", 2),
-        quarter_btn(state, "IV", 3),
-        year_btn(state),
-    ))
-    .spacing(6.0)
-    .padding(Insets { top: 0.0, leading: 12.0, bottom: 8.0, trailing: 12.0 })
+#[derive(Clone, Copy)]
+struct QuarterSelection {
+    state: AppState,
+    show_summary: Signal<bool>,
+    period_revision: Signal<u64>,
+}
+
+impl Binding<usize> for QuarterSelection {
+    fn read(&self) -> usize { self.state.current_quarter.get() }
+    fn peek(&self) -> usize { self.state.current_quarter.get_untracked() }
+    fn write(&self, q: usize) {
+        if q > 4 { return; }
+        haptics::tick();
+        cancel_period_swipe(self.period_revision);
+        // Choosing the year always opens totals; it has no individual week.
+        if q == 4 { self.show_summary.set(true); }
+        if self.show_summary.get() {
+            select_quarter(self.state, q);
+        } else {
+            self.state.current_quarter.set(q);
+            select_week_in_quarter(self.state, q);
+        }
+    }
+    // Disposing a header (navigation/logout) must never start a data request.
+    fn write_teardown(&self, _q: usize) {}
+}
+
+fn quarter_tabs(state: AppState, show_summary: Signal<bool>, period_revision: Signal<u64>) -> impl Piece {
+    picker(QuarterSelection { state, show_summary, period_revision },
+        [(0usize, "I"), (1, "II"), (2, "III"), (3, "IV"), (4, "Год")])
+        .segmented()
+        .id(day::id!(diary_quarter))
+        .height(32.0)
+        .grow(Dimension::Width)
+        .padding(Insets { top: 0.0, leading: 16.0, bottom: 8.0, trailing: 16.0 })
+}
+
+fn cancel_period_swipe(revision: Signal<u64>) {
+    SWIPE_GEN.fetch_add(1, Ordering::AcqRel);
+    SWIPE_PENDING.store(-1, Ordering::Release);
+    revision.update(|value| *value += 1);
+}
+
+fn selected_quarter_has_current_week(state: AppState) -> bool {
+    let index = state.current_week_index.get();
+    index >= 0 && (index as usize) < state.all_weeks.get().len()
+        && state.week_quarters.with(|quarters|
+            // Some schools provide weeks without enough period metadata to
+            // infer quarters. Keep those real lessons and arrows accessible.
+            quarters.get(index as usize).copied().flatten()
+                .is_none_or(|quarter| quarter == state.current_quarter.get()))
+}
+
+fn select_week_in_quarter(state: AppState, q: usize) {
+    let range = features::diary::quarter_week_indices(state, q);
+    let current = state.current_week_index.get();
+    if current < 0 || !range.contains(&(current as usize)) {
+        if let Some(&first) = range.first().filter(|&&i| i < state.all_weeks.get().len()) {
+            // A header choice supersedes an in-flight horizontal swipe.
+            SWIPE_GEN.fetch_add(1, Ordering::AcqRel);
+            SWIPE_PENDING.store(-1, Ordering::Release);
+            features::diary::load_week(state, first as i32);
+        }
+    }
 }
 
 fn select_quarter(state: AppState, q: usize) {
@@ -216,36 +269,7 @@ fn select_quarter(state: AppState, q: usize) {
     features::diary::load_quarter(state, q);
 }
 
-fn quarter_btn(state: AppState, lbl: &'static str, q: usize) -> impl Piece {
-    let s1 = state;
-    let s2 = state;
-    let l = lbl.to_string();
-    button(move || {
-        let cur = s1.current_quarter.get();
-        if cur == q && !s1.marks_loading.get() { format!("[{}]", l) } else { l.clone() }
-    })
-    .action(move || {
-        haptics::tick();
-        select_quarter(s2, q);
-    })
-    .id(day::id!(quarter, lbl))
-}
-
-fn year_btn(state: AppState) -> impl Piece {
-    let s1 = state;
-    let s2 = state;
-    button(move || {
-        let cur = s1.current_quarter.get();
-        if cur == 4 && !s1.marks_loading.get() { String::from("[Год]") } else { String::from("Год") }
-    })
-    .action(move || {
-        haptics::tick();
-        select_quarter(s2, 4);
-    })
-    .id(day::id!(q_year))
-}
-
-fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
+fn sub_tabs(state: AppState, show_summary: Signal<bool>, period_revision: Signal<u64>) -> impl Piece {
     let s1 = state;
     let s2 = state;
     let s3 = state;
@@ -257,18 +281,15 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
         .action(move || {
             if show_summary.get() {
                 haptics::tick();
+                cancel_period_swipe(period_revision);
             }
             show_summary.set(false);
             let q = s1.current_quarter.get();
-            let idx = s2.current_week_index.get() as usize;
             if q < 4 {
-                let range = features::diary::quarter_week_indices(s2, q);
-                if !range.contains(&idx) {
-                    let weeks = s2.all_weeks.get();
-                    if let Some(&first) = range.first().filter(|&&i| i < weeks.len()) {
-                        features::diary::load_week(s2, first as i32);
-                    }
-                }
+                select_week_in_quarter(s2, q);
+            } else {
+                // Return from year totals to the current week's actual quarter.
+                features::diary::load_week(s2, s2.current_week_index.get());
             }
         })
         .id(day::id!(sub_weeks)),
@@ -279,6 +300,7 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
         .action(move || {
             if !show_summary.get() {
                 haptics::tick();
+                cancel_period_swipe(period_revision);
             }
             show_summary.set(true);
             let q = s3.current_quarter.get();
@@ -477,9 +499,11 @@ fn summary_drag(
                             drag_x.set(-w);
                         });
                         let set_drag = drag_x.setter();
+                        let my_gen = SWIPE_GEN.fetch_add(1, Ordering::AcqRel) + 1;
                         std::thread::spawn(move || {
                             std::thread::sleep(std::time::Duration::from_millis(220));
                             day::reactive::on_main(move || {
+                                if SWIPE_GEN.load(Ordering::Acquire) != my_gen { return; }
                                 day::reactive::batch(|| {
                                     if let Some(state) = AppState::get_main() {
                                         select_quarter(state, q + 1);
@@ -496,9 +520,11 @@ fn summary_drag(
                             drag_x.set(w);
                         });
                         let set_drag = drag_x.setter();
+                        let my_gen = SWIPE_GEN.fetch_add(1, Ordering::AcqRel) + 1;
                         std::thread::spawn(move || {
                             std::thread::sleep(std::time::Duration::from_millis(220));
                             day::reactive::on_main(move || {
+                                if SWIPE_GEN.load(Ordering::Acquire) != my_gen { return; }
                                 day::reactive::batch(|| {
                                     if let Some(state) = AppState::get_main() {
                                         select_quarter(state, q - 1);
@@ -520,11 +546,20 @@ fn summary_drag(
     }
 }
 
-fn week_view(state: AppState) -> impl Piece {
+fn week_view(state: AppState, refreshing: Signal<bool>, period_revision: Signal<u64>) -> impl Piece {
     // Pager state lives inside the view so a size-class rebuild re-captures the
     // screen width — the captured one is the previous orientation's after a rotation.
+    Scope::current().on_cleanup(|| {
+        SWIPE_GEN.fetch_add(1, Ordering::AcqRel);
+        SWIPE_PENDING.store(-1, Ordering::Release);
+    });
     let page_width = Signal::new(get_screen_width());
     let drag_x = Signal::new(0.0);
+    // Header choices and data refreshes can replace the week during a slide.
+    day::reactive::watch(
+        move || (state.current_week_index.get(), state.current_quarter.get(), period_revision.get()),
+        move |_, _| drag_x.set(0.0),
+    );
     let s_prev = state;
     let s_cur = state;
     let s_next = state;
@@ -533,8 +568,10 @@ fn week_view(state: AppState) -> impl Piece {
     let header_dx = drag_x;
     let w = page_width.get();
     column((
-        week_header(header_state, header_width, header_dx),
-        zstack((
+        when(move || selected_quarter_has_current_week(state),
+            move || week_header(header_state, header_width, header_dx)),
+        diary_scroll(state, refreshing, when(move || selected_quarter_has_current_week(state),
+            move || zstack((
             // Previous week page (at drag_x - w)
             when(
                 move || s_prev.current_week_index.get() > 0,
@@ -550,10 +587,14 @@ fn week_view(state: AppState) -> impl Piece {
         ))
         .align(Alignment::TopLeading)
         .width(w)
-        .on_drag(pager_drag(drag_x.clone(), page_width.clone(), state.clone())),
+        .on_drag(pager_drag(drag_x, page_width, state)))
+        .otherwise(|| label("Нет данных за этот период")
+            .font(Font::Body).secondary().align(TextAlign::Center)
+            .padding(Insets { top: 80.0, leading: PAD, bottom: 80.0, trailing: PAD }))),
     ))
     .spacing(0.0)
     .width(w)
+    .grow(Dimension::Height)
 }
 
 fn week_page(state: AppState, offset: i32, w: f64) -> impl Piece {
@@ -612,7 +653,8 @@ fn week_header(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>) ->
     let pw2 = page_width;
     let dx2 = drag_x;
     row((
-        button("<")
+        button("‹")
+            .enabled(move || state.current_week_index.get() > 0)
             .action(move || pager_go(s1, pw1, dx1, -1))
             .id(day::id!(wk_prev))
             .frame(44.0, 36.0),
@@ -621,7 +663,8 @@ fn week_header(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>) ->
             .font(Font::Headline)
             .align(TextAlign::Center),
         spacer().grow(Dimension::Both),
-        button(">")
+        button("›")
+            .enabled(move || state.current_week_index.get() + 1 < state.all_weeks.get().len() as i32)
             .action(move || pager_go(s2, pw2, dx2, 1))
             .id(day::id!(wk_next))
             .frame(44.0, 36.0),
@@ -722,9 +765,17 @@ fn day_card_with(
 
 
 
-fn summary_view(state: AppState) -> impl Piece {
+fn summary_view(state: AppState, period_revision: Signal<u64>) -> impl Piece {
+    Scope::current().on_cleanup(|| {
+        SWIPE_GEN.fetch_add(1, Ordering::AcqRel);
+        SWIPE_PENDING.store(-1, Ordering::Release);
+    });
     let page_width = Signal::new(get_screen_width());
     let drag_x = Signal::new(0.0);
+    day::reactive::watch(
+        move || (state.current_quarter.get(), period_revision.get()),
+        move |_, _| drag_x.set(0.0),
+    );
     let s_prev = state;
     let s_cur = state;
     let s_next = state;
@@ -1197,3 +1248,55 @@ fn year_final_cell(state: AppState, subject: String) -> impl Piece {
 }
 
 // ── Structs ────────────────────────────────────────────────────────────
+
+#[cfg(all(test, feature = "mock"))]
+mod header_tests {
+    use super::*;
+
+    #[test]
+    fn quarter_header_moves_the_visible_week_into_selected_quarter() {
+        day_core::uninstall_tree();
+        let (mock, probe) = day_mock::MockToolkit::new();
+        let saved = std::rc::Rc::new(std::cell::Cell::new(None));
+        let mounted = saved.clone();
+        day_core::launch_with(mock, day_spec::WindowOptions::default(), move || {
+            let state = AppState::create();
+            state.all_weeks.set((0..3).map(|i| WeekActivity {
+                uuid: format!("week-{i}"), summary: format!("week {i}"),
+                time_activity_id: String::new(), start_ts: 0, end_ts: 0,
+            }).collect());
+            state.week_quarters.set(vec![Some(0), Some(1), Some(1)]);
+            let show_summary = Signal::new(false);
+            let revision = Signal::new(0);
+            mounted.set(Some((state, show_summary, revision)));
+            column((quarter_tabs(state, show_summary, revision),
+                week_view(state, Signal::new(false), revision))).any()
+        });
+        let (state, show_summary, revision) = saved.get().unwrap();
+        let target = probe.state.borrow().widgets.values()
+            .find(|w| w.kind == day_spec::kinds::PICKER)
+            .expect("quarter selector").node;
+        probe.emit(day_spec::NodeId(target), day_spec::Event::SelectionChanged(1));
+        day::reactive::flush_sync();
+        assert_eq!(state.current_quarter.get(), 1);
+        assert_eq!(state.current_week_index.get(), 1,
+            "the header must not show the old quarter's week after selection");
+        assert_eq!(state.current_week.get(), "week 1");
+        probe.emit(day_spec::NodeId(target), day_spec::Event::SelectionChanged(2));
+        day::reactive::flush_sync();
+        assert_eq!(state.current_quarter.get(), 2);
+        assert!(!probe.state.borrow().widgets.values().any(|w| w.text == "week 1"),
+            "an empty quarter must not display the old week's header");
+        assert!(probe.state.borrow().widgets.values().any(|w| w.text == "Нет данных за этот период"));
+        // Missing calendar metadata must not make otherwise loaded weeks inaccessible.
+        state.week_quarters.set(vec![None; 3]);
+        day::reactive::flush_sync();
+        assert!(probe.state.borrow().widgets.values().any(|w| w.text == "week 1"));
+        probe.emit(day_spec::NodeId(target), day_spec::Event::SelectionChanged(4));
+        day::reactive::flush_sync();
+        assert!(show_summary.get(), "year selection must open totals");
+        assert_eq!(state.current_quarter.get(), 4);
+        assert_eq!(revision.get(), 3);
+        day_core::uninstall_tree();
+    }
+}

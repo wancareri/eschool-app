@@ -68,10 +68,9 @@ pub mod ios {
         NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol, NSString,
     };
     use objc2_ui_kit::{
-        NSObjectUIAccessibility, UIAction, UIButton, UIButtonType, UIControlEvents, UIControlState,
-        UIEditMenuConfiguration, UIEditMenuInteraction, UIImage, UITextAutocorrectionType,
+        NSObjectUIAccessibility, UIControlEvents, UITextAutocorrectionType,
         UITextContentTypeNewPassword, UITextContentTypePassword, UITextContentTypeUsername,
-        UITextField, UITextFieldDelegate, UITextFieldViewMode, UITextInlinePredictionType,
+        UITextField, UITextFieldDelegate, UITextInlinePredictionType,
         UITextInputTraits,
         UITextSmartDashesType, UITextSmartInsertDeleteType, UITextSmartQuotesType,
         UITextSpellCheckingType, UIView,
@@ -205,7 +204,6 @@ pub mod ios {
         bind_value(view, value);
         if let Some(field) = find_field(view) {
             install_return_delegate(&field);
-            install_edit_menu_button(&field);
         }
     }
 
@@ -264,86 +262,6 @@ pub mod ios {
             return;
         };
         install_return_delegate(&field);
-        install_edit_menu_button(&field);
-    }
-
-    /// A stable entry to UIKit's text-edit menu when QuickType is collapsed.
-    /// UIKit supplies its own AutoFill commands; no private Passwords selector.
-    fn install_edit_menu_button(field: &UITextField) {
-        if field.rightView().is_some() {
-            return;
-        }
-        let Some(mtm) = MainThreadMarker::new() else {
-            return;
-        };
-        let button = UIButton::buttonWithType(UIButtonType::System, mtm);
-        button.setFrame(objc2_core_foundation::CGRect::new(
-            objc2_core_foundation::CGPoint::new(0.0, 0.0),
-            objc2_core_foundation::CGSize::new(36.0, 36.0),
-        ));
-        let image = UIImage::systemImageNamed(&NSString::from_str("key"));
-        button.setImage_forState(image.as_deref(), UIControlState::Normal);
-        let weak = Weak::new(field);
-        let handler = block2::RcBlock::new(move |_: std::ptr::NonNull<UIAction>| {
-            let Some(field) = weak.load() else { return };
-            field.becomeFirstResponder();
-            let bound = dispatch2::MainThreadBound::new(Weak::new(&*field), mtm);
-            dispatch2::DispatchQueue::main().exec_async(move || {
-                let Some(mtm) = MainThreadMarker::new() else {
-                    return;
-                };
-                let Some(field) = bound.get(mtm).load() else {
-                    return;
-                };
-                if !field.isFirstResponder() || field.window().is_none() {
-                    return;
-                }
-                let existing = field.interactions().iter().find_map(|interaction| {
-                    let object: &objc2::runtime::AnyObject = interaction.as_ref();
-                    object
-                        .downcast_ref::<UIEditMenuInteraction>()
-                        .map(|menu| menu.retain())
-                });
-                let menu = existing.unwrap_or_else(|| {
-                    let menu = UIEditMenuInteraction::initWithDelegate(
-                        UIEditMenuInteraction::alloc(mtm),
-                        None,
-                    );
-                    field.addInteraction(ProtocolObject::from_ref(&*menu));
-                    menu
-                });
-                let bounds = field.bounds();
-                let configuration = unsafe {
-                    UIEditMenuConfiguration::configurationWithIdentifier_sourcePoint(
-                        None,
-                        objc2_core_foundation::CGPoint::new(bounds.size.width / 2.0, 0.0),
-                        mtm,
-                    )
-                };
-                menu.presentEditMenuWithConfiguration(&configuration);
-            });
-        });
-        let action = unsafe {
-            UIAction::actionWithTitle_image_identifier_handler(
-                &NSString::from_str(""),
-                None,
-                None,
-                block2::RcBlock::as_ptr(&handler),
-                mtm,
-            )
-        };
-        button.addAction_forControlEvents(&action, UIControlEvents::TouchUpInside);
-        let weak = Weak::new(&*button);
-        day::reactive::bind(
-            move || crate::res::str::auth_autofill().format(),
-            move |label| {
-                if let Some(button) = weak.load() {
-                    button.setAccessibilityLabel(Some(&NSString::from_str(label)), mtm);
-                }
-            },
-        );
-        field.setRightView(Some(&button));
-        field.setRightViewMode(UITextFieldViewMode::Always);
     }
 
     /// Focus only after UIKit has finished positioning the destination page.
@@ -579,10 +497,11 @@ pub mod ios {
             .map(|value| value.to_string())
             .unwrap_or_else(|| "unsupported".into());
         crate::shared::nslog::nslog(&format!(
-            "[AutoFill] event={event} role={role:?} language={language} content_type={} secure={} focused={} autocorrection={} spellcheck={} inline_prediction={} smart_quotes={} smart_dashes={} smart_insert_delete={} grammar_checking={} allows_hiding_shortcuts={}",
+            "[AutoFill] event={event} role={role:?} language={language} content_type={} secure={} focused={} keyboard_type={} autocorrection={} spellcheck={} inline_prediction={} smart_quotes={} smart_dashes={} smart_insert_delete={} grammar_checking={} allows_hiding_shortcuts={}",
             field.textContentType(),
             field.isSecureTextEntry(),
             field.isFirstResponder(),
+            field.keyboardType().0,
             field.autocorrectionType().0,
             field.spellCheckingType().0,
             prediction,
@@ -672,7 +591,9 @@ pub mod ios {
             #[unsafe(method(inputModeChanged:))]
             fn input_mode_changed(&self, notification: &NSNotification) {
                 // Restore only actual drift, immediately and after the mode
-                // transition settles. Never reload or resign/refocus here.
+                // transition settles. The notification does not document trait resets.
+                // reloadInputViews refreshes custom views, not an AutoFill session;
+                // preserve the responder and keyboard type chosen by InputPurpose.
                 let event = notification.name().to_string();
                 reconcile_active_traits(&event);
             }

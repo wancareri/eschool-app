@@ -22,14 +22,14 @@ pub fn message(status: ConnStatus) -> String {
 
 pub fn toolbar(state: AppState) -> Vec<ToolbarEntry> {
     let status = state.conn_status.get();
-    let icon = match status {
-        ConnStatus::Connecting => Symbol::Refresh,
-        ConnStatus::Offline | ConnStatus::Error => Symbol::Warning,
-        ConnStatus::Connected | ConnStatus::Idle => Symbol::Check,
+    let button = toolbar_button(day::id!(connection_status), title(status));
+    let button = match status {
+        ConnStatus::Connecting => button.icon(Symbol::Refresh),
+        ConnStatus::Offline | ConnStatus::Error => button.icon(Symbol::Warning),
+        ConnStatus::Connected | ConnStatus::Idle => button.image(res::vectors::wifi),
     };
     vec![
-        toolbar_button(day::id!(connection_status), title(status))
-            .icon(icon)
+        button
             .label_style(LabelStyle::IconOnly)
             .placement(ToolbarPlacement::Primary)
             .action(move || {

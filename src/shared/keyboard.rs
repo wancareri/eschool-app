@@ -108,21 +108,12 @@ pub fn register_follower_view(view: &objc2::rc::Retained<objc2_ui_kit::UIView>) 
 #[cfg(not(target_os = "ios"))]
 pub fn register_follower_view(_view: &()) {}
 
-#[cfg(target_os = "ios")]
-pub fn register_sticker_view(view: &objc2::rc::Retained<objc2_ui_kit::UIView>) {
-    ios::register_sticker_view(view);
+/// The page is laid out inside the bottom safe area; subtract it once so a
+/// dock with an 8pt inset ends 8pt above the keyboard, including tall layouts.
+#[cfg(any(target_os = "ios", test))]
+fn keyboard_lift(visible_height: f64, safe_bottom: f64) -> f64 {
+    (visible_height - safe_bottom).max(0.0)
 }
-
-#[cfg(not(target_os = "ios"))]
-pub fn register_sticker_view(_view: &()) {}
-
-#[cfg(target_os = "ios")]
-pub fn register_content_view(view: &objc2::rc::Retained<objc2_ui_kit::UIView>) {
-    ios::register_content_view(view);
-}
-
-#[cfg(not(target_os = "ios"))]
-pub fn register_content_view(_view: &()) {}
 
 #[cfg(target_os = "ios")]
 mod ios {
@@ -144,12 +135,6 @@ mod ios {
     static INSTALLED: AtomicBool = AtomicBool::new(false);
 
     #[derive(Clone, Copy)]
-    enum FollowerKind {
-        Content,
-        Sticker,
-    }
-
-    #[derive(Clone, Copy)]
     struct KeyboardFrame {
         visible_height: f64,
         duration: f64,
@@ -160,71 +145,42 @@ mod ios {
         static OBSERVER: Cell<Option<Retained<KeyboardObserver>>> = const { Cell::new(None) };
         // Both pages stay mounted during an interactive pop. Keep each page's
         // followers synchronized, without retaining popped pages indefinitely.
-        static FOLLOWERS: RefCell<Vec<(Weak<UIView>, FollowerKind)>> = const { RefCell::new(Vec::new()) };
+        static FOLLOWERS: RefCell<Vec<Weak<UIView>>> = const { RefCell::new(Vec::new()) };
         static CURRENT_LIFT: Cell<CGFloat> = const { Cell::new(0.0) };
         static PENDING_FRAME: Cell<Option<KeyboardFrame>> = const { Cell::new(None) };
         static WAITING_FOR_TRANSITION: Cell<bool> = const { Cell::new(false) };
     }
 
-    fn transform(kind: FollowerKind, lift: CGFloat) -> CGAffineTransform {
-        match kind {
-            FollowerKind::Sticker if lift > 0.0 => CGAffineTransform {
-                a: 0.48,
-                b: 0.0,
-                c: 0.0,
-                d: 0.48,
-                tx: 0.0,
-                ty: -(lift * 0.50),
-            },
-            _ => CGAffineTransform {
-                a: 1.0,
-                b: 0.0,
-                c: 0.0,
-                d: 1.0,
-                tx: 0.0,
-                ty: -lift,
-            },
-        }
-    }
-
-    fn register_view(view: &Retained<UIView>, kind: FollowerKind) {
-        let lift = CURRENT_LIFT.with(Cell::get);
-        unsafe {
-            let _: () = objc2::msg_send![&**view, setTransform: transform(kind, lift)];
-        }
-        FOLLOWERS.with(|all| {
-            let mut all = all.borrow_mut();
-            all.retain(|(weak, _)| weak.load().is_some_and(|v| !std::ptr::eq(&*v, &**view)));
-            all.push((Weak::new(&**view), kind));
-        });
+    fn transform(lift: CGFloat) -> CGAffineTransform {
+        CGAffineTransform { a: 1.0, b: 0.0, c: 0.0, d: 1.0, tx: 0.0, ty: -lift }
     }
 
     pub fn register_follower_view(view: &Retained<UIView>) {
-        register_view(view, FollowerKind::Content);
-    }
-    pub fn register_sticker_view(view: &Retained<UIView>) {
-        register_view(view, FollowerKind::Sticker);
-    }
-    pub fn register_content_view(view: &Retained<UIView>) {
-        register_view(view, FollowerKind::Content);
-    }
-
-    fn visible_followers() -> Vec<(Retained<UIView>, FollowerKind)> {
+        let lift = CURRENT_LIFT.with(Cell::get);
+        unsafe {
+            let _: () = objc2::msg_send![&**view, setTransform: transform(lift)];
+        }
         FOLLOWERS.with(|all| {
             let mut all = all.borrow_mut();
-            all.retain(|(weak, _)| weak.load().is_some());
-            all.iter()
-                .filter_map(|(weak, kind)| {
-                    let view = weak.load()?;
-                    view.window().is_some().then_some((view, *kind))
-                })
-                .collect()
+            all.retain(|weak| weak.load().is_some_and(|v| !std::ptr::eq(&*v, &**view)));
+            all.push(Weak::new(&**view));
+        });
+    }
+
+    fn visible_followers() -> Vec<Retained<UIView>> {
+        FOLLOWERS.with(|all| {
+            let mut all = all.borrow_mut();
+            all.retain(|weak| weak.load().is_some());
+            all.iter().filter_map(|weak| {
+                let view = weak.load()?;
+                view.window().is_some().then_some(view)
+            }).collect()
         })
     }
 
     fn interactive_coordinator()
     -> Option<Retained<ProtocolObject<dyn UIViewControllerTransitionCoordinator>>> {
-        for (view, _) in visible_followers() {
+        for view in visible_followers() {
             let mut responder = view.nextResponder();
             while let Some(current) = responder {
                 if let Some(vc) = current.downcast_ref::<UIViewController>() {
@@ -286,7 +242,7 @@ mod ios {
     fn settled_keyboard_height() -> Option<f64> {
         let window = visible_followers()
             .into_iter()
-            .find_map(|(view, _)| view.window())?;
+            .find_map(|view| view.window())?;
         let frame = window.keyboardLayoutGuide().layoutFrame();
         if frame.size.height == 0.0 && frame.origin.y == 0.0 {
             return None;
@@ -302,12 +258,12 @@ mod ios {
             return;
         };
         let lift =
-            (frame.visible_height - super::get_safe_area_bottom()).clamp(0.0, 340.0) as CGFloat;
+            super::keyboard_lift(frame.visible_height, super::get_safe_area_bottom()) as CGFloat;
         CURRENT_LIFT.with(|current| current.set(lift));
         let views = visible_followers();
         // Create the layout guide on the first notification, so it is already
         // tracking UIKit's keyboard geometry when a later navigation completes.
-        if let Some(window) = views.iter().find_map(|(view, _)| view.window()) {
+        if let Some(window) = views.iter().find_map(|view| view.window()) {
             let _ = window.keyboardLayoutGuide();
         }
         if frame.duration > 0.0 {
@@ -315,9 +271,9 @@ mod ios {
             let views = dispatch2::MainThreadBound::new(views, mtm);
             let animations = block2::RcBlock::new(move || {
                 let mtm = MainThreadMarker::new().expect("UIKit animations run on main");
-                for (view, kind) in views.get(mtm) {
+                for view in views.get(mtm) {
                     unsafe {
-                        let _: () = objc2::msg_send![&**view, setTransform: transform(*kind, lift)];
+                        let _: () = objc2::msg_send![&**view, setTransform: transform(lift)];
                     }
                 }
             });
@@ -330,9 +286,9 @@ mod ios {
                 mtm,
             );
         } else {
-            for (view, kind) in views {
+            for view in views {
                 unsafe {
-                    let _: () = objc2::msg_send![&*view, setTransform: transform(kind, lift)];
+                    let _: () = objc2::msg_send![&*view, setTransform: transform(lift)];
                 }
             }
         }
@@ -507,6 +463,24 @@ mod ios {
             unsafe {
                 orig(this, cmd, 0);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::keyboard_lift;
+
+    #[test]
+    fn dock_stays_eight_points_above_keyboard_including_tall_layouts() {
+        for safe_bottom in [0.0, 21.0, 34.0] {
+            let page_bottom = 844.0 - safe_bottom;
+            for height in [216.0, 336.0, 380.0, 430.0] {
+                let button_bottom = page_bottom - 8.0 - keyboard_lift(height, safe_bottom);
+                assert_eq!(button_bottom, 844.0 - height - 8.0);
+            }
+            assert_eq!(keyboard_lift(0.0, safe_bottom), 0.0);
+            assert_eq!(keyboard_lift(safe_bottom, safe_bottom), 0.0);
         }
     }
 }
