@@ -213,85 +213,23 @@ fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, p
     };
     let container = context.containerView();
     let root_mtm = root.mtm();
-    if presenting {
-        // Hide and attach the root now; Day's queued frame update must settle
-        // before measuring and animating the surfaces.
-        let prepare = RcBlock::new(|| {
-            root.setAlpha(0.0);
-            root.setOpaque(false);
-            root.setBackgroundColor(Some(&UIColor::clearColor()));
-            root.setTransform(identity_transform());
-            let final_frame = context.finalFrameForViewController(&vc);
-            let frame = if final_frame.size.width > 0.0 && final_frame.size.height > 0.0 {
-                final_frame
-            } else {
-                container.bounds()
-            };
-            root.setFrame(frame);
-            container.addSubview(&root);
-            root.layoutIfNeeded();
-            let mut surfaces = Vec::new();
-            motion_views(&root, &mut surfaces);
-            for surface in surfaces {
-                surface.setTransform(CGAffineTransform {
-                    ty: root.bounds().size.height, ..identity_transform()
-                });
-            }
-        });
-        UIView::performWithoutAnimation(&prepare, root_mtm);
-    }
-    root.layoutIfNeeded();
-    let context = unsafe {
-        Retained::retain(
-            context as *const _ as *mut ProtocolObject<dyn UIViewControllerContextTransitioning>,
-        )
-    }
-    .expect("live transition context");
-    if presenting {
-        // Day queues FrameChanged while CoverPatch::Present holds its tree
-        // borrow. Animate only after that layout has placed the new surfaces,
-        // on EVERY opening, including after an appearance/accent change.
-        let bound = dispatch2::MainThreadBound::new(context, root_mtm);
-        dispatch2::DispatchQueue::main().exec_async(move || {
-            let mtm = MainThreadMarker::new().expect("UIKit main thread");
-            animate_surfaces(&bound.into_inner(mtm), true);
-        });
-    } else {
-        animate_surfaces(&context, false);
-    }
-}
 
-fn animate_surfaces(
-    context: &Retained<ProtocolObject<dyn UIViewControllerContextTransitioning>>,
-    presenting: bool,
-) {
-    let key = unsafe {
-        if presenting {
-            UITransitionContextToViewControllerKey
-        } else {
-            UITransitionContextFromViewControllerKey
-        }
-    };
-    let Some(root) = context.viewControllerForKey(key).and_then(|vc| vc.view()) else {
-        context.completeTransition(false);
-        return;
-    };
-    let root_mtm = root.mtm();
-    // DayNavPageView publishes the safe-area content size during layout. Let Day
-    // place the card before measuring the travel; no screen-size/timer guesses.
-    root.layoutIfNeeded();
     if presenting {
+        let final_frame = context.finalFrameForViewController(&vc);
+        let frame = if final_frame.size.width > 0.0 && final_frame.size.height > 0.0 {
+            final_frame
+        } else {
+            container.bounds()
+        };
+        root.setFrame(frame);
+        container.addSubview(&root);
+        root.layoutIfNeeded();
         settle_initial_layout(&root);
     }
+
     let mut views = Vec::new();
     motion_views(&root, &mut views);
-    // Preparation must not inherit UIKit/Day's surrounding animation context.
-    UIView::performWithoutAnimation(&RcBlock::new(|| {
-        root.setTransform(identity_transform());
-        for view in &views {
-            view.setTransform(identity_transform());
-        }
-    }), root_mtm);
+
     let travel = views
         .iter()
         .find(|v| v.tag() == CARD_TAG)
@@ -300,9 +238,7 @@ fn animate_surfaces(
             (root.bounds().size.height - frame.origin.y).max(0.0)
         });
     let travel = if travel > 0.0 { travel } else { root.bounds().size.height };
-    // These are INNER native surfaces. Day owns the outer translation layer for
-    // drag/keyboard movement; the animator never overwrites that layer. Dismissal
-    // therefore starts at the released position and only travels further down.
+
     let surfaces: Vec<_> = views
         .into_iter()
         .map(|view| {
@@ -313,19 +249,22 @@ fn animate_surfaces(
             (view, rest, offscreen)
         })
         .collect();
-    // Presentation hooks deliberately clear the root, so its current color
-    // cannot supply the target dim for this transition (including reopening).
+
     let dim = UIColor::colorWithWhite_alpha(0.0, super::DIM_ALPHA);
     let clear = UIColor::clearColor();
+
     if presenting {
         UIView::performWithoutAnimation(&RcBlock::new(|| {
+            root.setTransform(identity_transform());
+            root.setOpaque(false);
             root.setBackgroundColor(Some(&clear));
+            root.setAlpha(1.0);
             for (view, _, offscreen) in &surfaces {
                 view.setTransform(*offscreen);
             }
-            root.setAlpha(1.0);
         }), root_mtm);
     }
+
     let animation_root = root.clone();
     let animation_surfaces = surfaces.clone();
     let animation_dim = dim.clone();
@@ -336,9 +275,14 @@ fn animate_surfaces(
             view.setTransform(if presenting { *rest } else { *offscreen });
         }
     });
-    // UIKit keeps the context alive until completeTransition, and this block
-    // additionally retains it across the asynchronous UIView animation.
-    let context = context.clone();
+
+    let context = unsafe {
+        Retained::retain(
+            context as *const _ as *mut ProtocolObject<dyn UIViewControllerContextTransitioning>,
+        )
+    }
+    .expect("live transition context");
+
     let completion = RcBlock::new(move |_finished: objc2::runtime::Bool| {
         let completed = !context.transitionWasCancelled();
         let visible = presenting == completed;
@@ -355,6 +299,7 @@ fn animate_surfaces(
         }), root_mtm);
         context.completeTransition(completed);
     });
+
     UIView::animateWithDuration_delay_options_animations_completion(
         DURATION,
         0.0,

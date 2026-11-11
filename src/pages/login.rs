@@ -6,6 +6,9 @@ use crate::shared::layout_diag::{debug_log_button, debug_log_overlay, PosLogExt}
 use crate::res;
 use day::prelude::*;
 
+#[allow(dead_code)]
+pub(crate) const AUTH_NAV_TAG: isize = 0x41555448; // "AUTH"
+
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let show_logs = Signal::new(false);
@@ -955,7 +958,16 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 .any(),
             }
         })
-        .id(day::id!(auth_stack))
+        .id(day::id!(auth_stack));
+
+    #[cfg(target_os = "ios")]
+    let stack = stack.tweak(|node| {
+        day_uikit::with_native(node, |view, _, _| {
+            view.setTag(AUTH_NAV_TAG);
+        });
+    });
+
+    let stack = stack
         .grow(Dimension::Both)
         .background(move || {
             if day::dark_mode() {

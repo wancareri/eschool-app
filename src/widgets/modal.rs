@@ -12,6 +12,7 @@ const MAX_UP: f64 = 70.0;
 /// the dim showing through.
 const FILLER_H: f64 = MAX_UP + 14.0;
 /// The card's smooth resize animation matches the native cover entrance duration.
+#[allow(dead_code)]
 const RESIZE_MS: u32 = 380;
 const DIM_ALPHA: f64 = 0.50;
 
@@ -181,6 +182,47 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
         };
 
         let o_tap = o_dim.clone();
+        let card = card_surface(section((
+            // Drag handle pill at the top
+            row((
+                spacer().grow(Dimension::Both),
+                column(())
+                    .frame(36.0, 4.0)
+                    .background(Color::rgba(0.7, 0.7, 0.7, 0.6))
+                    .corner_radius(2.0),
+                spacer().grow(Dimension::Both),
+            ))
+            .grow(Dimension::Both)
+            .padding(Insets {
+                top: 0.0,
+                leading: 0.0,
+                bottom: 6.0,
+                trailing: 0.0,
+            }),
+            // The card body: the floor is a transparent fixed-height
+            // child, so the stack sizes to the LARGER of the two —
+            // content past the floor grows the card, content under it
+            // still gets the taller window. Top-aligned, so the body
+            // sits under the handle and the slack fills the bottom.
+            if min_h > 0.0 {
+                zstack((column(()).height(min_h), content(route).any()))
+                    .align(Alignment::Top)
+                    .any()
+            } else {
+                content(route).any()
+            },
+        )))
+        .on_drag(sheet_drag)
+        .translation(0.0, move || drag_y.get() - kb_h.get());
+
+        #[cfg(target_os = "ios")]
+        let (filler, card) = (gap_filler(drag_y, kb_h).any(), card.any());
+        #[cfg(not(target_os = "ios"))]
+        let (filler, card) = (
+            gap_filler(drag_y, kb_h).animation(AnimSpec::ease_out(RESIZE_MS)).any(),
+            card.animation(AnimSpec::ease_out(RESIZE_MS)).any(),
+        );
+
         zstack((
             // The dim is the cover's own background (edge-to-edge, over the
             // status bar and the home indicator); this layer is transparent
@@ -200,48 +242,8 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
             // bottom edge — this parks the same card material one MAX_UP
             // below and slides it up by exactly the lift distance, so the
             // hole always shows the sheet, never the dim.
-            gap_filler(drag_y, kb_h).animation(AnimSpec::ease_out(RESIZE_MS)),
-            // Bottom sheet card: day's semantic section surface — the platform's
-            // theme-adaptive grouped-card material (secondary system grouped
-            // background on iOS), so it tracks light/dark mode with no app palette.
-            // The paddings below compose with the section's own 14pt inset to keep
-            // the original 24/16/32pt edges. The translation is the sheet drag —
-            // the card's implicit animation would smooth it, so the live drag
-            // runs under a zero-duration ambient; only the release snaps back
-            card_surface(section((
-                // Drag handle pill at the top
-                row((
-                    spacer().grow(Dimension::Both),
-                    column(())
-                        .frame(36.0, 4.0)
-                        .background(Color::rgba(0.7, 0.7, 0.7, 0.6))
-                        .corner_radius(2.0),
-                    spacer().grow(Dimension::Both),
-                ))
-                .grow(Dimension::Both)
-                .padding(Insets {
-                    top: 0.0,
-                    leading: 0.0,
-                    bottom: 6.0,
-                    trailing: 0.0,
-                }),
-                // The card body: the floor is a transparent fixed-height
-                // child, so the stack sizes to the LARGER of the two —
-                // content past the floor grows the card, content under it
-                // still gets the taller window. Top-aligned, so the body
-                // sits under the handle and the slack fills the bottom.
-                if min_h > 0.0 {
-                    zstack((column(()).height(min_h), content(route).any()))
-                        .align(Alignment::Top)
-                        .any()
-                } else {
-                    content(route).any()
-                },
-            )))
-            .on_drag(sheet_drag)
-            .translation(0.0, move || drag_y.get() - kb_h.get())
-            .animation(AnimSpec::ease_out(RESIZE_MS))
-            .any(),
+            filler,
+            card,
         ))
         .align(Alignment::Bottom)
         .grow(Dimension::Both)
