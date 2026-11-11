@@ -3,7 +3,7 @@
 
 use block2::RcBlock;
 use objc2::rc::Retained;
-use objc2::runtime::ProtocolObject;
+use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_core_foundation::CGAffineTransform;
 use objc2_foundation::{NSObject, NSObjectProtocol};
@@ -17,6 +17,57 @@ use objc2_ui_kit::{
 pub(super) const CARD_TAG: isize = 0x45534301;
 pub(super) const FILLER_TAG: isize = 0x45534302;
 const DURATION: f64 = 0.38;
+const COVER_TAG: isize = 0x45534303;
+
+type ViewWillAppear = unsafe extern "C-unwind" fn(*mut AnyObject, Sel, Bool);
+
+thread_local! {
+    static ORIGINAL_VIEW_WILL_APPEAR: std::cell::Cell<Option<ViewWillAppear>> = const {
+        std::cell::Cell::new(None)
+    };
+}
+
+unsafe extern "C-unwind" fn cover_view_will_appear(this: *mut AnyObject, cmd: Sel, animated: Bool) {
+    ORIGINAL_VIEW_WILL_APPEAR.with(|original| {
+        if let Some(original) = original.get() {
+            unsafe { original(this, cmd, animated) };
+        }
+    });
+    let Some(vc) = (unsafe { this.as_ref() }).and_then(|obj| obj.downcast_ref::<UIViewController>()) else {
+        return;
+    };
+    // DayCoverVC also hosts opaque PIN setup and ordinary sheets. Only our
+    // shared shell is marked; its root survives repeated presentations.
+    if vc.view().is_some_and(|root| root.tag() == COVER_TAG) {
+        vc.setModalPresentationStyle(UIModalPresentationStyle::OverFullScreen);
+        DELEGATE.with(|delegate| {
+            vc.setTransitioningDelegate(Some(ProtocolObject::from_ref(&**delegate)));
+        });
+        if let Some(root) = vc.view() {
+            root.setOpaque(false);
+            root.setBackgroundColor(Some(&UIColor::clearColor()));
+        }
+    }
+}
+
+fn install_appearance_hook(class: &AnyClass) {
+    ORIGINAL_VIEW_WILL_APPEAR.with(|original| {
+        if original.get().is_some() { return; }
+        let selector = objc2::sel!(viewWillAppear:);
+        let Some(method) = class.instance_method(selector) else { return };
+        let previous = method.implementation();
+        original.set(Some(unsafe { std::mem::transmute::<Imp, ViewWillAppear>(previous) }));
+        let replacement: Imp = unsafe { std::mem::transmute(cover_view_will_appear as *const ()) };
+        // Add an override when inherited: changing an inherited Method's IMP
+        // would otherwise swizzle UIViewController and every controller class.
+        unsafe {
+            let encoding = objc2::ffi::method_getTypeEncoding(method);
+            objc2::ffi::class_replaceMethod(
+                class as *const AnyClass as *mut AnyClass, selector, replacement, encoding,
+            );
+        }
+    });
+}
 
 thread_local! {
     // UIViewController.transitioningDelegate is weak. This stateless delegate
@@ -35,8 +86,10 @@ pub(super) fn configure_cover(view: &UIView, _mtm: MainThreadMarker) {
             if vc.class().name().to_bytes() != b"DayCoverVC" {
                 break;
             }
+            install_appearance_hook(vc.class());
             vc.setModalPresentationStyle(UIModalPresentationStyle::OverFullScreen);
             if let Some(root) = vc.view() {
+                root.setTag(COVER_TAG);
                 root.setOpaque(false);
                 root.setBackgroundColor(Some(&UIColor::clearColor()));
             }
@@ -61,10 +114,16 @@ define_class!(
         #[unsafe(method_id(animationControllerForPresentedController:presentingController:sourceController:))]
         fn presentation_animator(
             &self,
-            _presented: &UIViewController,
+            presented: &UIViewController,
             _presenting: &UIViewController,
             _source: &UIViewController,
         ) -> Option<Retained<ProtocolObject<dyn UIViewControllerAnimatedTransitioning>>> {
+            presented.setModalPresentationStyle(UIModalPresentationStyle::OverFullScreen);
+            presented.setTransitioningDelegate(Some(ProtocolObject::from_ref(self)));
+            if let Some(root) = presented.view() {
+                root.setOpaque(false);
+                root.setBackgroundColor(Some(&UIColor::clearColor()));
+            }
             Some(ProtocolObject::from_retained(ModalAnimator::new(
                 self.mtm(),
                 true,
@@ -235,7 +294,9 @@ fn animate_surfaces(
             (view, rest, offscreen)
         })
         .collect();
-    let dim = root.backgroundColor().unwrap_or_else(UIColor::clearColor);
+    // Presentation hooks deliberately clear the root, so its current color
+    // cannot supply the target dim for this transition (including reopening).
+    let dim = UIColor::colorWithWhite_alpha(0.0, super::DIM_ALPHA);
     let clear = UIColor::clearColor();
     if presenting {
         root.setBackgroundColor(Some(&clear));

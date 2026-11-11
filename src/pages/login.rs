@@ -263,13 +263,14 @@ fn auth_action_button<M>(
         .id(day::id!(login_btn))
         .height(52.0)
         .grow(Dimension::Width)
+        .corner_radius(26.0)
         .log_pos("Auth:ActionButton")
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
 }
 
 #[cfg(target_os = "ios")]
 fn native_auth_action_button(node: day::RNode) {
-    use objc2::{rc::Retained, runtime::{AnyObject, ProtocolObject}};
+    use objc2::{MainThreadOnly, rc::Retained, runtime::{AnyObject, ProtocolObject}};
     use objc2_foundation::{NSDictionary, NSMutableCopying, NSString};
     use objc2_ui_kit::{
         NSFontAttributeName, NSForegroundColorAttributeName,
@@ -278,50 +279,66 @@ fn native_auth_action_button(node: day::RNode) {
     };
     use std::ptr::NonNull;
 
-    let _ = day_uikit::with_native(node, |view, _, mtm| {
-        let Some(button) = view.downcast_ref::<UIButton>() else { return };
-        let title = button.configuration().and_then(|config| config.title()).unwrap_or_default();
-        let config = UIButtonConfiguration::borderedProminentButtonConfiguration(mtm);
+    // One transformer per main thread, retained for its lifetime rather than
+    // recreated for each button or configuration update.
+    thread_local! {
+        static TITLE_ATTRIBUTES: block2::RcBlock<dyn Fn(
+            NonNull<NSDictionary<NSString, AnyObject>>,
+        ) -> NonNull<NSDictionary<NSString, AnyObject>>> = {
+            let font = UIFont::boldSystemFontOfSize(17.0);
+            block2::RcBlock::new(move |incoming: NonNull<NSDictionary<NSString, AnyObject>>| {
+                let attributes = unsafe { incoming.as_ref() }.mutableCopy();
+                unsafe {
+                    attributes.setObject_forKey(font.as_ref(), ProtocolObject::from_ref(NSFontAttributeName));
+                    attributes.setObject_forKey(UIColor::whiteColor().as_ref(),
+                        ProtocolObject::from_ref(NSForegroundColorAttributeName));
+                }
+                let attributes: Retained<NSDictionary<NSString, AnyObject>> = attributes.into_super();
+                NonNull::new(Retained::autorelease_ptr(attributes)).expect("retained title attributes")
+            })
+        };
+    }
+
+    fn apply_style(button: &UIButton, config: &UIButtonConfiguration) {
         config.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
         let bg = config.background();
         bg.setCornerRadius(26.0);
         config.setBackground(&bg);
-        config.setTitle(Some(&title));
-        // Leave the fill tied to the native tint and let UIKit derive the
-        // highlighted/disabled colors from these base colors.
         config.setBaseForegroundColor(Some(&UIColor::whiteColor()));
-        let font = UIFont::boldSystemFontOfSize(17.0);
-        // Day patches the configuration's plain title for locale/loading changes.
-        // Transform its attributes to bold 17pt white without freezing that title.
-        let transformer = block2::RcBlock::new(move |incoming: NonNull<NSDictionary<NSString, AnyObject>>| {
-            let attributes = unsafe { incoming.as_ref() }.mutableCopy();
-            unsafe {
-                attributes.setObject_forKey(font.as_ref(), ProtocolObject::from_ref(NSFontAttributeName));
-                attributes.setObject_forKey(UIColor::whiteColor().as_ref(),
-                    ProtocolObject::from_ref(NSForegroundColorAttributeName));
-            }
-            let attributes: Retained<NSDictionary<NSString, AnyObject>> = attributes.into_super();
-            NonNull::new(Retained::autorelease_ptr(attributes)).expect("retained title attributes")
+        TITLE_ATTRIBUTES.with(|transformer| unsafe {
+            config.setTitleTextAttributesTransformer(block2::RcBlock::as_ptr(transformer));
         });
-        unsafe { config.setTitleTextAttributesTransformer(block2::RcBlock::as_ptr(&transformer)) };
-        button.setConfiguration(Some(&config));
+        button.setConfiguration(Some(config));
         button.layer().setCornerRadius(26.0);
+        button.layer().setMasksToBounds(true);
         button.setClipsToBounds(true);
+        if let Some(label) = button.titleLabel() {
+            unsafe { label.setFont(Some(&UIFont::boldSystemFontOfSize(17.0))) };
+        }
+    }
 
-        // UIKit updates configuration for enabled/highlighted and title changes.
-        // Only replace configuration when loading actually changes, so the
-        // update handler cannot trigger an endless configuration update cycle.
+    let _ = day_uikit::with_native(node, |view, _, mtm| {
+        let Some(button) = view.downcast_ref::<UIButton>() else { return };
+        let title = button.configuration().and_then(|config| config.title()).unwrap_or_default();
+        let config = UIButtonConfiguration::borderedProminentButtonConfiguration(mtm);
+        config.setTitle(Some(&title));
+        apply_style(button, &config);
+
+        // Reapply after every native update, including Day's title/state patches.
+        // Guard synchronous reentry from setConfiguration without retaining UIButton.
+        let updating = std::cell::Cell::new(false);
         let update = block2::RcBlock::new(move |button: NonNull<UIButton>| {
+            if updating.replace(true) { return; }
             let button = unsafe { button.as_ref() };
-            if let Some(config) = button.configuration() {
-                let is_loading = crate::app::AppState::get_main()
-                    .map(|state| state.loading.get())
-                    .unwrap_or(false);
-                if config.showsActivityIndicator() != is_loading {
-                    config.setShowsActivityIndicator(is_loading);
-                    button.setConfiguration(Some(&config));
-                }
-            }
+            let config = button.configuration().unwrap_or_else(|| {
+                UIButtonConfiguration::borderedProminentButtonConfiguration(button.mtm())
+            });
+            let is_loading = crate::app::AppState::get_main()
+                .map(|state| state.loading.get())
+                .unwrap_or(false);
+            config.setShowsActivityIndicator(is_loading);
+            apply_style(button, &config);
+            updating.set(false);
             if day::testing::fast_animations() { return; }
             use objc2_quartz_core::{CAMediaTiming, CAMediaTimingFunction, CATransition,
                 kCAMediaTimingFunctionEaseOut};
@@ -549,7 +566,7 @@ fn username_step_view(
 
     // The user explicitly requested keeping two steps with a capture input.
     // Mount only while this step is active so it never competes with the real
-    // password field on the destination page. It has no hit/accessibility target.
+    // password field on the destination page. It cannot receive touches.
     #[cfg(target_os = "ios")]
     let credential_capture = {
         when(move || get_auth_state().path.get().last() == Some(&AuthRoute::Login), move || {
@@ -559,7 +576,12 @@ fn username_step_view(
                 let _ = day_uikit::with_native(node, move |view, _, _| {
                     crate::shared::autofill::ios::capture_password(view, password);
                 });
-            }).height(0.5).any()
+            })
+            .height(1.0)
+            // A zero-radius surface supplies a native clipping wrapper around
+            // the 1pt layout frame, as well as the field's own native clipping.
+            .corner_radius(0.0)
+            .any()
         })
     };
     #[cfg(not(target_os = "ios"))]
@@ -1356,6 +1378,32 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
 #[cfg(test)]
 mod auth_error_tests {
     use super::auth_error_code;
+
+    #[cfg(feature = "mock")]
+    #[test]
+    fn auth_action_keeps_a_full_capsule_when_title_and_enabled_state_change() {
+        use day::prelude::*;
+        day_core::uninstall_tree();
+        let (mock, probe) = day_mock::MockToolkit::new();
+        let title = Signal::global("Continue");
+        let enabled = Signal::global(true);
+        day_core::launch_with(mock, day_spec::WindowOptions::default(), move || {
+            super::auth_action_button(move || title.get(), move || enabled.get(), || {}).any()
+        });
+        for (text, active) in [("Continue", true), ("Signing in…", false), ("Войти", true)] {
+            title.set(text);
+            enabled.set(active);
+            day::reactive::flush_sync();
+            let button = probe.find_by_kind(day_spec::kinds::BUTTON)[0].0;
+            let state = probe.state.borrow();
+            assert_eq!(state.widgets[&button.0].text, text);
+            assert_eq!(state.widgets[&button.0].enabled, active);
+            assert!(state.widgets.values().any(|widget| {
+                widget.corner_radius == 26.0 && (widget.frame.size.height - 52.0).abs() < 0.5
+            }), "auth action must retain a 26pt radius around its 52pt height");
+        }
+        day_core::uninstall_tree();
+    }
 
     #[cfg(feature = "mock")]
     #[test]

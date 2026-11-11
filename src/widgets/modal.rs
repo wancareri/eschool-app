@@ -13,6 +13,7 @@ const MAX_UP: f64 = 70.0;
 const FILLER_H: f64 = MAX_UP + 14.0;
 /// The card's smooth resize animation matches the native cover entrance duration.
 const RESIZE_MS: u32 = 380;
+const DIM_ALPHA: f64 = 0.50;
 
 /// Close is just the signal flip: the cover piece runs the native dismissal
 /// itself and keeps its content mounted until the backend reports it hidden.
@@ -246,7 +247,7 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
         .grow(Dimension::Both)
     })
     .unrouted()
-    .background(|_| Color::rgba(0.0, 0.0, 0.0, 0.50))
+    .background(|_| Color::rgba(0.0, 0.0, 0.0, DIM_ALPHA))
 }
 
 fn modal_dim<P: Piece>(p: P) -> AnyPiece {

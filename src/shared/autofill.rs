@@ -84,7 +84,7 @@ pub mod ios {
         NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol, NSString,
     };
     use objc2_ui_kit::{
-        NSObjectUIAccessibility, UIControlEvents, UITextAutocorrectionType,
+        UIControlEvents, UITextAutocorrectionType,
         UITextContentTypeNewPassword, UITextContentTypePassword, UITextContentTypeUsername,
         UITextField, UITextFieldDelegate, UITextInlinePredictionType,
         UITextInputTraits,
@@ -226,27 +226,18 @@ pub mod ios {
     pub fn capture_password(view: &UIView, value: Signal<String>) {
         configure(view, Role::Password);
         bind_value(view, value);
-        // Separate capture field: never overlays the username input or takes
-        // focus, and it is omitted from accessibility navigation.
-        // Keep normal alpha (1.0) so iOS AutoFill does not classify the field
-        // as hidden/honeypot. A 0.01-scale transform and clipping hide bullets.
+        // Keep default accessibility and full-size geometry available to
+        // credential providers. Clear drawing plus the 1pt clipping wrapper
+        // conceals secure bullets without hiding or scaling the native field.
         view.setUserInteractionEnabled(false);
         view.setClipsToBounds(true);
         view.layer().setMasksToBounds(true);
-        if let Some(mtm) = MainThreadMarker::new() {
-            view.setAccessibilityElementsHidden(true, mtm);
-            if let Some(field) = find_field(view) {
-                field.setTextColor(Some(&objc2_ui_kit::UIColor::clearColor()));
-                field.setBackgroundColor(Some(&objc2_ui_kit::UIColor::clearColor()));
-                unsafe { field.setTintColor(Some(&objc2_ui_kit::UIColor::clearColor())) };
-                field.setClipsToBounds(true);
-                field.layer().setMasksToBounds(true);
-                field.setTransform(objc2_core_foundation::CGAffineTransform {
-                    a: 0.01, b: 0.0, c: 0.0, d: 0.01, tx: 0.0, ty: 0.0,
-                });
-                field.setAccessibilityElementsHidden(true, mtm);
-                field.setIsAccessibilityElement(false, mtm);
-            }
+        if let Some(field) = find_field(view) {
+            field.setTextColor(Some(&objc2_ui_kit::UIColor::clearColor()));
+            field.setBackgroundColor(Some(&objc2_ui_kit::UIColor::clearColor()));
+            unsafe { field.setTintColor(Some(&objc2_ui_kit::UIColor::clearColor())) };
+            field.setClipsToBounds(true);
+            field.layer().setMasksToBounds(true);
         }
     }
 
