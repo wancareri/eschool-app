@@ -158,9 +158,8 @@ fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, p
     let container = context.containerView();
     let root_mtm = root.mtm();
     if presenting {
-        // Presentation may re-enter here while Day still holds its tree borrow
-        // for CoverPatch::Present. Keep the unlaid-out body invisible until that
-        // borrow releases and the queued FrameChanged has placed its children.
+        // Prepare the root and surfaces before registering the animation in
+        // UIKit's current presentation context.
         let prepare = RcBlock::new(|| {
             root.setAlpha(0.0);
             root.setTransform(identity_transform());
@@ -184,11 +183,7 @@ fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, p
         )
     }
     .expect("live transition context");
-    let bound = dispatch2::MainThreadBound::new(context, root_mtm);
-    dispatch2::DispatchQueue::main().exec_async(move || {
-        let mtm = MainThreadMarker::new().expect("UIKit main queue");
-        animate_surfaces(bound.get(mtm), presenting);
-    });
+    animate_surfaces(&context, presenting);
 }
 
 fn animate_surfaces(

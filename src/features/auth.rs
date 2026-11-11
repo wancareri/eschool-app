@@ -56,6 +56,8 @@ fn finish_login(state: AppState, token: Token, username: &str, remember: bool) {
     state.loading.set(false);
     // Leave filled native inputs intact until the auth hierarchy is removed:
     // that removal is UIKit's signal that the credential submission succeeded.
+    crate::shared::keyboard::dismiss();
+    state.current_section.set(crate::Section::Diary);
     state.is_authenticated.set(true);
     let ticket = session::ticket();
     ticket.publish(|state| {
@@ -373,4 +375,51 @@ pub fn start_background_refresh() {
             }
         }
     });
+}
+
+#[cfg(all(test, feature = "mock"))]
+mod tests {
+    use super::*;
+    use day::prelude::*;
+
+    #[test]
+    fn successful_login_opens_diary_from_another_section() {
+        // Keep the real token/prefs side effects out of the developer's storage.
+        if std::env::var_os("ESCHOOL_LOGIN_ISOLATED_TEST").is_none() {
+            let prefs = std::env::temp_dir()
+                .join(format!("eschool-login-test-{}", std::process::id()));
+            std::fs::create_dir_all(&prefs).unwrap();
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .env("ESCHOOL_LOGIN_ISOLATED_TEST", "1")
+                .env("XDG_CONFIG_HOME", &prefs)
+                .args(["--exact", "features::auth::tests::successful_login_opens_diary_from_another_section"])
+                .output()
+                .unwrap();
+            let _ = std::fs::remove_dir_all(prefs);
+            assert!(output.status.success(), "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr));
+            return;
+        }
+
+        let (mock, _) = day_mock::MockToolkit::new();
+        day_core::launch_with(mock, day_spec::WindowOptions::default(), || {
+            AppState::scoped(|_| spacer()).any()
+        });
+        let state = AppState::get_main().unwrap();
+        state.current_section.set(crate::Section::Settings);
+        state.loading.set(true);
+        state.setup_new_password_active.set(true);
+
+        finish_login(state, Token {
+            access_token: "test-access".into(),
+            refresh_token: "test-refresh".into(),
+        }, "test-account", false);
+
+        assert!(state.is_authenticated.get());
+        assert_eq!(state.current_section.get(), crate::Section::Diary);
+        assert!(!state.loading.get());
+        assert!(!state.setup_new_password_active.get());
+        day_core::uninstall_tree();
+    }
 }

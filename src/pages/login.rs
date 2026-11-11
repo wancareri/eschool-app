@@ -272,10 +272,11 @@ fn auth_action_button<M>(
 
 #[cfg(target_os = "ios")]
 fn native_auth_action_button(node: day::RNode) {
-    use objc2::{AnyThread, rc::Retained, runtime::{AnyObject, ProtocolObject}};
-    use objc2_foundation::{NSAttributedString, NSDictionary, NSMutableCopying, NSString};
+    use objc2::{rc::Retained, runtime::{AnyObject, ProtocolObject}};
+    use objc2_foundation::{NSDictionary, NSMutableCopying, NSString};
     use objc2_ui_kit::{
-        NSFontAttributeName, UIButton, UIButtonConfiguration, UIButtonConfigurationCornerStyle,
+        NSFontAttributeName, NSForegroundColorAttributeName,
+        UIButton, UIButtonConfiguration, UIButtonConfigurationCornerStyle,
         UIColor, UIFont, UIFontWeightSemibold,
     };
     use std::ptr::NonNull;
@@ -283,29 +284,21 @@ fn native_auth_action_button(node: day::RNode) {
     let _ = day_uikit::with_native(node, |view, _, mtm| {
         let Some(button) = view.downcast_ref::<UIButton>() else { return };
         let title = button.configuration().and_then(|config| config.title()).unwrap_or_default();
-        let config = UIButtonConfiguration::filledButtonConfiguration(mtm);
+        let config = UIButtonConfiguration::borderedProminentButtonConfiguration(mtm);
         config.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
+        config.setTitle(Some(&title));
         // Leave the fill tied to the native tint and let UIKit derive the
         // highlighted/disabled colors from these base colors.
         config.setBaseForegroundColor(Some(&UIColor::whiteColor()));
         let font = unsafe { UIFont::systemFontOfSize_weight(17.0, UIFontWeightSemibold) };
-        let attributes = NSDictionary::<NSString, AnyObject>::from_slices(
-            &[unsafe { NSFontAttributeName }], &[font.as_ref()],
-        );
-        let attributed = unsafe {
-            NSAttributedString::initWithString_attributes(
-                NSAttributedString::alloc(), &title, Some(&attributes),
-            )
-        };
-        config.setAttributedTitle(Some(&attributed));
-
         // Day patches the configuration's plain title for locale/loading changes.
-        // Keep its replacement title semibold too, without freezing the text or
-        // overriding UIKit's state-dependent foreground color.
+        // Transform its attributes without freezing that title.
         let transformer = block2::RcBlock::new(move |incoming: NonNull<NSDictionary<NSString, AnyObject>>| {
             let attributes = unsafe { incoming.as_ref() }.mutableCopy();
             unsafe {
                 attributes.setObject_forKey(font.as_ref(), ProtocolObject::from_ref(NSFontAttributeName));
+                attributes.setObject_forKey(UIColor::whiteColor().as_ref(),
+                    ProtocolObject::from_ref(NSForegroundColorAttributeName));
             }
             let attributes: Retained<NSDictionary<NSString, AnyObject>> = attributes.into_super();
             NonNull::new(Retained::autorelease_ptr(attributes)).expect("retained title attributes")
@@ -314,13 +307,22 @@ fn native_auth_action_button(node: day::RNode) {
         button.setConfiguration(Some(&config));
 
         // UIKit updates configuration for enabled/highlighted and title changes.
-        // Fade the stable button layer without retaining the button in its block
-        // or recursively assigning configuration from the update handler.
+        // Only replace configuration when loading actually changes, so the
+        // update handler cannot trigger an endless configuration update cycle.
         let update = block2::RcBlock::new(move |button: NonNull<UIButton>| {
+            let button = unsafe { button.as_ref() };
+            if let Some(config) = button.configuration() {
+                let is_loading = crate::app::AppState::get_main()
+                    .map(|state| state.loading.get())
+                    .unwrap_or(false);
+                if config.showsActivityIndicator() != is_loading {
+                    config.setShowsActivityIndicator(is_loading);
+                    button.setConfiguration(Some(&config));
+                }
+            }
             if day::testing::fast_animations() { return; }
             use objc2_quartz_core::{CAMediaTiming, CAMediaTimingFunction, CATransition,
                 kCAMediaTimingFunctionEaseOut};
-            let button = unsafe { button.as_ref() };
             if button.window().is_none() { return; }
             let fade = CATransition::new();
             fade.setDuration(0.2);
@@ -555,7 +557,7 @@ fn username_step_view(
                 let _ = day_uikit::with_native(node, move |view, _, _| {
                     crate::shared::autofill::ios::capture_password(view, password);
                 });
-            }).height(1.0).any()
+            }).opacity(0.0).height(1.0).any()
         })
     };
     #[cfg(not(target_os = "ios"))]
@@ -889,6 +891,8 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
         let state = state;
         move || {
             if state.loading.get() { return; }
+            #[cfg(target_os = "ios")]
+            crate::shared::autofill::ios::sync_values();
             let u = username.get_untracked();
             let p = password.get_untracked();
             let r = remember.get_untracked();

@@ -166,11 +166,22 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
         sw.setOnTintColor(Some(color));
     }
 
-    // Clear background for container views so the area beneath the tab bar
-    // and status bar isn't a solid opaque rectangle.
-    let class_name = view.class().name().to_str().unwrap_or("");
-    if class_name == "DayNavPageView" || class_name == "DayHolderView" || class_name == "UINavigationTransitionView" {
-        view.setBackgroundColor(Some(&clear));
+    // Preserve modal cover backgrounds during appearance changes; page
+    // containers still stay transparent beneath the tab and status bars.
+    let mut cur: Option<objc2::rc::Retained<objc2_ui_kit::UIResponder>> = view.nextResponder();
+    let mut is_cover = false;
+    while let Some(responder) = cur {
+        if responder.class().name().to_bytes() == b"DayCoverVC" {
+            is_cover = true;
+            break;
+        }
+        cur = responder.nextResponder();
+    }
+    if !is_cover {
+        let class_name = view.class().name().to_str().unwrap_or("");
+        if class_name == "DayNavPageView" || class_name == "DayHolderView" || class_name == "UINavigationTransitionView" {
+            view.setBackgroundColor(Some(&clear));
+        }
     }
 
     for sub in view.subviews().iter() {
