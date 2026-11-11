@@ -40,6 +40,22 @@ fn reconcile_credential_traits(
     repaired
 }
 
+/// Keep a visible keyboard session during a push; interactive transitions must
+/// still report commit/cancel before any responder handoff.
+#[cfg(any(target_os = "ios", test))]
+fn coordinate_navigation_focus(
+    keyboard_visible: bool,
+    interactive: bool,
+    wait: impl FnOnce(Box<dyn Fn(bool)>),
+    complete: impl Fn(bool) + 'static,
+) {
+    if keyboard_visible && !interactive {
+        complete(false);
+    } else {
+        wait(Box::new(complete));
+    }
+}
+
 /// Deliver the navigation focus request after UIKit's completion callback.
 #[cfg(any(target_os = "ios", test))]
 fn complete_navigation_focus(
@@ -264,8 +280,8 @@ pub mod ios {
         install_return_delegate(&field);
     }
 
-    /// Focus only after UIKit has finished positioning the destination page.
-    /// Focusing a moving page makes the keyboard inherit the horizontal push.
+    /// A hidden keyboard waits for positioning; an already visible keyboard
+    /// hands off during a noninteractive push without starting a new session.
     pub fn focus_after_navigation(role: Role, allowed: impl Fn() -> bool + 'static) {
         use std::rc::Rc;
         fn enqueue(role: Role, allowed: Rc<dyn Fn() -> bool>, retry: bool) {
@@ -340,6 +356,7 @@ pub mod ios {
                         > crate::shared::keyboard::get_safe_area_bottom()
                     {
                         UIView::performWithoutAnimation(&focus, mtm);
+                        crate::shared::keyboard::sync_follower_for_responder(&field);
                     } else {
                         field.becomeFirstResponder();
                     }
@@ -376,21 +393,25 @@ pub mod ios {
                                 UIViewControllerTransitionCoordinator,
                                 UIViewControllerTransitionCoordinatorContext,
                             };
-                            let on_complete = complete.clone();
-                            let completion = block2::RcBlock::new(
-                                move |context: std::ptr::NonNull<
-                                    ProtocolObject<
-                                        dyn UIViewControllerTransitionCoordinatorContext,
-                                    >,
-                                >| {
-                                    on_complete(unsafe { context.as_ref().isCancelled() });
+                            let visible = crate::shared::keyboard::get_keyboard_height()
+                                > crate::shared::keyboard::get_safe_area_bottom();
+                            let fallback = complete.clone();
+                            super::coordinate_navigation_focus(
+                                visible, coordinator.initiallyInteractive(),
+                                |on_complete| {
+                                    let completion = block2::RcBlock::new(
+                                        move |context: std::ptr::NonNull<ProtocolObject<
+                                            dyn UIViewControllerTransitionCoordinatorContext,
+                                        >>| {
+                                            on_complete(unsafe { context.as_ref().isCancelled() });
+                                        },
+                                    );
+                                    if !coordinator.animateAlongsideTransition_completion(None, Some(&completion)) {
+                                        fallback(false);
+                                    }
                                 },
+                                move |cancelled| complete(cancelled),
                             );
-                            if !coordinator
-                                .animateAlongsideTransition_completion(None, Some(&completion))
-                            {
-                                complete(false);
-                            }
                             return;
                         }
                         break;
@@ -748,6 +769,30 @@ mod navigation_focus_tests {
         rc::Rc,
     };
     type Pending = Rc<RefCell<Vec<Box<dyn FnOnce()>>>>;
+
+    #[test]
+    fn visible_push_handoff_precedes_completion_but_hidden_and_interactive_wait() {
+        for (visible, interactive) in [(true, false), (false, false), (true, true)] {
+            let waiting: Rc<RefCell<Option<Box<dyn Fn(bool)>>>> = Rc::default();
+            let queue = waiting.clone();
+            let focused = Rc::new(Cell::new(false));
+            let focus = focused.clone();
+            super::coordinate_navigation_focus(visible, interactive,
+                move |complete| *queue.borrow_mut() = Some(complete),
+                move |cancelled| complete_navigation_focus(cancelled, true,
+                    |_| panic!("visible delivery should be immediate"),
+                    { let focus = focus.clone(); move || focus.set(true) }));
+            if visible && !interactive {
+                assert!(focused.get(), "handoff must happen before the push finishes");
+                assert!(waiting.borrow().is_none());
+            } else {
+                assert!(!focused.get(), "hidden or interactive navigation must wait");
+                let complete = waiting.borrow_mut().take().expect("transition completion");
+                complete(interactive);
+                assert_eq!(focused.get(), !interactive, "cancelled pop must not focus");
+            }
+        }
+    }
 
     #[test]
     fn first_keyboard_focus_waits_until_after_completion_and_rechecks_route() {

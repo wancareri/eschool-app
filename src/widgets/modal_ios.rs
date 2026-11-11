@@ -135,6 +135,10 @@ fn settle_initial_layout(view: &UIView) {
     }
 }
 
+fn identity_transform() -> CGAffineTransform {
+    CGAffineTransform { a: 1.0, b: 0.0, c: 0.0, d: 1.0, tx: 0.0, ty: 0.0 }
+}
+
 fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, presenting: bool) {
     let key = unsafe {
         if presenting {
@@ -157,9 +161,21 @@ fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, p
         // Presentation may re-enter here while Day still holds its tree borrow
         // for CoverPatch::Present. Keep the unlaid-out body invisible until that
         // borrow releases and the queued FrameChanged has placed its children.
-        root.setAlpha(0.0);
-        root.setFrame(context.finalFrameForViewController(&vc));
-        container.addSubview(&root);
+        let prepare = RcBlock::new(|| {
+            root.setAlpha(0.0);
+            root.setTransform(identity_transform());
+            root.setFrame(context.finalFrameForViewController(&vc));
+            container.addSubview(&root);
+            root.layoutIfNeeded();
+            let mut surfaces = Vec::new();
+            motion_views(&root, &mut surfaces);
+            for surface in surfaces {
+                surface.setTransform(CGAffineTransform {
+                    ty: root.bounds().size.height, ..identity_transform()
+                });
+            }
+        });
+        UIView::performWithoutAnimation(&prepare, root_mtm);
     }
     root.layoutIfNeeded();
     let context = unsafe {
@@ -199,6 +215,11 @@ fn animate_surfaces(
     }
     let mut views = Vec::new();
     motion_views(&root, &mut views);
+    // Normalize inner surfaces before measuring. A theme relayout or pager
+    // transform must never become part of this vertical-only transition.
+    for view in &views {
+        view.setTransform(identity_transform());
+    }
     let travel = views
         .iter()
         .find(|v| v.tag() == CARD_TAG)
@@ -212,10 +233,9 @@ fn animate_surfaces(
     let surfaces: Vec<_> = views
         .into_iter()
         .map(|view| {
-            let rest = view.transform();
+            let rest = identity_transform();
             let offscreen = CGAffineTransform {
-                ty: rest.ty + travel,
-                ..rest
+                a: 1.0, b: 0.0, c: 0.0, d: 1.0, tx: 0.0, ty: travel,
             };
             (view, rest, offscreen)
         })

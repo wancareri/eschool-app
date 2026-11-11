@@ -108,6 +108,11 @@ pub fn register_follower_view(view: &objc2::rc::Retained<objc2_ui_kit::UIView>) 
 #[cfg(not(target_os = "ios"))]
 pub fn register_follower_view(_view: &()) {}
 
+#[cfg(target_os = "ios")]
+pub fn sync_follower_for_responder(field: &objc2_ui_kit::UIView) {
+    ios::sync_follower_for_responder(field);
+}
+
 /// The page is laid out inside the bottom safe area; subtract it once so a
 /// dock with an 8pt inset ends 8pt above the keyboard, including tall layouts.
 #[cfg(any(target_os = "ios", test))]
@@ -156,7 +161,10 @@ mod ios {
     }
 
     pub fn register_follower_view(view: &Retained<UIView>) {
-        let lift = CURRENT_LIFT.with(Cell::get);
+        // The cached height belongs to the outgoing page until the new page
+        // actually owns the responder. A mounted destination is not active yet.
+        let lift = page_for_view(view).filter(|page| contains_first_responder(page))
+            .map_or(0.0, |_| CURRENT_LIFT.with(Cell::get));
         unsafe {
             let _: () = objc2::msg_send![&**view, setTransform: transform(lift)];
         }
@@ -165,6 +173,40 @@ mod ios {
             all.retain(|weak| weak.load().is_some_and(|v| !std::ptr::eq(&*v, &**view)));
             all.push(Weak::new(&**view));
         });
+    }
+
+    fn page_for_view(view: &UIView) -> Option<Retained<UIView>> {
+        let mut responder = view.nextResponder();
+        while let Some(current) = responder {
+            if let Some(vc) = current.downcast_ref::<UIViewController>() {
+                return vc.view();
+            }
+            responder = current.nextResponder();
+        }
+        None
+    }
+
+    fn contains_first_responder(view: &UIView) -> bool {
+        view.isFirstResponder() || view.subviews().iter().any(|v| contains_first_responder(&v))
+    }
+
+    /// A visible-keyboard handoff need not emit another keyboard frame event.
+    /// Activate just the destination's dock once it owns the responder.
+    pub(super) fn sync_follower_for_responder(field: &UIView) {
+        if !field.isFirstResponder() { return; }
+        let Some(page) = page_for_view(field) else { return; };
+        let lift = CURRENT_LIFT.with(Cell::get);
+        let followers: Vec<_> = visible_followers().into_iter()
+            .filter(|view| view.isDescendantOfView(&page)).collect();
+        let mtm = field.mtm();
+        let animations = block2::RcBlock::new(move || {
+            for view in &followers { view.setTransform(transform(lift)); }
+        });
+        UIView::animateWithDuration_delay_options_animations_completion(
+            0.2, 0.0, UIViewAnimationOptions::CurveEaseOut
+                | UIViewAnimationOptions::BeginFromCurrentState,
+            &animations, None, mtm,
+        );
     }
 
     fn visible_followers() -> Vec<Retained<UIView>> {

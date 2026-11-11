@@ -255,7 +255,8 @@ fn auth_action_button<M>(
     let piece = button(title)
         .prominent()
         .enabled(enabled)
-        .action(action);
+        .action(action)
+        .animation(AnimSpec::ease_out(200));
 
     // Configure the UIButton leaf, before layout-only decorators hide its handle.
     #[cfg(target_os = "ios")]
@@ -311,6 +312,27 @@ fn native_auth_action_button(node: day::RNode) {
         });
         unsafe { config.setTitleTextAttributesTransformer(block2::RcBlock::as_ptr(&transformer)) };
         button.setConfiguration(Some(&config));
+
+        // UIKit updates configuration for enabled/highlighted and title changes.
+        // Fade the stable button layer without retaining the button in its block
+        // or recursively assigning configuration from the update handler.
+        let update = block2::RcBlock::new(move |button: NonNull<UIButton>| {
+            if day::testing::fast_animations() { return; }
+            use objc2_quartz_core::{CAMediaTiming, CAMediaTimingFunction, CATransition,
+                kCAMediaTimingFunctionEaseOut};
+            let button = unsafe { button.as_ref() };
+            if button.window().is_none() { return; }
+            let fade = CATransition::new();
+            fade.setDuration(0.2);
+            unsafe {
+                fade.setTimingFunction(Some(&CAMediaTimingFunction::functionWithName(
+                    kCAMediaTimingFunctionEaseOut,
+                )));
+            }
+            button.layer().addAnimation_forKey(&fade,
+                Some(&NSString::from_str("eschool.auth-action")));
+        });
+        unsafe { button.setConfigurationUpdateHandler(block2::RcBlock::as_ptr(&update)) };
     });
 }
 
@@ -446,6 +468,18 @@ fn animated_focus_tint(focused: Signal<bool>, accent: Signal<u32>) -> day::tween
     let cleanup = tint.clone();
     Scope::current().on_cleanup(move || cleanup.set(cleanup.get_untracked()));
     tint
+}
+
+/// Both eye images stay mounted; interrupted toggles reverse from the current opacity.
+fn animated_visibility(visible: Signal<bool>) -> day::tween::Tweened<f64> {
+    let opacity = day::tween::Tweened::new(if visible.get() { 1.0 } else { 0.0 });
+    let animated = opacity.clone();
+    day::reactive::watch(move || visible.get(), move |visible, _| {
+        animated.animate_to(if *visible { 1.0 } else { 0.0 }, AnimSpec::ease_out(200));
+    });
+    let cleanup = opacity.clone();
+    Scope::current().on_cleanup(move || cleanup.set(cleanup.get_untracked()));
+    opacity
 }
 
 fn username_step_view(
@@ -599,14 +633,14 @@ fn password_step_view(
 
     let show_password = Signal::new(false);
 
-    let toggle_eye = row((
-        when(
-            move || show_password.get(),
-            || vector(res::vectors::eye_off).frame(20.0, 20.0).tint(Color::hex(0x8E8E93)).any(),
-        )
-        .otherwise(|| vector(res::vectors::eye).frame(20.0, 20.0).tint(Color::hex(0x8E8E93)).any()),
+    let eye_progress = animated_visibility(show_password);
+    let eye_visible = eye_progress.clone();
+    let toggle_eye = zstack((
+        vector(res::vectors::eye).tint(Color::hex(0x8E8E93))
+            .frame(20.0, 20.0).opacity(move || 1.0 - eye_visible.get()),
+        vector(res::vectors::eye_off).tint(Color::hex(0x8E8E93))
+            .frame(20.0, 20.0).opacity(move || eye_progress.get()),
     ))
-    .align(VAlign::Center)
     .frame(36.0, 36.0)
     .on_tap({
         let show_password = show_password;
@@ -1315,6 +1349,75 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
 #[cfg(test)]
 mod auth_error_tests {
     use super::auth_error_code;
+
+    #[cfg(feature = "mock")]
+    #[test]
+    fn password_eye_crossfades_in_place_and_reverses_on_a_second_tap() {
+        use day::prelude::*;
+        use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+        day_core::uninstall_tree();
+        let (mock, probe) = day_mock::MockToolkit::new();
+        let pending: Rc<RefCell<VecDeque<day_spec::FrameCallback>>> = Rc::default();
+        let queue = pending.clone();
+        day_core::launch_with(mock, day_spec::WindowOptions::default(), move || {
+            // Install before constructing the page: initial field focus can
+            // already arm the shared display clock for its leading-icon tint.
+            day::frame::install_frame_requester(move |_, callback| {
+                queue.borrow_mut().push_back(callback);
+                Box::new(|| {})
+            });
+            super::password_step_view(Signal::new("account".into()),
+                Signal::new("fixture".into()), Signal::new(true),
+                crate::app::AppState::create(), || {}).any()
+        });
+        let field = probe.find_by_kind(day_spec::kinds::TEXT_FIELD)[0].0;
+        let images: Vec<_> = probe.find_by_kind(day_spec::kinds::IMAGE)
+            .iter().map(|(h, _)| *h).collect();
+        let (visible, hidden, tap_node) = {
+            let state = probe.state.borrow();
+            let visible = state.widgets.iter().find(|(_, w)| w.opacity == Some(1.0))
+                .map(|(h, _)| *h).expect("visible eye");
+            let hidden = state.widgets.iter().find(|(_, w)| w.opacity == Some(0.0))
+                .map(|(h, _)| *h).expect("hidden eye remains mounted");
+            let tap = state.log.iter().find_map(|line| line.strip_prefix("enable_gesture #")
+                .and_then(|s| s.strip_suffix(" Tap"))
+                .and_then(|s| s.parse::<u64>().ok())).expect("eye tap target");
+            (visible, hidden, state.widgets[&tap].node)
+        };
+        let frame = |time| {
+            let callback = pending.borrow_mut().pop_front().expect("requested animation frame");
+            callback(day_spec::FrameStamp::new(time));
+            day::reactive::flush_sync();
+        };
+        let tap = || {
+            probe.emit(day_spec::NodeId(tap_node), day_spec::Event::Tap(Point::ZERO));
+            day::reactive::flush_sync();
+        };
+        let opacity = |handle| probe.state.borrow().widgets[&handle].opacity.unwrap();
+        tap();
+        assert!(!probe.widget(field).input_traits.unwrap().secure,
+            "masking changes immediately while the artwork animates");
+        assert_eq!(opacity(visible), 1.0, "eye must not snap");
+        frame(1.0);
+        frame(1.1);
+        let middle = opacity(visible);
+        assert!(middle > 0.0 && middle < 1.0);
+        assert!((middle + opacity(hidden) - 1.0).abs() < 0.001);
+        tap();
+        assert!(probe.widget(field).input_traits.unwrap().secure);
+        assert_eq!(opacity(visible), middle, "rapid toggle reverses from displayed opacity");
+        frame(1.11); // queued request shared with the focus tint
+        frame(1.12);
+        frame(1.4);
+        assert_eq!(opacity(visible), 1.0);
+        assert_eq!(opacity(hidden), 0.0);
+        assert!(probe.widget(field).focused);
+        assert_eq!(probe.widget(field).text, "fixture");
+        assert!(images.iter().all(|h| probe.state.borrow().widgets.contains_key(&h.0)),
+            "neither artwork nor field may be recreated");
+        assert!(pending.borrow().is_empty());
+        day_core::uninstall_tree();
+    }
 
     #[cfg(feature = "mock")]
     #[test]

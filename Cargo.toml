@@ -40,7 +40,7 @@ day-part-haptics = "=0.7.1"
 # The item list persists as one JSON blob in `day::prefs` (src/model.rs).
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "blocking", "cookies"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "cookies"] }
 urlencoding = "2"
 base64 = "0.22"
 sha2 = "0.10"
@@ -50,7 +50,12 @@ toml = "0.8"
 regex = "1"
 keyring = { version = "3", features = ["apple-native"] }
 
+# Keep Apple system trust on iOS; Android/other cross targets use rustls.
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
 [target.'cfg(target_os = "ios")'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
 day-uikit = { package = "day-toolkit-uikit", version = "=0.7.1" }
 block2 = "0.6"
 objc2 = "0.6"
