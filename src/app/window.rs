@@ -72,6 +72,17 @@ fn window_shell(primary: bool) -> impl Piece {
                     crate::shared::notifications::ios::request_permission();
                     crate::features::diary::load_all(state);
                 }
+                #[cfg(target_os = "ios")]
+                if old.is_some() && old != Some(&auth) {
+                    dispatch2::DispatchQueue::main().exec_async(move || {
+                        let mtm = objc2::MainThreadMarker::new().expect("UIKit main thread");
+                        ios::sync_root_controllers(mtm, auth);
+                    });
+                    day::reactive::on_main_delayed(50, move || {
+                        let mtm = objc2::MainThreadMarker::new().expect("UIKit main thread");
+                        ios::sync_root_controllers(mtm, auth);
+                    });
+                }
             },
         );
 
@@ -253,9 +264,12 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
             Screen::Unlock => pages::pin_lock::render_unlock(state).any(),
             Screen::Tabs => render_nav_content(state, primary).any(),
             Screen::Login => pages::login::render().any(),
-        }, |_node| {
+        }, move |_node| {
             #[cfg(target_os = "ios")]
-            day_uikit::with_native(_node, |view, _, mtm| ios::mount_screen(view, mtm));
+            {
+                let is_auth = state.is_authenticated.get_untracked();
+                day_uikit::with_native(_node, move |view, _, mtm| ios::mount_screen(view, mtm, is_auth));
+            }
         }),
     )
     .grow(Dimension::Both)

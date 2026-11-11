@@ -39,9 +39,7 @@ unsafe extern "C-unwind" fn present_cover(
 }
 
 fn configure_presentation(vc: &UIViewController) {
-    if vc.class().name().to_bytes() == b"DayCoverVC"
-        && vc.viewIfLoaded().is_some_and(|root| root.tag() == COVER_TAG)
-    {
+    if vc.class().name().to_bytes() == b"DayCoverVC" {
         vc.setModalPresentationStyle(UIModalPresentationStyle::OverFullScreen);
         vc.setModalTransitionStyle(UIModalTransitionStyle::CoverVertical);
         DELEGATE.with(|delegate| {
@@ -220,6 +218,8 @@ fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, p
         // before measuring and animating the surfaces.
         let prepare = RcBlock::new(|| {
             root.setAlpha(0.0);
+            root.setOpaque(false);
+            root.setBackgroundColor(Some(&UIColor::clearColor()));
             root.setTransform(identity_transform());
             let final_frame = context.finalFrameForViewController(&vc);
             let frame = if final_frame.size.width > 0.0 && final_frame.size.height > 0.0 {
