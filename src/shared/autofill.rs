@@ -8,6 +8,10 @@ enum CredentialTrait {
     Autocorrection,
     SpellChecking,
     InlinePrediction,
+    SmartQuotes,
+    SmartDashes,
+    SmartInsertDelete,
+    GrammarChecking,
 }
 
 #[cfg(any(target_os = "ios", test))]
@@ -21,6 +25,10 @@ fn reconcile_credential_traits(
         CredentialTrait::Autocorrection,
         CredentialTrait::SpellChecking,
         CredentialTrait::InlinePrediction,
+        CredentialTrait::SmartQuotes,
+        CredentialTrait::SmartDashes,
+        CredentialTrait::SmartInsertDelete,
+        CredentialTrait::GrammarChecking,
     ] {
         // None means the OS does not support this trait. Never send a setter
         // for an unsupported or unchanged trait: preserve the AutoFill session.
@@ -65,7 +73,8 @@ pub mod ios {
         UITextContentTypeNewPassword, UITextContentTypePassword, UITextContentTypeUsername,
         UITextField, UITextFieldDelegate, UITextFieldViewMode, UITextInlinePredictionType,
         UITextInputTraits,
-        UITextSmartDashesType, UITextSmartQuotesType, UITextSpellCheckingType, UIView,
+        UITextSmartDashesType, UITextSmartInsertDeleteType, UITextSmartQuotesType,
+        UITextSpellCheckingType, UIView,
     };
     use std::cell::RefCell;
 
@@ -82,6 +91,18 @@ pub mod ios {
         static OBSERVER: RefCell<Option<Retained<InputModeObserver>>> = const { RefCell::new(None) };
     }
 
+    // iOS 27 public UITextInputTraits API, absent from objc2-ui-kit 0.3.2.
+    // UITextGrammarCheckingTypeNo = 1 (NSInteger); verified against the native
+    // binding: https://learn.microsoft.com/dotnet/api/uikit.uitextgrammarcheckingtype
+    // Guard BOTH selectors so deployment on iOS 16 remains supported.
+    const GRAMMAR_CHECKING_NO: isize = 1;
+
+    fn grammar_checking(field: &UITextField) -> Option<isize> {
+        (field.respondsToSelector(objc2::sel!(grammarCheckingType))
+            && field.respondsToSelector(objc2::sel!(setGrammarCheckingType:)))
+            .then(|| unsafe { objc2::msg_send![field, grammarCheckingType] })
+    }
+
     fn credential_traits(field: &UITextField, role: Role) -> usize {
         use super::CredentialTrait::*;
         let content_type = unsafe {
@@ -96,6 +117,10 @@ pub mod ios {
                 ContentType => Some(&*field.textContentType() == content_type),
                 Autocorrection => Some(field.autocorrectionType() == UITextAutocorrectionType::No),
                 SpellChecking => Some(field.spellCheckingType() == UITextSpellCheckingType::No),
+                SmartQuotes => Some(field.smartQuotesType() == UITextSmartQuotesType::No),
+                SmartDashes => Some(field.smartDashesType() == UITextSmartDashesType::No),
+                SmartInsertDelete => Some(field.smartInsertDeleteType() == UITextSmartInsertDeleteType::No),
+                GrammarChecking => grammar_checking(field).map(|value| value == GRAMMAR_CHECKING_NO),
                 InlinePrediction => {
                     // Both selectors are required, including on the iOS 16 target.
                     (field.respondsToSelector(objc2::sel!(inlinePredictionType))
@@ -107,6 +132,12 @@ pub mod ios {
                 ContentType => field.setTextContentType(Some(content_type)),
                 Autocorrection => field.setAutocorrectionType(UITextAutocorrectionType::No),
                 SpellChecking => field.setSpellCheckingType(UITextSpellCheckingType::No),
+                SmartQuotes => field.setSmartQuotesType(UITextSmartQuotesType::No),
+                SmartDashes => field.setSmartDashesType(UITextSmartDashesType::No),
+                SmartInsertDelete => field.setSmartInsertDeleteType(UITextSmartInsertDeleteType::No),
+                GrammarChecking => unsafe {
+                    let _: () = objc2::msg_send![field, setGrammarCheckingType: GRAMMAR_CHECKING_NO];
+                },
                 InlinePrediction => field.setInlinePredictionType(UITextInlinePredictionType::No),
             },
         )
@@ -131,12 +162,6 @@ pub mod ios {
             }
         }
 
-        if field.smartQuotesType() != UITextSmartQuotesType::No {
-            field.setSmartQuotesType(UITextSmartQuotesType::No);
-        }
-        if field.smartDashesType() != UITextSmartDashesType::No {
-            field.setSmartDashesType(UITextSmartDashesType::No);
-        }
         let assistant = field.inputAssistantItem();
         if assistant.allowsHidingShortcuts() {
             assistant.setAllowsHidingShortcuts(false);
@@ -550,14 +575,21 @@ pub mod ios {
         } else {
             "unsupported".into()
         };
+        let grammar = grammar_checking(field)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "unsupported".into());
         crate::shared::nslog::nslog(&format!(
-            "[AutoFill] event={event} role={role:?} language={language} content_type={} secure={} focused={} autocorrection={} spellcheck={} inline_prediction={} allows_hiding_shortcuts={}",
+            "[AutoFill] event={event} role={role:?} language={language} content_type={} secure={} focused={} autocorrection={} spellcheck={} inline_prediction={} smart_quotes={} smart_dashes={} smart_insert_delete={} grammar_checking={} allows_hiding_shortcuts={}",
             field.textContentType(),
             field.isSecureTextEntry(),
             field.isFirstResponder(),
             field.autocorrectionType().0,
             field.spellCheckingType().0,
             prediction,
+            field.smartQuotesType().0,
+            field.smartDashesType().0,
+            field.smartInsertDeleteType().0,
+            grammar,
             field.inputAssistantItem().allowsHidingShortcuts(),
         ));
     }
@@ -706,6 +738,38 @@ mod credential_trait_tests {
     use std::cell::RefCell;
 
     #[test]
+    fn repairs_smart_formatting_alongside_intact_credential_traits() {
+        let writes = RefCell::new(Vec::new());
+        let repaired = reconcile_credential_traits(
+            |kind| match kind {
+                CredentialTrait::ContentType | CredentialTrait::Autocorrection
+                | CredentialTrait::SpellChecking | CredentialTrait::InlinePrediction
+                | CredentialTrait::GrammarChecking => Some(true),
+                _ => Some(false),
+            },
+            |kind| writes.borrow_mut().push(format!("{kind:?}")),
+        );
+        assert_eq!(repaired, 3, "all smart formatting must be disabled on layout changes");
+        assert_eq!(*writes.borrow(), ["SmartQuotes", "SmartDashes", "SmartInsertDelete"]);
+    }
+
+    #[test]
+    fn repairs_supported_grammar_checking_without_touching_other_traits() {
+        use CredentialTrait::*;
+        let writes = RefCell::new(Vec::new());
+        let repaired = reconcile_credential_traits(
+            |kind| match kind {
+                ContentType | Autocorrection | SpellChecking | InlinePrediction
+                | SmartQuotes | SmartDashes | SmartInsertDelete => Some(true),
+                GrammarChecking => Some(false),
+            },
+            |kind| writes.borrow_mut().push(format!("{kind:?}")),
+        );
+        assert_eq!(repaired, 1);
+        assert_eq!(*writes.borrow(), ["GrammarChecking"]);
+    }
+
+    #[test]
     fn unchanged_credential_traits_never_invoke_native_setters() {
         // Reassigning even an unchanged content type can disturb AutoFill.
         for _ in 0..4 {
@@ -720,7 +784,7 @@ mod credential_trait_tests {
     fn repairs_only_drifted_traits_and_is_idle_on_the_next_input_mode_event() {
         use CredentialTrait::*;
         // Username content type is still correct; correction settings drifted.
-        let state = RefCell::new([Some(true), Some(false), Some(false), Some(false)]);
+        let state = RefCell::new([Some(true), Some(false), Some(false), Some(false), Some(true), Some(true), Some(true), Some(true)]);
         let writes = RefCell::new(Vec::new());
         let reconcile = || reconcile_credential_traits(
             |kind| state.borrow()[kind as usize],
@@ -740,14 +804,14 @@ mod credential_trait_tests {
     }
 
     #[test]
-    fn unsupported_inline_prediction_does_not_invoke_its_setter() {
+    fn unsupported_prediction_and_grammar_do_not_invoke_their_setters() {
         use CredentialTrait::*;
         let writes = RefCell::new(Vec::new());
         assert_eq!(reconcile_credential_traits(
             |kind| match kind {
-                ContentType | SpellChecking => Some(true),
+                ContentType | SpellChecking | SmartQuotes | SmartDashes | SmartInsertDelete => Some(true),
                 Autocorrection => Some(false),
-                InlinePrediction => None, // iOS 16 has neither selector.
+                InlinePrediction | GrammarChecking => None, // iOS 16 lacks both APIs.
             },
             |kind| writes.borrow_mut().push(kind),
         ), 1);

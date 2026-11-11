@@ -249,16 +249,69 @@ impl Route for AuthRoute {
 
 fn auth_action_button<M>(
     title: impl IntoText<M>,
+    enabled: impl Fn() -> bool + 'static,
     action: impl Fn() + 'static,
 ) -> impl Piece {
-    button(title)
+    let piece = button(title)
         .prominent()
+        .enabled(enabled)
+        .action(action);
+
+    // Configure the UIButton leaf, before layout-only decorators hide its handle.
+    #[cfg(target_os = "ios")]
+    let piece = piece.tweak(native_auth_action_button);
+
+    piece
+        .id(day::id!(login_btn))
         .height(52.0)
         .grow(Dimension::Width)
-        .action(action)
-        .id(day::id!(login_btn))
         .log_pos("Auth:ActionButton")
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
+}
+
+#[cfg(target_os = "ios")]
+fn native_auth_action_button(node: day::RNode) {
+    use objc2::{AnyThread, rc::Retained, runtime::{AnyObject, ProtocolObject}};
+    use objc2_foundation::{NSAttributedString, NSDictionary, NSMutableCopying, NSString};
+    use objc2_ui_kit::{
+        NSFontAttributeName, UIButton, UIButtonConfiguration, UIButtonConfigurationCornerStyle,
+        UIColor, UIFont, UIFontWeightSemibold,
+    };
+    use std::ptr::NonNull;
+
+    let _ = day_uikit::with_native(node, |view, _, mtm| {
+        let Some(button) = view.downcast_ref::<UIButton>() else { return };
+        let title = button.configuration().and_then(|config| config.title()).unwrap_or_default();
+        let config = UIButtonConfiguration::filledButtonConfiguration(mtm);
+        config.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
+        // Leave the fill tied to the native tint and let UIKit derive the
+        // highlighted/disabled colors from these base colors.
+        config.setBaseForegroundColor(Some(&UIColor::whiteColor()));
+        let font = unsafe { UIFont::systemFontOfSize_weight(17.0, UIFontWeightSemibold) };
+        let attributes = NSDictionary::<NSString, AnyObject>::from_slices(
+            &[unsafe { NSFontAttributeName }], &[font.as_ref()],
+        );
+        let attributed = unsafe {
+            NSAttributedString::initWithString_attributes(
+                NSAttributedString::alloc(), &title, Some(&attributes),
+            )
+        };
+        config.setAttributedTitle(Some(&attributed));
+
+        // Day patches the configuration's plain title for locale/loading changes.
+        // Keep its replacement title semibold too, without freezing the text or
+        // overriding UIKit's state-dependent foreground color.
+        let transformer = block2::RcBlock::new(move |incoming: NonNull<NSDictionary<NSString, AnyObject>>| {
+            let attributes = unsafe { incoming.as_ref() }.mutableCopy();
+            unsafe {
+                attributes.setObject_forKey(font.as_ref(), ProtocolObject::from_ref(NSFontAttributeName));
+            }
+            let attributes: Retained<NSDictionary<NSString, AnyObject>> = attributes.into_super();
+            NonNull::new(Retained::autorelease_ptr(attributes)).expect("retained title attributes")
+        });
+        unsafe { config.setTitleTextAttributesTransformer(block2::RcBlock::as_ptr(&transformer)) };
+        button.setConfiguration(Some(&config));
+    });
 }
 
 /// One window-level menu shared by every authentication page. Native UIMenu
@@ -345,7 +398,7 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
             spacer().grow(Dimension::Both),
         )),
         spacer().grow(Dimension::Both),
-        auth_action_button(res::str::auth_start(), on_start),
+        auth_action_button(res::str::auth_start(), || true, on_start),
         spacer().height(8.0),
     ))
     .grow(Dimension::Both)
@@ -496,7 +549,8 @@ fn username_step_view(
         label(res::str::auth_step_username()).font(Font::Caption).secondary()
             .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
         content,
-        auth_action_button(res::str::auth_continue(), on_submit),
+        auth_action_button(res::str::auth_continue(),
+            move || !username.get().trim().is_empty() && !state.loading.get(), on_submit),
         spacer().height(8.0),
     ));
 
@@ -651,7 +705,8 @@ fn password_step_view(
         label(move || username.get()).font(Font::Subheadline).bold()
             .padding(Insets { top: 4.0, leading: 20.0, bottom: 12.0, trailing: 20.0 }),
         content,
-        auth_action_button(btn_title, on_submit),
+        auth_action_button(btn_title,
+            move || !password.get().trim().is_empty() && !state.loading.get(), on_submit),
         spacer().height(8.0),
     ));
 
@@ -804,6 +859,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
         let state = state;
         let path = path;
         move || {
+            if state.loading.get() { return; }
             #[cfg(target_os = "ios")]
             crate::shared::autofill::ios::sync_values();
             let u = username.get_untracked();
@@ -830,7 +886,7 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
             let u = username.get_untracked();
             let p = password.get_untracked();
             let r = remember.get_untracked();
-            if p.is_empty() {
+            if p.trim().is_empty() {
                 error_local.set("Введите пароль".into());
                 return;
             }
@@ -1287,6 +1343,47 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
 #[cfg(test)]
 mod auth_error_tests {
     use super::auth_error_code;
+
+    #[cfg(feature = "mock")]
+    #[test]
+    fn auth_step_buttons_follow_trimmed_input_and_loading() {
+        use day::prelude::*;
+        for password_step in [false, true] {
+            day_core::uninstall_tree();
+            let value = Signal::global(String::new());
+            let loading = Signal::global(false);
+            let (mock, probe) = day_mock::MockToolkit::new();
+            day_core::launch_with(mock, day_spec::WindowOptions::default(), move || {
+                let mut state = crate::app::AppState::create();
+                state.loading = loading;
+                if password_step {
+                    super::password_step_view(Signal::new("account".into()), value,
+                        Signal::new(false), state, || {}).any()
+                } else {
+                    super::username_step_view(value, Signal::new(String::new()),
+                        Signal::new(true), Signal::new(false), state, || {}).any()
+                }
+            });
+            let buttons = probe.find_by_kind(day_spec::kinds::BUTTON);
+            assert_eq!(buttons.len(), 1);
+            let handle = buttons[0].0;
+            for (text, busy, enabled) in [
+                ("", false, false), (" \t\n\u{2003}", false, false),
+                (" account ", false, true), ("account", true, false),
+                ("account", false, true), ("", false, false),
+            ] {
+                value.set(text.into());
+                loading.set(busy);
+                day::reactive::flush_sync();
+                let button = probe.widget(handle);
+                assert_eq!(button.enabled, enabled,
+                    "password_step={password_step}, busy={busy}, expected enabled={enabled}");
+                assert_eq!(value.get(), text, "validation must not rewrite credentials");
+                assert!(!button.text.is_empty(), "disabled native buttons keep their label");
+            }
+            day_core::uninstall_tree();
+        }
+    }
 
     #[test]
     fn reset_discards_credentials_focus_and_navigation() {
