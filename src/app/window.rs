@@ -4,15 +4,6 @@ use crate::shared::{log_bridge, nslog, locale};
 use crate::pages;
 use crate::res;
 
-#[cfg(target_os = "ios")]
-#[path = "window_ios.rs"]
-mod ios;
-
-fn screen_host(content: impl Piece, configure: impl FnOnce(day_core::RNode) + 'static) -> impl Piece {
-    // A concrete native boundary is needed even when an arm ends in layout-only wrappers.
-    zstack((content,)).tweak(configure).grow(Dimension::Both)
-}
-
 pub fn window() -> day::WindowOptions {
     log_bridge::install();
     day::WindowOptions {
@@ -71,17 +62,6 @@ fn window_shell(primary: bool) -> impl Piece {
                     #[cfg(target_os = "ios")]
                     crate::shared::notifications::ios::request_permission();
                     crate::features::diary::load_all(state);
-                }
-                #[cfg(target_os = "ios")]
-                if old.is_some() && old != Some(&auth) {
-                    dispatch2::DispatchQueue::main().exec_async(move || {
-                        let mtm = objc2::MainThreadMarker::new().expect("UIKit main thread");
-                        ios::sync_root_controllers(mtm, auth);
-                    });
-                    day::reactive::on_main_delayed(50, move || {
-                        let mtm = objc2::MainThreadMarker::new().expect("UIKit main thread");
-                        ios::sync_root_controllers(mtm, auth);
-                    });
                 }
             },
         );
@@ -260,17 +240,11 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
             else if state.is_authenticated.get() { Screen::Tabs }
             else { Screen::Login }
         },
-        move |screen| screen_host(match screen {
+        move |screen| match screen {
             Screen::Unlock => pages::pin_lock::render_unlock(state).any(),
             Screen::Tabs => render_nav_content(state, primary).any(),
             Screen::Login => pages::login::render().any(),
-        }, move |_node| {
-            #[cfg(target_os = "ios")]
-            {
-                let is_auth = state.is_authenticated.get_untracked();
-                day_uikit::with_native(_node, move |view, _, mtm| ios::mount_screen(view, mtm, is_auth));
-            }
-        }),
+        },
     )
     .grow(Dimension::Both)
     .background(move || {
@@ -325,40 +299,6 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
 mod tests {
     use super::*;
     use day_spec::props::NavPresentation;
-
-    #[test]
-    fn screen_controller_hook_has_a_native_host_and_the_screen_lifetime() {
-        use std::{cell::RefCell, rc::Rc};
-        day_core::uninstall_tree();
-        let active = Signal::global(false);
-        let events = Rc::new(RefCell::new(Vec::new()));
-        let observed = events.clone();
-        let (mock, _) = day_mock::MockToolkit::new();
-        day_core::launch_with(mock, day_spec::WindowOptions::default(), move || {
-            switch(move || active.get(), move |&authenticated| {
-                let events = observed.clone();
-                screen_host(label("Screen").grow(Dimension::Both), move |node| {
-                    day_core::with_tree(|tree| {
-                        assert!(tree.node_handle_any(node).is_some(),
-                            "root controller hook must run on a native host, before layout wrappers");
-                    });
-                    events.borrow_mut().push((authenticated, "mount"));
-                    day::reactive::Scope::current().on_cleanup(move || {
-                        events.borrow_mut().push((authenticated, "unmount"));
-                    });
-                })
-            }).any()
-        });
-        active.set(true);
-        day::reactive::flush_sync();
-        active.set(false);
-        day::reactive::flush_sync();
-        assert_eq!(*events.borrow(), vec![
-            (false, "mount"), (false, "unmount"), (true, "mount"),
-            (true, "unmount"), (false, "mount"),
-        ]);
-        day_core::uninstall_tree();
-    }
 
     #[test]
     fn authentication_replaces_login_and_pin_trees_with_diary_tabs() {
