@@ -2,7 +2,7 @@ use day::prelude::*;
 
 #[cfg(target_os = "ios")]
 #[path = "modal_ios.rs"]
-mod ios;
+pub(crate) mod ios;
 
 /// The rubber band's ceiling: how far the card can be pulled up.
 const MAX_UP: f64 = 70.0;

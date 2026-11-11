@@ -12,13 +12,12 @@ pub fn render() -> impl Piece {
 
     zstack((
         when(
-            move || !state.is_authenticated.get() && state.setup_new_password_active.get(),
+            move || state.setup_new_password_active.get(),
             move || crate::widgets::header::page(res::str::auth_setup_title(), Signal::new(Vec::<String>::new()), setup_password_form(state, show_logs))
                 .grow(Dimension::Both)
                 .any(),
-        ),
-        when(
-            move || !state.is_authenticated.get() && !state.setup_new_password_active.get(),
+        )
+        .otherwise(
             move || auth_form(state, show_logs).any(),
         ),
         when(

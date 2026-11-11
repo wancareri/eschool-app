@@ -33,6 +33,8 @@ pub fn root() -> impl Piece {
     crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
     #[cfg(target_os = "ios")]
     crate::shared::ios_nav::ios_impl::install_auth_menu_icons();
+    #[cfg(target_os = "ios")]
+    crate::widgets::modal::ios::install_presentation_hook();
     crate::shared::keyboard::init();
     crate::shared::layout_diag::init();
     day::register_preferences(pages::settings::settings_body);
@@ -227,18 +229,23 @@ fn build_nav(primary: bool) -> impl Piece {
 }
 
 fn nav_body(state: AppState, primary: bool) -> impl Piece {
-    when(
-        move || state.pin_lock_active.get(),
-        move || pages::pin_lock::render_unlock(state).any(),
+    #[derive(Clone, PartialEq)]
+    enum Screen { Unlock, Tabs, Login }
+
+    // One owner replaces the complete controller tree. Nested auth conditions
+    // can tear down the login stack before its replacement is attached on UIKit.
+    switch(
+        move || {
+            if state.pin_lock_active.get() { Screen::Unlock }
+            else if state.is_authenticated.get() { Screen::Tabs }
+            else { Screen::Login }
+        },
+        move |screen| match screen {
+            Screen::Unlock => pages::pin_lock::render_unlock(state).any(),
+            Screen::Tabs => render_nav_content(state, primary).any(),
+            Screen::Login => pages::login::render().any(),
+        },
     )
-    .otherwise(move || {
-        when(
-            move || state.is_authenticated.get(),
-            move || render_nav_content(state, primary).any(),
-        )
-        .otherwise(move || pages::login::render().any())
-        .any()
-    })
     .grow(Dimension::Both)
     .background(move || {
         if day::dark_mode() {
@@ -285,5 +292,56 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
         sel.title(move || crate::widgets::header::section_title(section.get())).id(day::id!(nav)).background(Color::rgba(0.0, 0.0, 0.0, 0.0)).any()
     } else {
         sel.local().title(move || crate::widgets::header::section_title(section.get())).id(day::id!(nav)).background(Color::rgba(0.0, 0.0, 0.0, 0.0)).any()
+    }
+}
+
+#[cfg(all(test, feature = "mock"))]
+mod tests {
+    use super::*;
+    use day_spec::props::NavPresentation;
+
+    #[test]
+    fn authentication_replaces_login_and_pin_trees_with_diary_tabs() {
+        day_core::uninstall_tree();
+        let (mock, probe) = day_mock::MockToolkit::new();
+        day_core::launch_with(mock, day_spec::WindowOptions::default(), || {
+            AppState::scoped(|state| {
+                state.is_authenticated.set(false);
+                state.pin_lock_active.set(false);
+                nav_body(state, true)
+            }).any()
+        });
+        let state = AppState::get_main().unwrap();
+        let login_hosts: Vec<_> = probe.find_by_kind(day_spec::kinds::NAV)
+            .into_iter().map(|(handle, _)| handle).collect();
+        assert!(!login_hosts.is_empty());
+
+        state.current_section.set(crate::Section::Diary);
+        state.is_authenticated.set(true);
+        day::reactive::flush_sync();
+        let tabs = probe.find_by_kind(day_spec::kinds::NAV)
+            .into_iter().filter(|(_, w)| w.presentation == Some(NavPresentation::Tabs))
+            .collect::<Vec<_>>();
+        assert_eq!(tabs.len(), 1, "login must mount the tab controller without restarting");
+        assert_eq!(tabs[0].1.selected_page, Some(0), "Diary must be selected");
+        for handle in login_hosts {
+            assert!(!probe.state.borrow().widgets.contains_key(&handle.0),
+                "outgoing login controllers must be removed");
+        }
+
+        state.pin_lock_active.set(true);
+        day::reactive::flush_sync();
+        assert!(!probe.state.borrow().widgets.contains_key(&tabs[0].0.0));
+        state.pin_lock_active.set(false);
+        day::reactive::flush_sync();
+        assert_eq!(probe.find_by_kind(day_spec::kinds::NAV).iter()
+            .filter(|(_, w)| w.presentation == Some(NavPresentation::Tabs)).count(), 1);
+
+        state.is_authenticated.set(false);
+        day::reactive::flush_sync();
+        assert!(probe.find_by_kind(day_spec::kinds::NAV).iter()
+            .all(|(_, w)| w.presentation != Some(NavPresentation::Tabs)));
+        assert!(!probe.find_by_kind(day_spec::kinds::NAV).is_empty());
+        day_core::uninstall_tree();
     }
 }

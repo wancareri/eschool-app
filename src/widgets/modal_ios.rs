@@ -1,10 +1,10 @@
 //! App-owned transitions for the shared bottom-sheet shell on Day 0.7.1.
 //! Configure only this shell's DayCoverVC; PIN setup keeps its normal cover.
 
-use block2::RcBlock;
+use block2::{Block, RcBlock};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel};
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::{ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_core_foundation::CGAffineTransform;
 use objc2_foundation::{NSObject, NSObjectProtocol};
 use objc2_ui_kit::{
@@ -19,53 +19,54 @@ pub(super) const FILLER_TAG: isize = 0x45534302;
 const DURATION: f64 = 0.38;
 const COVER_TAG: isize = 0x45534303;
 
-type ViewWillAppear = unsafe extern "C-unwind" fn(*mut AnyObject, Sel, Bool);
+type PresentViewController = unsafe extern "C-unwind" fn(
+    *mut AnyObject, Sel, &UIViewController, Bool, Option<&Block<dyn Fn()>>,
+);
 
-thread_local! {
-    static ORIGINAL_VIEW_WILL_APPEAR: std::cell::Cell<Option<ViewWillAppear>> = const {
-        std::cell::Cell::new(None)
-    };
+static ORIGINAL_PRESENT: std::sync::OnceLock<PresentViewController> = std::sync::OnceLock::new();
+
+unsafe extern "C-unwind" fn present_cover(
+    this: *mut AnyObject,
+    cmd: Sel,
+    vc: &UIViewController,
+    animated: Bool,
+    completion: Option<&Block<dyn Fn()>>,
+) {
+    configure_presentation(vc);
+    if let Some(original) = ORIGINAL_PRESENT.get() {
+        unsafe { original(this, cmd, vc, animated, completion) };
+    }
 }
 
-unsafe extern "C-unwind" fn cover_view_will_appear(this: *mut AnyObject, cmd: Sel, animated: Bool) {
-    ORIGINAL_VIEW_WILL_APPEAR.with(|original| {
-        if let Some(original) = original.get() {
-            unsafe { original(this, cmd, animated) };
-        }
-    });
-    let Some(vc) = (unsafe { this.as_ref() }).and_then(|obj| obj.downcast_ref::<UIViewController>()) else {
-        return;
-    };
-    // DayCoverVC also hosts opaque PIN setup and ordinary sheets. Only our
-    // shared shell is marked; its root survives repeated presentations.
-    if vc.view().is_some_and(|root| root.tag() == COVER_TAG) {
+fn configure_presentation(vc: &UIViewController) {
+    if vc.class().name().to_bytes() == b"DayCoverVC" {
         vc.setModalPresentationStyle(UIModalPresentationStyle::OverFullScreen);
         DELEGATE.with(|delegate| {
             vc.setTransitioningDelegate(Some(ProtocolObject::from_ref(&**delegate)));
         });
-        if let Some(root) = vc.view() {
+        if let Some(root) = vc.viewIfLoaded() {
             root.setOpaque(false);
             root.setBackgroundColor(Some(&UIColor::clearColor()));
         }
     }
 }
 
-fn install_appearance_hook(class: &AnyClass) {
-    ORIGINAL_VIEW_WILL_APPEAR.with(|original| {
-        if original.get().is_some() { return; }
-        let selector = objc2::sel!(viewWillAppear:);
-        let Some(method) = class.instance_method(selector) else { return };
+pub(crate) fn install_presentation_hook() {
+    // Installed on the main thread, once. UIKit chooses the animator inside
+    // presentViewController:, before viewWillAppear: can restore the delegate.
+    ORIGINAL_PRESENT.get_or_init(|| {
+        let class = UIViewController::class();
+        let selector = objc2::sel!(presentViewController:animated:completion:);
+        let method = class.instance_method(selector).expect("UIViewController presentation method");
         let previous = method.implementation();
-        original.set(Some(unsafe { std::mem::transmute::<Imp, ViewWillAppear>(previous) }));
-        let replacement: Imp = unsafe { std::mem::transmute(cover_view_will_appear as *const ()) };
-        // Add an override when inherited: changing an inherited Method's IMP
-        // would otherwise swizzle UIViewController and every controller class.
+        let replacement: Imp = unsafe { std::mem::transmute(present_cover as *const ()) };
         unsafe {
             let encoding = objc2::ffi::method_getTypeEncoding(method);
             objc2::ffi::class_replaceMethod(
                 class as *const AnyClass as *mut AnyClass, selector, replacement, encoding,
             );
         }
+        unsafe { std::mem::transmute::<Imp, PresentViewController>(previous) }
     });
 }
 
@@ -86,16 +87,11 @@ pub(super) fn configure_cover(view: &UIView, _mtm: MainThreadMarker) {
             if vc.class().name().to_bytes() != b"DayCoverVC" {
                 break;
             }
-            install_appearance_hook(vc.class());
-            vc.setModalPresentationStyle(UIModalPresentationStyle::OverFullScreen);
             if let Some(root) = vc.view() {
                 root.setTag(COVER_TAG);
-                root.setOpaque(false);
-                root.setBackgroundColor(Some(&UIColor::clearColor()));
             }
-            DELEGATE.with(|delegate| {
-                vc.setTransitioningDelegate(Some(ProtocolObject::from_ref(&**delegate)));
-            });
+            install_presentation_hook();
+            configure_presentation(vc);
             return;
         }
         next = responder.nextResponder();
@@ -222,7 +218,13 @@ fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, p
         let prepare = RcBlock::new(|| {
             root.setAlpha(0.0);
             root.setTransform(identity_transform());
-            root.setFrame(context.finalFrameForViewController(&vc));
+            let final_frame = context.finalFrameForViewController(&vc);
+            let frame = if final_frame.size.width > 0.0 && final_frame.size.height > 0.0 {
+                final_frame
+            } else {
+                container.bounds()
+            };
+            root.setFrame(frame);
             container.addSubview(&root);
             root.layoutIfNeeded();
             let mut surfaces = Vec::new();
@@ -281,6 +283,7 @@ fn animate_surfaces(
             let frame = card.convertRect_toView(card.bounds(), Some(&root));
             (root.bounds().size.height - frame.origin.y).max(0.0)
         });
+    let travel = if travel > 0.0 { travel } else { root.bounds().size.height };
     // These are INNER native surfaces. Day owns the outer translation layer for
     // drag/keyboard movement; the animator never overwrites that layer. Dismissal
     // therefore starts at the released position and only travels further down.
