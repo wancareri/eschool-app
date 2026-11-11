@@ -67,10 +67,18 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+      - name: Android NDK env
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          NDK_BIN="$(echo "$ANDROID_NDK_LATEST_HOME"/toolchains/llvm/prebuilt/*/bin)"
+          echo "CC_aarch64_linux_android=$NDK_BIN/aarch64-linux-android24-clang" >> "$GITHUB_ENV"
+          echo "AR_aarch64_linux_android=$NDK_BIN/llvm-ar" >> "$GITHUB_ENV"
       - uses: actions/cache@v4
         with:
           path: |
