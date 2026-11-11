@@ -8,7 +8,7 @@ use objc2::{ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_cl
 use objc2_core_foundation::CGAffineTransform;
 use objc2_foundation::{NSObject, NSObjectProtocol};
 use objc2_ui_kit::{
-    UIColor, UIModalPresentationStyle, UITransitionContextFromViewControllerKey,
+    UIColor, UIModalPresentationStyle, UIModalTransitionStyle, UITransitionContextFromViewControllerKey,
     UITransitionContextToViewControllerKey, UIView, UIViewAnimationOptions, UIViewController,
     UIViewControllerAnimatedTransitioning, UIViewControllerContextTransitioning,
     UIViewControllerTransitioningDelegate,
@@ -39,8 +39,11 @@ unsafe extern "C-unwind" fn present_cover(
 }
 
 fn configure_presentation(vc: &UIViewController) {
-    if vc.class().name().to_bytes() == b"DayCoverVC" {
+    if vc.class().name().to_bytes() == b"DayCoverVC"
+        && vc.viewIfLoaded().is_some_and(|root| root.tag() == COVER_TAG)
+    {
         vc.setModalPresentationStyle(UIModalPresentationStyle::OverFullScreen);
+        vc.setModalTransitionStyle(UIModalTransitionStyle::CoverVertical);
         DELEGATE.with(|delegate| {
             vc.setTransitioningDelegate(Some(ProtocolObject::from_ref(&**delegate)));
         });
@@ -213,8 +216,8 @@ fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, p
     let container = context.containerView();
     let root_mtm = root.mtm();
     if presenting {
-        // Prepare the root and surfaces before registering the animation in
-        // UIKit's current presentation context.
+        // Hide and attach the root now; Day's queued frame update must settle
+        // before measuring and animating the surfaces.
         let prepare = RcBlock::new(|| {
             root.setAlpha(0.0);
             root.setTransform(identity_transform());
@@ -244,7 +247,18 @@ fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, p
         )
     }
     .expect("live transition context");
-    animate_surfaces(&context, presenting);
+    if presenting {
+        // Day queues FrameChanged while CoverPatch::Present holds its tree
+        // borrow. Animate only after that layout has placed the new surfaces,
+        // on EVERY opening, including after an appearance/accent change.
+        let bound = dispatch2::MainThreadBound::new(context, root_mtm);
+        dispatch2::DispatchQueue::main().exec_async(move || {
+            let mtm = MainThreadMarker::new().expect("UIKit main thread");
+            animate_surfaces(&bound.into_inner(mtm), true);
+        });
+    } else {
+        animate_surfaces(&context, false);
+    }
 }
 
 fn animate_surfaces(
@@ -271,11 +285,13 @@ fn animate_surfaces(
     }
     let mut views = Vec::new();
     motion_views(&root, &mut views);
-    // Normalize inner surfaces before measuring. A theme relayout or pager
-    // transform must never become part of this vertical-only transition.
-    for view in &views {
-        view.setTransform(identity_transform());
-    }
+    // Preparation must not inherit UIKit/Day's surrounding animation context.
+    UIView::performWithoutAnimation(&RcBlock::new(|| {
+        root.setTransform(identity_transform());
+        for view in &views {
+            view.setTransform(identity_transform());
+        }
+    }), root_mtm);
     let travel = views
         .iter()
         .find(|v| v.tag() == CARD_TAG)
@@ -302,11 +318,13 @@ fn animate_surfaces(
     let dim = UIColor::colorWithWhite_alpha(0.0, super::DIM_ALPHA);
     let clear = UIColor::clearColor();
     if presenting {
-        root.setBackgroundColor(Some(&clear));
-        for (view, _, offscreen) in &surfaces {
-            view.setTransform(*offscreen);
-        }
-        root.setAlpha(1.0);
+        UIView::performWithoutAnimation(&RcBlock::new(|| {
+            root.setBackgroundColor(Some(&clear));
+            for (view, _, offscreen) in &surfaces {
+                view.setTransform(*offscreen);
+            }
+            root.setAlpha(1.0);
+        }), root_mtm);
     }
     let animation_root = root.clone();
     let animation_surfaces = surfaces.clone();
@@ -323,35 +341,24 @@ fn animate_surfaces(
     let context = context.clone();
     let completion = RcBlock::new(move |_finished: objc2::runtime::Bool| {
         let completed = !context.transitionWasCancelled();
-        if presenting {
-            if completed {
-                for (view, rest, _) in &surfaces {
-                    view.setTransform(*rest);
-                }
-                root.setBackgroundColor(Some(&dim));
-            } else {
+        let visible = presenting == completed;
+        UIView::performWithoutAnimation(&RcBlock::new(|| {
+            if !visible {
                 root.removeFromSuperview();
             }
-        } else {
-            if completed {
-                root.removeFromSuperview();
-                for (view, _, offscreen) in &surfaces {
-                    view.setTransform(*offscreen);
-                }
-                root.setBackgroundColor(Some(&clear));
-            } else {
-                for (view, rest, _) in &surfaces {
-                    view.setTransform(*rest);
-                }
-                root.setBackgroundColor(Some(&dim));
+            for (view, rest, _) in &surfaces {
+                view.setTransform(*rest);
             }
-        }
+            root.setTransform(identity_transform());
+            root.setAlpha(1.0);
+            root.setBackgroundColor(Some(if visible { &dim } else { &clear }));
+        }), root_mtm);
         context.completeTransition(completed);
     });
     UIView::animateWithDuration_delay_options_animations_completion(
         DURATION,
         0.0,
-        UIViewAnimationOptions::CurveEaseOut | UIViewAnimationOptions::BeginFromCurrentState,
+        UIViewAnimationOptions::CurveEaseOut,
         &animations,
         Some(&completion),
         root_mtm,
