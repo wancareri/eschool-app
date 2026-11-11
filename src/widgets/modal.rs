@@ -1,5 +1,9 @@
 use day::prelude::*;
 
+#[cfg(target_os = "ios")]
+#[path = "modal_ios.rs"]
+mod ios;
+
 /// The rubber band's ceiling: how far the card can be pulled up.
 const MAX_UP: f64 = 70.0;
 /// The lift-gap filler's height: the ceiling plus 14pt that always tuck behind
@@ -7,7 +11,7 @@ const MAX_UP: f64 = 70.0;
 /// the card's rounded bottom corners dissolve into filler material instead of
 /// the dim showing through.
 const FILLER_H: f64 = MAX_UP + 14.0;
-/// The card's smooth animation matching cover entrance duration (COVER_SHEET_IN).
+/// The card's smooth resize animation matches the native cover entrance duration.
 const RESIZE_MS: u32 = 380;
 
 /// Close is just the signal flip: the cover piece runs the native dismissal
@@ -40,15 +44,19 @@ fn gap_filler(drag_y: Signal<f64>, kb_h: Signal<f64>) -> AnyPiece {
     use day_uikit::UiKitExt;
     use objc2_ui_kit::UIColor;
     column(())
-        // The tweak sits first: the native view belongs to the column's own
-        // node — the frame wrapper is layout-only and has no view to tweak.
+        .background(card_bg())
+        .any()
+        // Mark the full painted surface, before layout/translation wrappers.
         .uikit(|view, _class, _mtm| {
             view.setBackgroundColor(Some(&UIColor::secondarySystemGroupedBackgroundColor()));
             view.setUserInteractionEnabled(false);
+            view.setTag(ios::FILLER_TAG);
         })
-        .background(card_bg())
         .frame(crate::pages::diary::get_screen_width(), FILLER_H)
         .translation(0.0, move || MAX_UP + drag_y.get() - kb_h.get())
+        .any()
+        // Translation adds its own native layer; it must also pass taps through.
+        .uikit(|view, _, _| view.setUserInteractionEnabled(false))
         .any()
 }
 
@@ -65,19 +73,20 @@ fn gap_filler(drag_y: Signal<f64>, kb_h: Signal<f64>) -> AnyPiece {
 fn card_surface<P: Piece + 'static>(p: P) -> AnyPiece {
     use day_uikit::UiKitExt;
     use objc2_ui_kit::UIColor;
-    p.uikit(|view, _class, _mtm| {
-        view.setBackgroundColor(Some(&UIColor::secondarySystemGroupedBackgroundColor()));
-    })
-    .background(card_bg())
-    .corner_radius(20.0)
-    .any()
+    p.background(card_bg())
+        .corner_radius(20.0)
+        .any()
+        // Target the complete native surface, before translation/layout wrappers.
+        .uikit(|view, _class, _mtm| {
+            view.setBackgroundColor(Some(&UIColor::secondarySystemGroupedBackgroundColor()));
+            view.setTag(ios::CARD_TAG);
+        })
+        .any()
 }
 
 #[cfg(not(target_os = "ios"))]
 fn card_surface<P: Piece + 'static>(p: P) -> AnyPiece {
-    p.background(card_bg())
-        .corner_radius(20.0)
-        .any()
+    p.background(card_bg()).corner_radius(20.0).any()
 }
 
 /// The modal window — the reusable chrome of a bottom sheet, with no content in
@@ -95,10 +104,9 @@ fn card_surface<P: Piece + 'static>(p: P) -> AnyPiece {
 /// day never attaches a cover's view to the page it sits in — it lives in its
 /// own modal VC and its node measures 0×0 in the tree — so presenting it leaves
 /// the page's subview walk untouched: the full-bleed chain holds and the tab bar
-/// never moves. The cover is presented OverFullScreen (patched in the
-/// wancareri/day fork: upstream's FullScreen drops the presenting view once the
-/// transition lands, which showed black behind this dim instead of the live
-/// page), so the page stays visible beneath the dim. The fork presents with the
+/// never moves. The app's UIKit hook presents OverFullScreen: upstream's
+/// FullScreen drops the presenting view once the transition lands, showing
+/// black behind this dim. The app's transition delegate presents with the
 /// card sliding up from off-screen under a dim that washes in on its own track,
 /// and dismisses with the card gliding down the same distance while the dim
 /// washes out in place — entrance and exit are one motion mirrored in time, the
@@ -117,22 +125,23 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
     let o_dim = open.clone();
     let o_drag = open.clone();
 
-    cover(
-        open,
-        move |route| {
-            crate::shared::nslog::nslog(&format!("[Modal] cover closure evaluated for route: {}", route.key()));
-            // Sheet drag. Vertical only (horizontal travel is simply ignored).
-            // Both directions start from the finger; only the release animates.
-            let drag_y = Signal::new(0.0);
-            let kb_h = crate::shared::keyboard::keyboard_height_signal();
-            let o_freeze = o_drag.clone();
-            let sheet_drag = move |d: Drag| {
-                // Once the close has started the card is frozen: no event may touch it —
-                // a fresh touch's zeroing would teleport it up while the sheet glides down.
-                if o_freeze.peek().is_none() {
-                    return;
-                }
-                match d.phase {
+    cover(open, move |route| {
+        crate::shared::nslog::nslog(&format!(
+            "[Modal] cover closure evaluated for route: {}",
+            route.key()
+        ));
+        // Sheet drag. Vertical only (horizontal travel is simply ignored).
+        // Both directions start from the finger; only the release animates.
+        let drag_y = Signal::new(0.0);
+        let kb_h = crate::shared::keyboard::keyboard_height_signal();
+        let o_freeze = o_drag.clone();
+        let sheet_drag = move |d: Drag| {
+            // Once the close has started the card is frozen: no event may touch it —
+            // a fresh touch's zeroing would teleport it up while the sheet glides down.
+            if o_freeze.peek().is_none() {
+                return;
+            }
+            match d.phase {
                 DragPhase::Began => drag_y.set(0.0),
                 DragPhase::Changed => {
                     let dy = d.translation.y;
@@ -157,90 +166,98 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                         with_animation(AnimSpec::ease_out(240), move || drag_y.set(0.0));
                     } else if drag_y.get() > 70.0 {
                         // Any downward pull past 70pt dismisses the modal.
-                        crate::shared::nslog::nslog(&format!("[Modal] drag ended past threshold ({:.1}), closing", drag_y.get()));
+                        crate::shared::nslog::nslog(&format!(
+                            "[Modal] drag ended past threshold ({:.1}), closing",
+                            drag_y.get()
+                        ));
                         close_modal(&o_freeze, "drag-end");
                     } else {
                         // Return card to bottom edge
                         with_animation(AnimSpec::ease_out(240), move || drag_y.set(0.0));
                     }
                 }
+            }
+        };
+
+        let o_tap = o_dim.clone();
+        zstack((
+            // The dim is the cover's own background (edge-to-edge, over the
+            // status bar and the home indicator); this layer is transparent
+            // and only catches taps outside the card. The card above it is a
+            // later zstack child, so it wins the hit-test over its own area.
+            modal_dim(button("").action(move || {
+                crate::shared::nslog::nslog("[Modal] dim button tapped");
+                if kb_h.get() > 20.0 {
+                    crate::shared::keyboard::dismiss();
+                } else {
+                    close_modal(&o_tap, "dim-tap");
                 }
-            };
-
-            let o_tap = o_dim.clone();
-            zstack((
-                // The dim is the cover's own background (edge-to-edge, over the
-                // status bar and the home indicator); this layer is transparent
-                // and only catches taps outside the card. The card above it is a
-                // later zstack child, so it wins the hit-test over its own area.
-                button("")
-                    .action(move || {
-                        crate::shared::nslog::nslog("[Modal] dim button tapped");
-                        if kb_h.get() > 20.0 {
-                            crate::shared::keyboard::dismiss();
-                        } else {
-                            close_modal(&o_tap, "dim-tap");
-                        }
-                    })
-                    .grow(Dimension::Both)
-                    .any(),
-
-                // The lift gap: pulling the card up would open a hole above the
-                // bottom edge — this parks the same card material one MAX_UP
-                // below and slides it up by exactly the lift distance, so the
-                // hole always shows the sheet, never the dim.
-                gap_filler(drag_y, kb_h)
-                    .animation(AnimSpec::ease_out(RESIZE_MS)),
-
-                // Bottom sheet card: day's semantic section surface — the platform's
-                // theme-adaptive grouped-card material (secondary system grouped
-                // background on iOS), so it tracks light/dark mode with no app palette.
-                // The paddings below compose with the section's own 14pt inset to keep
-                // the original 24/16/32pt edges. The translation is the sheet drag —
-                // the card's implicit animation would smooth it, so the live drag
-                // runs under a zero-duration ambient; only the release snaps back
-                card_surface(section((
-                    // Drag handle pill at the top
-                    row((
-                        spacer().grow(Dimension::Both),
-                        column(()).frame(36.0, 4.0).background(Color::rgba(0.7, 0.7, 0.7, 0.6)).corner_radius(2.0),
-                        spacer().grow(Dimension::Both),
-                    ))
-                    .grow(Dimension::Both)
-                    .padding(Insets {
-                        top: 0.0,
-                        leading: 0.0,
-                        bottom: 6.0,
-                        trailing: 0.0,
-                    }),
-
-                    // The card body: the floor is a transparent fixed-height
-                    // child, so the stack sizes to the LARGER of the two —
-                    // content past the floor grows the card, content under it
-                    // still gets the taller window. Top-aligned, so the body
-                    // sits under the handle and the slack fills the bottom.
-                    if min_h > 0.0 {
-                        zstack((
-                            column(()).height(min_h),
-                            content(route).any(),
-                        ))
+            }))
+            .grow(Dimension::Both)
+            .any(),
+            // The lift gap: pulling the card up would open a hole above the
+            // bottom edge — this parks the same card material one MAX_UP
+            // below and slides it up by exactly the lift distance, so the
+            // hole always shows the sheet, never the dim.
+            gap_filler(drag_y, kb_h).animation(AnimSpec::ease_out(RESIZE_MS)),
+            // Bottom sheet card: day's semantic section surface — the platform's
+            // theme-adaptive grouped-card material (secondary system grouped
+            // background on iOS), so it tracks light/dark mode with no app palette.
+            // The paddings below compose with the section's own 14pt inset to keep
+            // the original 24/16/32pt edges. The translation is the sheet drag —
+            // the card's implicit animation would smooth it, so the live drag
+            // runs under a zero-duration ambient; only the release snaps back
+            card_surface(section((
+                // Drag handle pill at the top
+                row((
+                    spacer().grow(Dimension::Both),
+                    column(())
+                        .frame(36.0, 4.0)
+                        .background(Color::rgba(0.7, 0.7, 0.7, 0.6))
+                        .corner_radius(2.0),
+                    spacer().grow(Dimension::Both),
+                ))
+                .grow(Dimension::Both)
+                .padding(Insets {
+                    top: 0.0,
+                    leading: 0.0,
+                    bottom: 6.0,
+                    trailing: 0.0,
+                }),
+                // The card body: the floor is a transparent fixed-height
+                // child, so the stack sizes to the LARGER of the two —
+                // content past the floor grows the card, content under it
+                // still gets the taller window. Top-aligned, so the body
+                // sits under the handle and the slack fills the bottom.
+                if min_h > 0.0 {
+                    zstack((column(()).height(min_h), content(route).any()))
                         .align(Alignment::Top)
                         .any()
-                    } else {
-                        content(route).any()
-                    },
-                )))
-                .translation(0.0, move || drag_y.get() - kb_h.get())
-                .animation(AnimSpec::ease_out(RESIZE_MS))
-                .any(),
-            ))
-            .align(Alignment::Bottom)
-            .grow(Dimension::Both)
-            // The recognizer sits on the whole overlay — a pull starting on the dim
-            // drags too (the dim itself doesn't move: only the card translates).
+                } else {
+                    content(route).any()
+                },
+            )))
             .on_drag(sheet_drag)
-        },
-    )
+            .translation(0.0, move || drag_y.get() - kb_h.get())
+            .animation(AnimSpec::ease_out(RESIZE_MS))
+            .any(),
+        ))
+        .align(Alignment::Bottom)
+        .grow(Dimension::Both)
+    })
     .unrouted()
     .background(|_| Color::rgba(0.0, 0.0, 0.0, 0.50))
+}
+
+fn modal_dim<P: Piece>(p: P) -> AnyPiece {
+    #[cfg(target_os = "ios")]
+    {
+        use day_uikit::UiKitExt;
+        // This native leaf is already attached to the cover while its body is
+        // being built, BEFORE Day sends CoverPatch::Present (even initially open).
+        p.uikit(|view, _, mtm| ios::configure_cover(view, mtm))
+            .any()
+    }
+    #[cfg(not(target_os = "ios"))]
+    p.any()
 }
