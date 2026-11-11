@@ -385,9 +385,9 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
             spacer().grow(Dimension::Both),
         )),
         spacer().grow(Dimension::Both),
-        auth_action_button(res::str::auth_start(), || true, on_start),
-        spacer().height(8.0),
+        auth_keyboard_dock(auth_action_button(res::str::auth_start(), || true, on_start)),
     ))
+    .spacing(0.0)
     .grow(Dimension::Both)
     .background(move || {
         if day::dark_mode() {
@@ -434,6 +434,20 @@ fn auth_keyboard_dock(action: impl Piece) -> impl Piece {
     dock.grow(Dimension::Width)
 }
 
+/// Day 0.7's UIKit image tint patch ignores implicit animation intent.
+/// Interpolate the color itself, leaving the field and form layout untouched.
+fn animated_focus_tint(focused: Signal<bool>, accent: Signal<u32>) -> day::tween::Tweened<Color> {
+    let target = move || Color::hex(if focused.get() { accent.get() } else { 0x8E8E93 });
+    let tint = day::tween::Tweened::new(target());
+    let animated = tint.clone();
+    day::reactive::watch(target, move |color, _| {
+        animated.animate_to(*color, AnimSpec::ease_out(200));
+    });
+    let cleanup = tint.clone();
+    Scope::current().on_cleanup(move || cleanup.set(cleanup.get_untracked()));
+    tint
+}
+
 fn username_step_view(
     username: Signal<String>,
     password: Signal<String>,
@@ -468,14 +482,11 @@ fn username_step_view(
 
     let input_card = row((
         vector(res::vectors::tab_login)
-            .frame(20.0, 20.0)
-            .tint(move || {
-                if username_focused.get() {
-                    Color::hex(state.accent_color.get())
-                } else {
-                    Color::hex(0x8E8E93)
-                }
-            }),
+            .tint({
+                let tint = animated_focus_tint(username_focused, state.accent_color);
+                move || tint.get()
+            })
+            .frame(20.0, 20.0),
         spacer().width(12.0),
         input_field,
     ))
@@ -627,14 +638,11 @@ fn password_step_view(
 
     let input_card = row((
         vector(res::vectors::lock)
-            .frame(20.0, 20.0)
-            .tint(move || {
-                if password_focused.get() {
-                    Color::hex(state.accent_color.get())
-                } else {
-                    Color::hex(0x8E8E93)
-                }
-            }),
+            .tint({
+                let tint = animated_focus_tint(password_focused, state.accent_color);
+                move || tint.get()
+            })
+            .frame(20.0, 20.0),
         spacer().width(12.0),
         pw_field,
         toggle_eye,
@@ -1307,6 +1315,92 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
 #[cfg(test)]
 mod auth_error_tests {
     use super::auth_error_code;
+
+    #[cfg(feature = "mock")]
+    #[test]
+    fn focus_tint_interpolates_and_reverses_without_a_color_jump() {
+        use day::prelude::*;
+        use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+        day_core::uninstall_tree();
+        let focus = Signal::global(false);
+        let accent = Signal::global(0x007AFF);
+        let saved = Rc::new(RefCell::new(None));
+        let result = saved.clone();
+        let (mock, _) = day_mock::MockToolkit::new();
+        day_core::launch_with(mock, day_spec::WindowOptions::default(), move || {
+            let tint = super::animated_focus_tint(focus, accent);
+            *result.borrow_mut() = Some(tint.clone());
+            vector(crate::res::vectors::tab_login).tint(move || tint.get()).any()
+        });
+        let pending: Rc<RefCell<VecDeque<day_spec::FrameCallback>>> = Rc::default();
+        let queue = pending.clone();
+        day::frame::install_frame_requester(move |_, callback| {
+            queue.borrow_mut().push_back(callback);
+            Box::new(|| {})
+        });
+        let frame = |time| {
+            let callback = pending.borrow_mut().pop_front().expect("animation requested a frame");
+            callback(day_spec::FrameStamp::new(time));
+            day::reactive::flush_sync();
+        };
+        let tint = saved.borrow().clone().unwrap();
+        let gray = Color::hex(0x8E8E93);
+        let blue = Color::hex(0x007AFF);
+        assert_eq!(tint.get(), gray);
+        focus.set(true);
+        day::reactive::flush_sync();
+        assert_eq!(tint.get(), gray, "focus must not snap straight to accent");
+        frame(1.0);
+        frame(1.1);
+        let middle = tint.get();
+        assert!(middle != gray && middle != blue, "expected an intermediate color: {middle:?}");
+        focus.set(false);
+        day::reactive::flush_sync();
+        assert_eq!(tint.get(), middle, "blur must reverse from the displayed color");
+        // Deliver the stale cancelled request, then the new flight's start/end.
+        frame(1.11);
+        frame(1.12);
+        frame(1.4);
+        assert_eq!(tint.get(), gray);
+        focus.set(true);
+        day::reactive::flush_sync();
+        frame(2.0);
+        frame(2.3);
+        assert_eq!(tint.get(), blue);
+        accent.set(0xFF9500);
+        day::reactive::flush_sync();
+        frame(3.0);
+        frame(3.3);
+        assert_eq!(tint.get(), Color::hex(0xFF9500));
+        assert!(pending.borrow().is_empty(), "idle icons must stop requesting frames");
+        day_core::uninstall_tree();
+    }
+
+    #[cfg(feature = "mock")]
+    #[test]
+    fn welcome_action_uses_the_same_bottom_inset_as_credential_steps() {
+        use day::prelude::*;
+        for height in [600.0, 720.0, 844.0] {
+            day_core::uninstall_tree();
+            let (mock, probe) = day_mock::MockToolkit::new();
+            day_core::launch_with(mock, day_spec::WindowOptions {
+                size: Size::new(390.0, height), ..Default::default()
+            }, || super::intro_view(|| {}).any());
+            let state = probe.state.borrow();
+            let mut handle = probe.find_by_kind(day_spec::kinds::BUTTON)[0].0.0;
+            let button = state.widgets[&handle].frame;
+            let mut bottom = button.origin.y + button.size.height;
+            while let Some((parent, widget)) = state.widgets.iter()
+                .find(|(_, widget)| widget.children.contains(&handle)) {
+                bottom += widget.frame.origin.y;
+                handle = *parent;
+            }
+            assert!((bottom - (height - 8.0)).abs() < 0.5,
+                "welcome action bottom {bottom}, expected {}", height - 8.0);
+            drop(state);
+            day_core::uninstall_tree();
+        }
+    }
 
     #[cfg(feature = "mock")]
     #[test]

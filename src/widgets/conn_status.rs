@@ -3,6 +3,21 @@ use crate::app::{AppState, ConnStatus};
 use crate::res;
 use day::prelude::*;
 
+#[cfg(target_os = "ios")]
+#[path = "conn_status_ios.rs"]
+mod ios;
+
+// Connected/Idle and Offline/Error share their artwork; changing only the
+// explanatory text must not replay the glyph transition.
+#[cfg(target_os = "ios")]
+fn icon_group(status: ConnStatus) -> u8 {
+    match status {
+        ConnStatus::Connecting => 0,
+        ConnStatus::Offline | ConnStatus::Error => 1,
+        ConnStatus::Connected | ConnStatus::Idle => 2,
+    }
+}
+
 pub fn title(status: ConnStatus) -> String {
     match status {
         ConnStatus::Connecting => res::str::status_connecting_title().format(),
@@ -22,6 +37,8 @@ pub fn message(status: ConnStatus) -> String {
 
 pub fn toolbar(state: AppState) -> Vec<ToolbarEntry> {
     let status = state.conn_status.get();
+    #[cfg(target_os = "ios")]
+    ios::prepare_transition(status);
     let button = toolbar_button(day::id!(connection_status), title(status));
     let button = match status {
         ConnStatus::Connecting => button.icon(Symbol::Refresh),

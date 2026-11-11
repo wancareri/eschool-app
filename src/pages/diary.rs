@@ -383,6 +383,18 @@ fn spawn_week_slide(
     });
 }
 
+/// Keep gesture registration and its native gate on the same concrete surface.
+fn horizontal_pager(content: impl Piece, handler: impl Fn(Drag) + 'static) -> impl Piece {
+    let piece = content.on_drag(handler);
+    #[cfg(target_os = "ios")]
+    let piece = piece.tweak(|node| {
+        day_uikit::with_native(node, |view, _, mtm| {
+            crate::shared::gestures::horizontal_pager(view, mtm);
+        });
+    });
+    piece
+}
+
 fn pager_drag(
     drag_x: Signal<f64>,
     page_width: Signal<f64>,
@@ -400,11 +412,7 @@ fn pager_drag(
             DragPhase::Changed => {
                 let mut horiz = axis.get();
                 if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
-                    horiz = Some(dx.abs() >= dy.abs() * 0.5);
-                    axis.set(horiz);
-                }
-                if horiz == Some(false) && dx.abs() > 20.0 && dx.abs() > dy.abs() * 1.0 {
-                    horiz = Some(true);
+                    horiz = Some(dx.abs() > dy.abs());
                     axis.set(horiz);
                 }
                 if horiz == Some(true) {
@@ -468,11 +476,7 @@ fn summary_drag(
             DragPhase::Changed => {
                 let mut horiz = axis.get();
                 if horiz.is_none() && (dx.abs() > SWIPE_AXIS_LOCK || dy.abs() > SWIPE_AXIS_LOCK) {
-                    horiz = Some(dx.abs() >= dy.abs() * 0.6);
-                    axis.set(horiz);
-                }
-                if horiz == Some(false) && dx.abs() > 24.0 && dx.abs() > dy.abs() * 1.2 {
-                    horiz = Some(true);
+                    horiz = Some(dx.abs() > dy.abs());
                     axis.set(horiz);
                 }
                 if horiz == Some(true) {
@@ -571,7 +575,7 @@ fn week_view(state: AppState, refreshing: Signal<bool>, period_revision: Signal<
         when(move || selected_quarter_has_current_week(state),
             move || week_header(header_state, header_width, header_dx)),
         diary_scroll(state, refreshing, when(move || selected_quarter_has_current_week(state),
-            move || zstack((
+            move || horizontal_pager(zstack((
             // Previous week page (at drag_x - w)
             when(
                 move || s_prev.current_week_index.get() > 0,
@@ -584,10 +588,8 @@ fn week_view(state: AppState, refreshing: Signal<bool>, period_revision: Signal<
             ),
             // Current week page (at drag_x)
             week_page(s_cur, 0, w).translation(move || drag_x.get(), 0.0),
-        ))
-        .align(Alignment::TopLeading)
-        .width(w)
-        .on_drag(pager_drag(drag_x, page_width, state)))
+        )).align(Alignment::TopLeading), pager_drag(drag_x, page_width, state))
+        .width(w))
         .otherwise(|| label("Нет данных за этот период")
             .font(Font::Body).secondary().align(TextAlign::Center)
             .padding(Insets { top: 80.0, leading: PAD, bottom: 80.0, trailing: PAD }))),
@@ -781,7 +783,7 @@ fn summary_view(state: AppState, period_revision: Signal<u64>) -> impl Piece {
     let s_next = state;
     let w = page_width.get();
     column((
-        zstack((
+        horizontal_pager(zstack((
             when(
                 move || s_prev.current_quarter.get() > 0,
                 move || summary_page(s_prev, -1, w).translation(move || drag_x.get() - w, 0.0),
@@ -791,10 +793,8 @@ fn summary_view(state: AppState, period_revision: Signal<u64>) -> impl Piece {
                 move || summary_page(s_next, 1, w).translation(move || drag_x.get() + w, 0.0),
             ),
             summary_page(s_cur, 0, w).translation(move || drag_x.get(), 0.0),
-        ))
-        .align(Alignment::TopLeading)
-        .width(w)
-        .on_drag(summary_drag(drag_x.clone(), page_width.clone(), state.clone())),
+        )).align(Alignment::TopLeading), summary_drag(drag_x, page_width, state))
+        .width(w),
     ))
     .spacing(0.0)
     .width(w)
@@ -1298,5 +1298,39 @@ mod header_tests {
         assert_eq!(state.current_quarter.get(), 4);
         assert_eq!(revision.get(), 3);
         day_core::uninstall_tree();
+    }
+}
+
+#[cfg(test)]
+mod gesture_tests {
+    use super::*;
+
+    #[test]
+    fn vertical_and_diagonal_scrolls_never_turn_into_page_drags() {
+        for summary in [false, true] {
+            let state = AppState::create();
+            state.current_week_index.set(1);
+            state.current_quarter.set(1);
+            let x = Signal::new(0.0);
+            let width = Signal::new(390.0);
+            let handler: Box<dyn Fn(Drag)> = if summary {
+                Box::new(summary_drag(x, width, state))
+            } else {
+                Box::new(pager_drag(x, width, state))
+            };
+            for (phase, dx, dy) in [
+                (DragPhase::Began, 0.0, 0.0),
+                (DragPhase::Changed, 15.0, 25.0),
+                (DragPhase::Changed, 35.0, 28.0),
+                (DragPhase::Ended, 35.0, 28.0),
+            ] {
+                handler(Drag { phase, location: Point::ZERO, translation: Point::new(dx, dy) });
+                assert_eq!(x.get(), 0.0, "vertical scroll must keep its axis until release");
+            }
+            handler(Drag { phase: DragPhase::Began, location: Point::ZERO, translation: Point::ZERO });
+            handler(Drag { phase: DragPhase::Changed, location: Point::ZERO,
+                translation: Point::new(24.0, 5.0) });
+            assert_eq!(x.get(), 24.0, "horizontal movement must still follow the finger");
+        }
     }
 }

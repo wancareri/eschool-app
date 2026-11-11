@@ -18,3 +18,6 @@ pub mod utils;
 pub mod widget;
 
 pub mod long_press;
+
+#[cfg(target_os = "ios")]
+pub mod gestures;
