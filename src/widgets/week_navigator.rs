@@ -8,15 +8,15 @@ pub fn render(state: AppState) -> impl Piece {
             button("<").action(move || {
                 let idx = state.current_week_index.get();
                 if idx > 0 { features::diary::load_week(state, idx - 1); }
-            }).id("wk-prev"),
+            }).id(day::id!(wk_prev)),
             label(move || state.current_week.get())
                 .font(Font::Headline)
-                .grow(),
+                .grow(Dimension::Both),
             button(">").action(move || {
                 let idx = state.current_week_index.get();
                 let total = state.all_weeks.get().len() as i32;
                 if idx + 1 < total { features::diary::load_week(state, idx + 1); }
-            }).id("wk-next"),
+            }).id(day::id!(wk_next)),
         ))
         .spacing(12.0)
         .padding(Insets { top: 0.0, leading: 16.0, bottom: 6.0, trailing: 16.0 }),
@@ -46,5 +46,5 @@ fn quarter_tab(state: AppState, label: &'static str, quarter: usize) -> impl Pie
             features::diary::load_week(s2, idx as i32);
         }
     })
-    .id(format!("q-{label}"))
+    .id(day::id!(quarter, label))
 }

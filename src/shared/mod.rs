@@ -16,3 +16,5 @@ pub mod secure;
 pub mod session;
 pub mod utils;
 pub mod widget;
+
+pub mod long_press;

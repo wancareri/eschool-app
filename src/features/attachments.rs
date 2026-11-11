@@ -26,9 +26,13 @@ pub fn native_quicklook(path: &str) {
             return;
         }
     }
+    #[cfg(not(target_os = "android"))]
     let p = path.to_string();
+    #[cfg(not(target_os = "android"))]
     day::task(async move {
-        let _ = day::preview_file(p, None).await;
+        if let Ok(url) = reqwest::Url::from_file_path(&p) {
+            day::prelude::open_url(url.as_str());
+        }
     });
 }
 
@@ -41,9 +45,15 @@ pub fn native_share(path: &str) {
             return;
         }
     }
+    #[cfg(not(target_os = "android"))]
     let p = path.to_string();
+    #[cfg(not(target_os = "android"))]
     day::task(async move {
-        let _ = day::share_file(p).await;
+        if let Ok(url) = reqwest::Url::from_file_path(&p) {
+            if !day::share_url(url.as_str(), "") {
+                day::prelude::open_url(url.as_str());
+            }
+        }
     });
 }
 
@@ -56,7 +66,7 @@ pub fn native_open_url(url: &str) {
             return;
         }
     }
-    day::open_url(url);
+    day::prelude::open_url(url);
 }
 
 fn format_size(bytes: u64) -> String {

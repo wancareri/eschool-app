@@ -18,15 +18,16 @@ pub fn window() -> day::WindowOptions {
 pub fn root() -> impl Piece {
     log_bridge::install();
     nslog::nslog("[init] Eschool App starting");
+    locale::remember_startup_locale();
     let has_locale = day::prefs::get("app.locale")
         .map(|v| !v.is_empty())
         .unwrap_or(false);
     if !has_locale {
         let sys = locale::system_locale();
-        day::prefs::set("app.locale", sys);
+        day::prefs::set("app.locale", &sys);
         nslog::nslog(&format!("[init] First launch — system locale: {sys}"));
     }
-    day_piece_settings::apply_startup("app.theme", "app.locale");
+    crate::pages::settings::apply_startup();
     crate::shared::colors::init_accent();
     #[cfg(target_os = "ios")]
     crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
@@ -221,7 +222,7 @@ fn build_nav(primary: bool) -> impl Piece {
         crate::widgets::bottom_sheet::network_error_sheet(state),
         crate::widgets::notice::modal(state),
     ))
-    .grow()
+    .grow(Dimension::Both)
     .toolbar(move || crate::widgets::header::toolbar(state))
 }
 
@@ -238,7 +239,7 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
         .otherwise(move || pages::login::render().any())
         .any()
     })
-    .grow()
+    .grow(Dimension::Both)
     .background(move || {
         if day::dark_mode() {
             Color::hex(0x000000)
@@ -275,36 +276,14 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
 
     let sel = nav(section)
         .style(day::prelude::NavStyle::Tabs)
-        .background(Color::rgba(0.0, 0.0, 0.0, 0.0))
-        .title(move || crate::widgets::header::section_title(section.get()))
-        .item_icon(
-            crate::Section::Diary,
-            res::str::nav_diary(),
-            res::vectors::tab_diary,
-            diary_tab,
-        )
-        .item_icon(
-            crate::Section::Schedule,
-            res::str::nav_schedule(),
-            res::vectors::tab_schedule,
-            schedule_tab,
-        )
-        .item_icon(
-            crate::Section::Teachers,
-            res::str::nav_teachers(),
-            res::vectors::tab_teachers,
-            teachers_tab,
-        )
-        .item_icon(
-            crate::Section::Settings,
-            res::str::nav_settings(),
-            res::vectors::tab_settings,
-            settings_tab,
-        );
+        .items(item(crate::Section::Diary, res::str::nav_diary()).icon(res::vectors::tab_diary).page(diary_tab))
+        .items(item(crate::Section::Schedule, res::str::nav_schedule()).icon(res::vectors::tab_schedule).page(schedule_tab))
+        .items(item(crate::Section::Teachers, res::str::nav_teachers()).icon(res::vectors::tab_teachers).page(teachers_tab))
+        .items(item(crate::Section::Settings, res::str::nav_settings()).icon(res::vectors::tab_settings).page(settings_tab));
 
     if primary {
-        sel.id("nav").any()
+        sel.title(move || crate::widgets::header::section_title(section.get())).id(day::id!(nav)).background(Color::rgba(0.0, 0.0, 0.0, 0.0)).any()
     } else {
-        sel.id("nav").local().any()
+        sel.local().title(move || crate::widgets::header::section_title(section.get())).id(day::id!(nav)).background(Color::rgba(0.0, 0.0, 0.0, 0.0)).any()
     }
 }

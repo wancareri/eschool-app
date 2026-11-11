@@ -37,7 +37,7 @@ pub fn ios_back_arrow_button(action: impl Fn() + 'static) -> impl Piece {
                     }
                 }
             })
-            .id("ios-back-arrow")
+            .id(day::id!(ios_back_arrow))
     }
 
     #[cfg(not(target_os = "ios"))]
@@ -56,7 +56,7 @@ pub fn ios_back_arrow_button(action: impl Fn() + 'static) -> impl Piece {
                 crate::shared::haptics::tick();
                 act_clone();
             })
-            .id("ios-back-arrow")
+            .id(day::id!(ios_back_arrow))
     }
 }
 
@@ -97,7 +97,7 @@ pub fn render_unlock(state: AppState) -> impl Piece {
     let success_clock = Signal::new(-1.0);
 
     column((
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
 
         column((
             label(move || res::str::app_title().format())
@@ -164,7 +164,7 @@ pub fn render_unlock(state: AppState) -> impl Piece {
         // Numpad
         numpad(state, shake, success_clock).log_pos("PinUnlock:Numpad"),
 
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
     ))
     .spacing(8.0)
     .align(HAlign::Center)
@@ -175,7 +175,7 @@ pub fn render_unlock(state: AppState) -> impl Piece {
         trailing: 24.0,
     })
     .log_pos("PinUnlock:Root")
-    .grow()
+    .grow(Dimension::Both)
     .any()
 }
 
@@ -195,7 +195,7 @@ pub fn render_setup(state: AppState) -> impl Piece {
                     crate::shared::haptics::tick();
                     close_setup(state);
                 }),
-                spacer().grow(),
+                spacer().grow(Dimension::Both),
                 button("📋 Логи")
                     .action(move || {
                         crate::shared::haptics::tick();
@@ -206,10 +206,10 @@ pub fn render_setup(state: AppState) -> impl Piece {
                     .corner_radius(12.0),
             ))
             .align(VAlign::Center)
-            .grow_w()
+            .grow(Dimension::Width)
             .log_pos("PinSetup:TopBar"),
 
-            spacer().grow(),
+            spacer().grow(Dimension::Both),
 
             column((
                 label("Установка PIN-кода")
@@ -274,11 +274,11 @@ pub fn render_setup(state: AppState) -> impl Piece {
                     crate::shared::haptics::tick();
                     close_setup(state);
                 })
-                .id("pin-setup-cancel")
+                .id(day::id!(pin_setup_cancel))
                 .log_pos("PinSetup:Cancel")
                 .padding(Insets { top: 12.0, leading: 24.0, bottom: 0.0, trailing: 24.0 }),
 
-            spacer().grow(),
+            spacer().grow(Dimension::Both),
         ))
         .spacing(8.0)
         .align(HAlign::Center)
@@ -295,8 +295,8 @@ pub fn render_setup(state: AppState) -> impl Piece {
                 Color::hex(0xFFFFFF)
             }
         })
-        .grow_w()
-        .grow()
+        .grow(Dimension::Width)
+        .grow(Dimension::Both)
         .log_pos("PinSetup:Root"),
 
         when(
@@ -304,7 +304,7 @@ pub fn render_setup(state: AppState) -> impl Piece {
             move || debug_log_overlay(show_logs).animation(AnimSpec::ease_out(250)).any(),
         ),
     ))
-    .grow()
+    .grow(Dimension::Both)
     .any()
 }
 
@@ -508,7 +508,7 @@ fn numpad_key(state: AppState, shake: Signal<f64>, clock: Signal<f64>, key: &str
                     s.pin_error.set(false);
                 }
             })
-            .id("pin-backspace")
+            .id(day::id!(pin_backspace))
             .frame(72.0, 72.0)
             .any()
     } else {
@@ -556,7 +556,7 @@ fn numpad_key(state: AppState, shake: Signal<f64>, clock: Signal<f64>, key: &str
                     }
                 }
             })
-            .id(format!("pin-key-{}", key_str))
+            .id(day::id!(pin_key, key_str))
             .frame(72.0, 72.0)
             .any()
     }
@@ -627,7 +627,7 @@ fn setup_numpad_key(
                     error_msg.set(String::new());
                 }
             })
-            .id("pin-setup-backspace")
+            .id(day::id!(pin_setup_backspace))
             .frame(72.0, 72.0)
             .any()
     } else {
@@ -683,7 +683,7 @@ fn setup_numpad_key(
                     }
                 }
             })
-            .id(format!("pin-setup-key-{}", key_str))
+            .id(day::id!(pin_setup_key, key_str))
             .frame(72.0, 72.0)
             .any()
     }

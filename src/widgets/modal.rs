@@ -182,7 +182,7 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                             close_modal(&o_tap, "dim-tap");
                         }
                     })
-                    .grow()
+                    .grow(Dimension::Both)
                     .any(),
 
                 // The lift gap: pulling the card up would open a hole above the
@@ -202,11 +202,11 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 card_surface(section((
                     // Drag handle pill at the top
                     row((
-                        spacer().grow(),
+                        spacer().grow(Dimension::Both),
                         column(()).frame(36.0, 4.0).background(Color::rgba(0.7, 0.7, 0.7, 0.6)).corner_radius(2.0),
-                        spacer().grow(),
+                        spacer().grow(Dimension::Both),
                     ))
-                    .grow()
+                    .grow(Dimension::Both)
                     .padding(Insets {
                         top: 0.0,
                         leading: 0.0,
@@ -235,7 +235,7 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 .any(),
             ))
             .align(Alignment::Bottom)
-            .grow()
+            .grow(Dimension::Both)
             // The recognizer sits on the whole overlay — a pull starting on the dim
             // drags too (the dim itself doesn't move: only the card translates).
             .on_drag(sheet_drag)

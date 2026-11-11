@@ -4,7 +4,7 @@ use eschool_api::entities::*;
 use crate::shared::{colors, haptics, utils};
 use crate::widgets;
 use day::prelude::*;
-use day_piece_pullrefresh::pull_to_refresh;
+use day::pullrefresh::pull_to_refresh;
 use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 
 const PAD: f64 = 20.0;
@@ -105,7 +105,7 @@ pub fn render() -> impl Piece {
                 column((
                     child_switcher(state),
                 ))
-                .grow_w()
+                .grow(Dimension::Width)
                 .padding(Insets { top: 8.0, leading: PAD, bottom: 4.0, trailing: PAD }),
 
                 sub_tabs(state, show_summary),
@@ -122,7 +122,7 @@ pub fn render() -> impl Piece {
                 spacer().frame(0.0, 16.0),
             ))
             .spacing(0.0)
-            .grow()))
+            .grow(Dimension::Both)))
             .on_refresh(move || {
                 haptics::tick();
                 let state = AppState::ambient();
@@ -130,10 +130,10 @@ pub fn render() -> impl Piece {
                     features::diary::load_all(state);
                 }
             })
-            .grow(),
+            .grow(Dimension::Both),
     ))
     .align(Alignment::TopLeading)
-    .grow();
+    .grow(Dimension::Both);
 
 
     piece
@@ -166,7 +166,7 @@ fn child_switcher(state: AppState) -> impl Piece {
                     })
                     .collect();
 
-                row(PieceVec(pills))
+                row(pills)
                     .spacing(8.0)
                     .align(VAlign::Center)
                     .padding(Insets { top: 2.0, leading: PAD, bottom: 6.0, trailing: PAD })
@@ -228,7 +228,7 @@ fn quarter_btn(state: AppState, lbl: &'static str, q: usize) -> impl Piece {
         haptics::tick();
         select_quarter(s2, q);
     })
-    .id(format!("q-{lbl}"))
+    .id(day::id!(quarter, lbl))
 }
 
 fn year_btn(state: AppState) -> impl Piece {
@@ -242,7 +242,7 @@ fn year_btn(state: AppState) -> impl Piece {
         haptics::tick();
         select_quarter(s2, 4);
     })
-    .id("q-year")
+    .id(day::id!(q_year))
 }
 
 fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
@@ -271,7 +271,7 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
                 }
             }
         })
-        .id("sub-weeks"),
+        .id(day::id!(sub_weeks)),
         button(move || {
             if show_summary.get() { "● Итоги" } else { "○ Итоги" }
         })
@@ -284,7 +284,7 @@ fn sub_tabs(state: AppState, show_summary: Signal<bool>) -> impl Piece {
             let q = s3.current_quarter.get();
             select_quarter(s3, q);
         })
-        .id("sub-summary"),
+        .id(day::id!(sub_summary)),
     ))
     .spacing(12.0)
     .padding(Insets { top: 0.0, leading: 16.0, bottom: 8.0, trailing: 16.0 })
@@ -614,16 +614,16 @@ fn week_header(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>) ->
     row((
         button("<")
             .action(move || pager_go(s1, pw1, dx1, -1))
-            .id("wk-prev")
+            .id(day::id!(wk_prev))
             .frame(44.0, 36.0),
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
         label(move || strip_week_summary(&state.current_week.get()))
             .font(Font::Headline)
             .align(TextAlign::Center),
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
         button(">")
             .action(move || pager_go(s2, pw2, dx2, 1))
-            .id("wk-next")
+            .id(day::id!(wk_next))
             .frame(44.0, 36.0),
     ))
     .spacing(8.0)
@@ -851,7 +851,7 @@ fn quarter_summary_header() -> impl Piece {
     // zstack keeps hug height while width() pins the column and OverlayLayout
     // centers the text.
     row((
-        label("Предмет").font(Font::Caption).secondary().grow(),
+        label("Предмет").font(Font::Caption).secondary().grow(Dimension::Both),
         zstack((
             label("Ср. балл").font(Font::Caption).secondary().align(TextAlign::Center),
         ))
@@ -867,7 +867,7 @@ fn quarter_summary_header() -> impl Piece {
 
 fn year_summary_header() -> impl Piece {
     row((
-        label("Предмет").font(Font::Caption).secondary().grow(),
+        label("Предмет").font(Font::Caption).secondary().grow(Dimension::Both),
         zstack((label("I").font(Font::Caption).secondary().align(TextAlign::Center),)).width(28.0),
         zstack((label("II").font(Font::Caption).secondary().align(TextAlign::Center),)).width(28.0),
         zstack((label("III").font(Font::Caption).secondary().align(TextAlign::Center),)).width(28.0),
@@ -976,12 +976,12 @@ fn final_mark_text(mark: Option<String>) -> String {
 /// parked under the press), so both handlers are the plain open.
 fn peek_row<D: Decorate + 'static>(base: D, sj: String, st: AppState, offset: i32) -> AnyPiece {
     let sj_tap = sj.clone();
-    base.on_tap(move || {
+    crate::shared::long_press::attach(base.on_tap(move || {
         let cur_q = (st.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
         crate::shared::nslog::nslog(&format!("[Diary] on_tap grade row: subject='{sj_tap}', quarter={cur_q}"));
         crate::widgets::grade_peek::open(sj_tap.clone(), cur_q);
     })
-    .on_long_press(move |_p| {
+    , move || {
         let cur_q = (st.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
         crate::widgets::grade_peek::open(sj.clone(), cur_q);
     })
@@ -1010,7 +1010,7 @@ fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
             let st5 = s_rows;
             let base = column((
                 row((
-                    label(subj_name).font(Font::Body).grow(),
+                    label(subj_name).font(Font::Body).grow(Dimension::Both),
                     // 1. Расчётный средний балл по оценкам четверти (реактивно!)
                     zstack((
                         label(move || {
@@ -1093,7 +1093,7 @@ fn year_summary_at(state: AppState) -> impl Piece {
             let sjf = subj_name.clone();
             column((
                 row((
-                    label(subj_name).font(Font::Subheadline).grow(),
+                    label(subj_name).font(Font::Subheadline).grow(Dimension::Both),
                     year_q_cell(cell_state, sj0, 0),
                     year_q_cell(cell_state, sj1, 1),
                     year_q_cell(cell_state, sj2, 2),

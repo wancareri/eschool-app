@@ -3,7 +3,7 @@ use crate::features;
 use crate::widgets;
 use crate::shared::utils;
 use day::prelude::*;
-use day_piece_pullrefresh::pull_to_refresh;
+use day::pullrefresh::pull_to_refresh;
 use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 
 const PAD: f64 = 16.0;
@@ -31,7 +31,7 @@ pub fn render() -> impl Piece {
                             label("Войдите для просмотра")
                                 .font(Font::Body).secondary().align(TextAlign::Center),
                             spacer(),
-                        )).grow(),
+                        )).grow(Dimension::Both),
                     ),
                     when(
                         move || state.is_authenticated.get() && state.schedule_loading.get(),
@@ -40,7 +40,7 @@ pub fn render() -> impl Piece {
                             widgets::spinner::render(state, 11.0),
                             label("  Загрузка…").font(Font::Caption).secondary(),
                             spacer(),
-                        )).align(HAlign::Center).grow(),
+                        )).align(HAlign::Center).grow(Dimension::Both),
                     ),
                     when(
                         move || state.is_authenticated.get() && !state.schedule_loading.get(),
@@ -49,7 +49,7 @@ pub fn render() -> impl Piece {
                     spacer().frame(0.0, 16.0),
                 ))
                 .spacing(0.0)
-                .grow()))
+                .grow(Dimension::Both)))
                 .on_refresh(move || {
                     let state = AppState::ambient();
                     let done = refreshing.setter();
@@ -58,10 +58,10 @@ pub fn render() -> impl Piece {
                     }
                     done.set(false);
                 })
-                .grow(),
+                .grow(Dimension::Both),
     ))
     .align(Alignment::TopLeading)
-    .grow();
+    .grow(Dimension::Both);
 
 
     piece
@@ -83,7 +83,7 @@ fn schedule_content(state: AppState) -> impl Piece {
         ),
     ))
     .spacing(0.0)
-    .grow()
+    .grow(Dimension::Both)
 }
 
 fn day_pager(state: AppState) -> impl Piece {
@@ -175,7 +175,7 @@ fn day_pill(
             }
         })
         .frame(0.0, 34.0)
-        .grow()
+        .grow(Dimension::Both)
         .background(move || {
             if is_sel() {
                 Color::hex(state.accent_color.get())
@@ -384,7 +384,7 @@ fn day_page(state: AppState, offset: i32, w: f64) -> impl Piece {
                 .align(TextAlign::Center)
                 .padding(Insets { top: 4.0, leading: 32.0, bottom: 32.0, trailing: 32.0 }),
             ))
-            .grow(),
+            .grow(Dimension::Both),
         ),
     ))
     .spacing(0.0)
@@ -446,7 +446,7 @@ fn lesson_table_row(state: AppState, slot: ItemSlot<LessonRow, String>) -> impl 
             label(move || slot.with(|r| r.subject.clone()))
                 .font(Font::Headline)
                 .bold()
-                .grow(),
+                .grow(Dimension::Both),
             row((
                 label("🕐").font(Font::Caption2),
                 label(move || slot.with(|r| r.time.clone()))
@@ -457,7 +457,7 @@ fn lesson_table_row(state: AppState, slot: ItemSlot<LessonRow, String>) -> impl 
             .align(VAlign::Center),
         ))
         .spacing(3.0)
-        .grow(),
+        .grow(Dimension::Both),
     ))
     .spacing(12.0)
     .align(VAlign::Center)

@@ -3,7 +3,7 @@ use crate::features;
 use crate::widgets;
 use eschool_api::entities::*;
 use day::prelude::*;
-use day_piece_pullrefresh::pull_to_refresh;
+use day::pullrefresh::pull_to_refresh;
 
 
 pub fn render() -> impl Piece {
@@ -20,7 +20,7 @@ pub fn render() -> impl Piece {
                     label("Войдите для просмотра списка учителей")
                         .font(Font::Body).secondary().align(TextAlign::Center),
                     spacer(),
-                )).grow(),
+                )).grow(Dimension::Both),
             ),
             when(
                 move || state.is_authenticated.get() && state.teachers_loading.get(),
@@ -29,7 +29,7 @@ pub fn render() -> impl Piece {
                     widgets::spinner::render(state, 11.0),
                     label("  Загрузка…").font(Font::Caption).secondary(),
                     spacer(),
-                )).grow(),
+                )).grow(Dimension::Both),
             ),
             when(
                 move || state.is_authenticated.get() && !state.teachers_loading.get(),
@@ -38,7 +38,7 @@ pub fn render() -> impl Piece {
             spacer().frame(0.0, 16.0),
         ))
         .spacing(0.0)
-        .grow()))
+        .grow(Dimension::Both)))
         .on_refresh(move || {
             let state = AppState::ambient();
             let done = refreshing.setter();
@@ -47,10 +47,10 @@ pub fn render() -> impl Piece {
             }
             done.set(false);
         })
-        .grow(),
+        .grow(Dimension::Both),
     ))
     .align(Alignment::TopLeading)
-    .grow();
+    .grow(Dimension::Both);
 
 
     piece
@@ -83,7 +83,7 @@ fn teachers_list(state: AppState) -> impl Piece {
                     .align(TextAlign::Center)
                     .padding(Insets { top: 4.0, leading: 32.0, bottom: 20.0, trailing: 32.0 }),
             ))
-            .grow(),
+            .grow(Dimension::Both),
         ),
 
         when(
@@ -115,7 +115,7 @@ fn teachers_list(state: AppState) -> impl Piece {
         ),
     ))
     .spacing(0.0)
-    .grow()
+    .grow(Dimension::Both)
 }
 
 fn teacher_card(state: AppState, key: String) -> impl Piece {
@@ -212,7 +212,7 @@ fn teacher_card(state: AppState, key: String) -> impl Piece {
     ))
     .spacing(4.0)
     .align(HAlign::Leading)
-    .grow()
+    .grow(Dimension::Both)
     .padding(Insets { top: 12.0, leading: 16.0, bottom: 12.0, trailing: 16.0 })
     .background(move || {
         if day::dark_mode() {

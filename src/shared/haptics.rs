@@ -1,7 +1,7 @@
-//! Haptic feedback — powered by day::haptics.
+//! Haptic feedback — powered by day_part_haptics.
 
 use crate::shared::nslog;
-pub use day::Haptic;
+pub use day_part_haptics::Haptic;
 
 const HAPTICS_KEY: &str = "app.haptics";
 
@@ -18,20 +18,20 @@ pub fn set_enabled(on: bool) {
 /// A week page commits under the finger — a light thump.
 pub fn bump() {
     if is_enabled() {
-        day::haptics::play(Haptic::Light);
+        day_part_haptics::play(Haptic::Light);
     }
 }
 
 /// The «+» peek panel flips — a firmer tap.
 pub fn pop() {
     if is_enabled() {
-        day::haptics::play(Haptic::Medium);
+        day_part_haptics::play(Haptic::Medium);
     }
 }
 
 /// A light tick: mode tabs, the quarter picker, an accent pick.
 pub fn tick() {
     if is_enabled() {
-        day::haptics::play(Haptic::Selection);
+        day_part_haptics::play(Haptic::Selection);
     }
 }

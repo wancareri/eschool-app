@@ -75,7 +75,7 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
                     label(move || s_title.with(|s| s.subject_title.clone()))
                         .font(Font::Body)
                         .weight(FontWeight::Semibold)
-                        .grow(),
+                        .grow(Dimension::Both),
                     // Accent badges (attachments, substitution, note)
                     row((
                         // Attachment badge
@@ -197,7 +197,7 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
             ))
             .spacing(1.0)
             .align(HAlign::Leading)
-            .grow(),
+            .grow(Dimension::Both),
 
             // Grade
             label(move || {
@@ -217,7 +217,7 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
         ))
         .spacing(RAIL_GAP)
         .align(VAlign::Center)
-        .grow()
+        .grow(Dimension::Both)
         // Tap to open lesson detail modal
         .on_tap({
             let d_str = d_lp;

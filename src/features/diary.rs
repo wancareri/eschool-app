@@ -444,7 +444,7 @@ fn fetch_all(token: &str, selected: usize, stored_profile: &str) -> Result<Loade
         )
     };
     let year = blocking::api_get::<SchoolYear>(&client, endpoints::SCHOOL_YEAR).ok();
-    let today = day_piece_datetime::DayDate::today();
+    let today = day::datetime::DayDate::today();
     let (start, end) = year
         .as_ref()
         .map(|y| (y.start_year, y.end_year))

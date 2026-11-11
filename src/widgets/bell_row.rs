@@ -31,7 +31,7 @@ pub fn render(state: AppState, number: u32) -> impl Piece {
         ))
         .spacing(2.0)
         .align(HAlign::Leading)
-        .grow(),
+        .grow(Dimension::Both),
     ))
     .spacing(12.0)
     .padding(Insets { top: 10.0, leading: 16.0, bottom: 10.0, trailing: 20.0 })

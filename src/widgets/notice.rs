@@ -124,7 +124,7 @@ pub fn modal(state: AppState) -> impl Piece {
                     .unwrap_or_else(|| fallback_title.clone())
             })
             .font(Font::Headline)
-            .grow_w(),
+            .grow(Dimension::Width),
             label(move || {
                 state
                     .notice
@@ -134,10 +134,10 @@ pub fn modal(state: AppState) -> impl Piece {
             })
             .font(Font::Subheadline)
             .secondary()
-            .grow_w(),
+            .grow(Dimension::Width),
             button(res::str::notice_dismiss())
                 .prominent()
-                .grow_w()
+                .grow(Dimension::Width)
                 .action(move || state.notice_route.set(None)),
         ))
         .spacing(14.0)
@@ -147,6 +147,6 @@ pub fn modal(state: AppState) -> impl Piece {
             bottom: 20.0,
             trailing: 12.0,
         })
-        .grow_w()
+        .grow(Dimension::Width)
     })
 }

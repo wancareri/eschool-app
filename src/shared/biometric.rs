@@ -6,7 +6,7 @@ const BIOMETRIC_KEY: &str = "auth.biometric_enabled";
 
 /// Check if biometric auth is available on this device.
 pub fn is_available() -> bool {
-    let available = day::biometrics::is_available();
+    let available = day_part_biometrics::availability() == day_part_biometrics::Availability::Available;
     nslog::nslog(&format!("[Biometric] is_available: {available}"));
     available
 }
@@ -28,7 +28,8 @@ pub fn set_enabled(enabled: bool) {
 pub fn authenticate_async(_state: crate::app::AppState) {
     let ticket = crate::shared::session::ticket();
     nslog::nslog("[Biometric] authenticate_async: calling day::biometrics::authenticate");
-    day::biometrics::authenticate("Вход в приложение", move |ok, _err| {
+    day_part_biometrics::authenticate(day_part_biometrics::Prompt::new("Вход в приложение"), move |result| {
+        let ok = result.is_ok();
         nslog::nslog(&format!("[Biometric] Reply: success={ok}"));
         ticket.publish(move |state| state.biometric_ok.set(ok));
     });

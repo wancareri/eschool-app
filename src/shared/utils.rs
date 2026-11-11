@@ -36,7 +36,7 @@ pub fn format_date_short(ts: u64) -> String {
     // In UTC, this is 21:00 of the preceding day. Adding 12 hours (43_200_000 ms) lands squarely
     // in midday of the intended calendar day regardless of local timezone/UTC offset.
     let epoch_days = ((ts + 12 * 3600 * 1000) / 86_400_000) as i64;
-    let d = day_piece_datetime::DayDate::from_epoch_days(epoch_days);
+    let d = day::datetime::DayDate::from_epoch_days(epoch_days);
     format!("{}.{:02}", d.day, d.month)
 }
 
@@ -61,7 +61,7 @@ pub fn format_date_full(dow: u32, ts: u64) -> String {
     } else {
         dow
     });
-    let d = day_piece_datetime::DayDate::from_epoch_days(epoch_days);
+    let d = day::datetime::DayDate::from_epoch_days(epoch_days);
     let month_name = match d.month {
         1 => "января",
         2 => "февраля",

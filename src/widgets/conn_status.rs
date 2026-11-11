@@ -28,7 +28,7 @@ pub fn toolbar(state: AppState) -> Vec<ToolbarEntry> {
         ConnStatus::Connected | ConnStatus::Idle => Symbol::Check,
     };
     vec![
-        toolbar_button("connection-status", title(status))
+        toolbar_button(day::id!(connection_status), title(status))
             .icon(icon)
             .label_style(LabelStyle::IconOnly)
             .placement(ToolbarPlacement::Primary)

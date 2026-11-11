@@ -286,7 +286,7 @@ fn pred_slot(state: AppState, pk: Peek, idx: usize) -> AnyPiece {
             ))
             .spacing(1.0)
             .align(HAlign::Center)
-            .grow_w()
+            .grow(Dimension::Width)
             .padding(Insets {
                 top: 4.0,
                 leading: 6.0,
@@ -295,7 +295,7 @@ fn pred_slot(state: AppState, pk: Peek, idx: usize) -> AnyPiece {
             })
             .background(move || accent_tint(state.accent_color.get(), 0.16))
             .corner_radius(8.0)
-            .grow_w()
+            .grow(Dimension::Width)
             .on_tap(move || {
                 let mut v = pk.preds.get();
                 if idx < v.len() {
@@ -318,7 +318,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     let header = row((
         label(move || pk.subject.get().unwrap_or_default())
             .font(Font::Title3)
-            .grow_w(),
+            .grow(Dimension::Width),
         column((label("✕").font(Font::Subheadline),))
             .padding(Insets {
                 top: 6.0,
@@ -356,7 +356,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                 ))
                 .spacing(1.0)
                 .align(HAlign::Center)
-                .grow_w()
+                .grow(Dimension::Width)
                 .padding(Insets {
                     top: 4.0,
                     leading: 6.0,
@@ -365,7 +365,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                 })
                 .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
                 .corner_radius(8.0)
-                .grow_w()
+                .grow(Dimension::Width)
                 .any()
             })
             .collect()
@@ -408,7 +408,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     ))
     .spacing(1.0)
     .align(HAlign::Center)
-    .grow_w()
+    .grow(Dimension::Width)
     .padding(Insets {
         top: 4.0,
         leading: 8.0,
@@ -417,7 +417,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     })
     .background(Color::rgba(0.0, 0.0, 0.0, 0.13))
     .corner_radius(8.0)
-    .grow_w();
+    .grow(Dimension::Width);
 
     // «+» — the always-visible predict button: tap opens the keypad (a tapped
     // mark lands in the strip and moves the average), tap again closes.
@@ -441,7 +441,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     ))
     .spacing(1.0)
     .align(HAlign::Center)
-    .grow_w()
+    .grow(Dimension::Width)
     .padding(Insets {
         top: 4.0,
         leading: 6.0,
@@ -456,7 +456,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         }
     })
     .corner_radius(8.0)
-    .grow_w()
+    .grow(Dimension::Width)
     .on_tap(move || {
         haptics::pop();
         pk.panel.set(if pk.panel.get() == 1 { 0 } else { 1 });
@@ -470,7 +470,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     cells.extend(pred_slots);
     cells.push(avg_chip.any());
     cells.push(plus_chip.any());
-    let strip = row(PieceVec(cells))
+    let strip = row(cells)
         .spacing(6.0)
         .fit(RowFit::WrapColumns { run_spacing: 6.0 });
 
@@ -494,7 +494,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
             })
             .font(Font::Footnote)
             .color(move || Color::hex(st_sum.accent_color.get()))
-            .grow_w()
+            .grow(Dimension::Width)
         },
     );
 
@@ -511,7 +511,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                 }
             }),
     ))
-    .grow_w()
+    .grow(Dimension::Width)
     .padding(Insets {
         top: 8.0,
         leading: 12.0,
@@ -526,7 +526,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         }
     })
     .corner_radius(14.0)
-    .grow_w()
+    .grow(Dimension::Width)
     .on_tap(move || {
         if pk.panel.get() == 2 {
             pk.panel.set(0);
@@ -549,10 +549,8 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         move || pk.panel.get() == 1,
         move || {
             let chips: Vec<AnyPiece> = (1..=10u8).map(|v| digit_chip(state, pk, v)).collect();
-            row(PieceVec(chips))
-                .spacing(6.0)
-                .fit(RowFit::WrapCentered { run_spacing: 6.0 })
-                .grow_w()
+            crate::widgets::centered_wrap::centered_wrap(chips, 6.0, 6.0)
+                .grow(Dimension::Width)
         },
     );
 
@@ -562,7 +560,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         move || {
             column((
                 row((
-                    label("Цель по итогу:").grow_w(),
+                    label("Цель по итогу:").grow(Dimension::Width),
                     button("−").action(move || {
                         let v = pk.target.get() - 1.0;
                         pk.target.set(v.max(PEEK_MIN));
@@ -578,9 +576,9 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                 ))
                 .spacing(8.0)
                 .align(VAlign::Center)
-                .grow_w(),
+                .grow(Dimension::Width),
                 row((
-                    label("Оценок останется:").grow_w(),
+                    label("Оценок останется:").grow(Dimension::Width),
                     button("−").action(move || {
                         let k = pk.k.get();
                         if k > 0 {
@@ -600,10 +598,10 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                 ))
                 .spacing(8.0)
                 .align(VAlign::Center)
-                .grow_w(),
+                .grow(Dimension::Width),
             ))
             .spacing(10.0)
-            .grow_w()
+            .grow(Dimension::Width)
         },
     );
 
@@ -623,7 +621,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
                     .color(colors::SECONDARY),
             ))
             .spacing(4.0)
-            .grow_w()
+            .grow(Dimension::Width)
         },
     );
 
@@ -640,7 +638,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         verdict,
     ))
     .spacing(10.0)
-    .grow_w()
+    .grow(Dimension::Width)
 }
 
 pub fn close() { peek().close(); }

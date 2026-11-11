@@ -9,13 +9,12 @@ build = "build.rs"
 # `mock` keeps bare cargo and rust-analyzer compiling; `day build` overrides it with
 # `--no-default-features --features <backend>` (https://daybrite.dev/docs/project-structure).
 default = ["mock"]
-appkit = ["day/appkit"]
+appkit = ["day/appkit", "day-piece-swiftui/appkit"]
 gtk = ["day/gtk"]
 qt = ["day/qt"]
-uikit = ["day/uikit", "day-piece-lottie/uikit"]
-mdc = ["day/mdc", "day-piece-lottie/mdc"]
-# Day CLI 0.7 names this toolkit material; keep the Day 0.4 backend.
-material = ["mdc"]
+uikit = ["day/uikit", "day-piece-lottie/uikit", "day-piece-swiftui/uikit"]
+mdc = ["material"]
+material = ["day/material", "day-piece-lottie/material"]
 xaml = ["day/xaml"]
 arkui = ["day/arkui"]
 dom = ["day/dom"]
@@ -28,18 +27,16 @@ name = "dayapp"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
+day-spec = "=0.7.1"
+day-core = "=0.7.1"
 eschool-api = { path = "crates/eschool-api" }
-day = { git = "https://github.com/wancareri/day.git", features = ["model"] }
-# Native Lottie player compatible with the project’s Day 0.4 fork.
-day-piece-lottie = { git = "https://github.com/daybrite/day-piece-lottie.git", rev = "eccc4852d441edc8c89288cda70a7839769803fe" }
-day-piece-datetime = { git = "https://github.com/wancareri/day.git" }
-day-piece-settings = { git = "https://github.com/wancareri/day.git" }
-day-piece-rating = { git = "https://github.com/wancareri/day.git" }
-day-piece-colorpicker = { git = "https://github.com/wancareri/day.git" }
-day-piece-swiftui = { git = "https://github.com/wancareri/day.git" }
-day-piece-texteditor = { git = "https://github.com/wancareri/day.git" }
-day-piece-pullrefresh = { git = "https://github.com/wancareri/day.git" }
-day-part-clipboard = { git = "https://github.com/wancareri/day.git" }
+day = { package = "day-app", version = "=0.7.1", features = ["model"] }
+day-piece-lottie = "=0.5.2"
+day-piece-settings = "=0.7.1"
+day-piece-swiftui = "=0.7.1"
+day-part-clipboard = "=0.7.1"
+day-part-biometrics = "=0.7.1"
+day-part-haptics = "=0.7.1"
 # The item list persists as one JSON blob in `day::prefs` (src/model.rs).
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -54,7 +51,7 @@ regex = "1"
 keyring = { version = "3", features = ["apple-native"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
-day-uikit = { git = "https://github.com/wancareri/day.git" }
+day-uikit = { package = "day-toolkit-uikit", version = "=0.7.1" }
 block2 = "0.6"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSDictionary", "NSUserDefaults", "NSError", "NSNotification", "NSPathUtilities"] }
@@ -86,23 +83,15 @@ swift-packages = [{ path = "platform/swiftui", products = ["EschoolViews"] }]
 platform = "13.0"
 
 [build-dependencies]
-day-build = { git = "https://github.com/wancareri/day.git" }
+day-build = "=0.7.1"
 
 # Layout probes (tests/layout_probe.rs) boot the mock toolkit directly.
 [dev-dependencies]
-day-core = { git = "https://github.com/wancareri/day.git" }
-day-mock = { git = "https://github.com/wancareri/day.git" }
-day-spec = { git = "https://github.com/wancareri/day.git" }
+day-core = "=0.7.1"
+day-mock = "=0.7.1"
+day-spec = "=0.7.1"
 
 
 [workspace]
 members = [".", "crates/eschool-api"]
 
-# External Day pieces must share the app’s framework instance and renderers.
-[patch."https://github.com/daybrite/day.git"]
-day-spec = { git = "https://github.com/wancareri/day.git" }
-day-core = { git = "https://github.com/wancareri/day.git" }
-day-pieces = { git = "https://github.com/wancareri/day.git" }
-day-reactive = { git = "https://github.com/wancareri/day.git" }
-day-uikit = { git = "https://github.com/wancareri/day.git" }
-day-android = { git = "https://github.com/wancareri/day.git" }

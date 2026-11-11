@@ -81,7 +81,7 @@ fn attachment_row(state: AppState, att: crate::features::attachments::LessonAtta
             label(title_str)
                 .font(Font::Subheadline)
                 .weight(FontWeight::Medium)
-                .grow(),
+                .grow(Dimension::Both),
             if let Some(sz) = size_str {
                 label(sz)
                     .font(Font::Caption2)
@@ -97,7 +97,7 @@ fn attachment_row(state: AppState, att: crate::features::attachments::LessonAtta
             },
         ))
         .spacing(1.0)
-        .grow(),
+        .grow(Dimension::Both),
 
         // Action buttons (vertical column of clean icons with iOS-style tap feedback)
         if is_link {
@@ -379,7 +379,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                     },
                 ))
                 .spacing(2.0)
-                .grow(),
+                .grow(Dimension::Both),
 
                 if let Some(ref m_val) = t_mark {
                     let m_col = utils::grade_color(m_val);
@@ -496,7 +496,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                             .font(Font::Caption)
                             .weight(FontWeight::Semibold)
                             .secondary(),
-                        spacer().grow(),
+                        spacer().grow(Dimension::Both),
                         when(
                             move || state.attachments_loading.with(|s| s.contains(&u_load)),
                             move || label("загрузка...").font(Font::Caption2).secondary(),
@@ -559,7 +559,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                             .font(Font::Caption)
                             .weight(FontWeight::Semibold)
                             .color(move || Color::hex(state.accent_color.get())),
-                        spacer().grow(),
+                        spacer().grow(Dimension::Both),
                         label("видна только вам")
                             .font(Font::Caption2)
                             .secondary(),
@@ -575,7 +575,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                     row((
                         button("Отмена")
                             .action(cancel),
-                        spacer().grow(),
+                        spacer().grow(Dimension::Both),
                         when(
                             move || {
                                 state.lesson_notes.with(|m| m.get(&k_del_chk).map(|s| !s.trim().is_empty()).unwrap_or(false))
@@ -613,7 +613,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                             .font(Font::Caption)
                             .weight(FontWeight::Semibold)
                             .secondary(),
-                        spacer().grow(),
+                        spacer().grow(Dimension::Both),
                         label("видна только вам")
                             .font(Font::Caption2)
                             .secondary(),
@@ -653,7 +653,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                             .font(Font::Caption)
                             .weight(FontWeight::Semibold)
                             .secondary(),
-                        spacer().grow(),
+                        spacer().grow(Dimension::Both),
                         label("видна только вам")
                             .font(Font::Caption2)
                             .secondary(),

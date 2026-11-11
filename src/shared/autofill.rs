@@ -1,5 +1,37 @@
-//! Explicit AutoFill roles for authentication inputs. Apply after Day realizes
-//! the UITextField, because its default traits otherwise override our settings.
+//! Authentication UIKit supplements and diagnostics. Day owns credential roles,
+//! Return labels and same-field secure masking through its declarative InputTraits.
+
+#[cfg(any(target_os = "ios", test))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CredentialTrait {
+    ContentType,
+    Autocorrection,
+    SpellChecking,
+    InlinePrediction,
+}
+
+#[cfg(any(target_os = "ios", test))]
+fn reconcile_credential_traits(
+    mut matches: impl FnMut(CredentialTrait) -> Option<bool>,
+    mut restore: impl FnMut(CredentialTrait),
+) -> usize {
+    let mut repaired = 0;
+    for kind in [
+        CredentialTrait::ContentType,
+        CredentialTrait::Autocorrection,
+        CredentialTrait::SpellChecking,
+        CredentialTrait::InlinePrediction,
+    ] {
+        // None means the OS does not support this trait. Never send a setter
+        // for an unsupported or unchanged trait: preserve the AutoFill session.
+        if matches(kind) == Some(false) {
+            restore(kind);
+            repaired += 1;
+        }
+    }
+    repaired
+}
+
 /// Deliver the navigation focus request after UIKit's completion callback.
 #[cfg(any(target_os = "ios", test))]
 fn complete_navigation_focus(
@@ -22,17 +54,17 @@ fn complete_navigation_focus(
 pub mod ios {
     use day::prelude::Signal;
     use objc2::rc::{Retained, Weak};
-    use objc2::runtime::ProtocolObject;
-    use objc2::{MainThreadMarker, MainThreadOnly, Message, define_class};
+    use objc2::runtime::{ProtocolObject, Sel};
+    use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class};
     use objc2_foundation::{
         NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol, NSString,
     };
     use objc2_ui_kit::{
         NSObjectUIAccessibility, UIAction, UIButton, UIButtonType, UIControlEvents, UIControlState,
-        UIEditMenuConfiguration, UIEditMenuInteraction, UIImage, UIReturnKeyType,
-        UITextAutocapitalizationType, UITextAutocorrectionType, UITextContentTypeNewPassword,
-        UITextContentTypePassword, UITextContentTypeUsername, UITextField, UITextFieldDelegate,
-        UITextFieldViewMode, UITextInlinePredictionType, UITextInput, UITextInputTraits,
+        UIEditMenuConfiguration, UIEditMenuInteraction, UIImage, UITextAutocorrectionType,
+        UITextContentTypeNewPassword, UITextContentTypePassword, UITextContentTypeUsername,
+        UITextField, UITextFieldDelegate, UITextFieldViewMode, UITextInlinePredictionType,
+        UITextInputTraits,
         UITextSmartDashesType, UITextSmartQuotesType, UITextSpellCheckingType, UIView,
     };
     use std::cell::RefCell;
@@ -47,22 +79,43 @@ pub mod ios {
     thread_local! {
         static FIELDS: RefCell<Vec<(Weak<UITextField>, Role)>> = const { RefCell::new(Vec::new()) };
         static VALUES: RefCell<Vec<(Weak<UITextField>, Signal<String>)>> = const { RefCell::new(Vec::new()) };
-        static RETURN_DELEGATE: RefCell<Option<Retained<ReturnKeyDelegate>>> = const { RefCell::new(None) };
         static OBSERVER: RefCell<Option<Retained<InputModeObserver>>> = const { RefCell::new(None) };
-        static LAST_MODE: RefCell<Option<(usize, String)>> = const { RefCell::new(None) };
     }
 
-    fn traits(field: &UITextField, role: Role) {
-        let content = unsafe {
+    fn credential_traits(field: &UITextField, role: Role) -> usize {
+        use super::CredentialTrait::*;
+        let content_type = unsafe {
             match role {
                 Role::Username => UITextContentTypeUsername,
                 Role::Password => UITextContentTypePassword,
                 Role::NewPassword => UITextContentTypeNewPassword,
             }
         };
-        if field.textContentType().to_string() != content.to_string() {
-            field.setTextContentType(Some(content));
-        }
+        super::reconcile_credential_traits(
+            |kind| match kind {
+                ContentType => Some(&*field.textContentType() == content_type),
+                Autocorrection => Some(field.autocorrectionType() == UITextAutocorrectionType::No),
+                SpellChecking => Some(field.spellCheckingType() == UITextSpellCheckingType::No),
+                InlinePrediction => {
+                    // Both selectors are required, including on the iOS 16 target.
+                    (field.respondsToSelector(objc2::sel!(inlinePredictionType))
+                        && field.respondsToSelector(objc2::sel!(setInlinePredictionType:)))
+                        .then(|| field.inlinePredictionType() == UITextInlinePredictionType::No)
+                }
+            },
+            |kind| match kind {
+                ContentType => field.setTextContentType(Some(content_type)),
+                Autocorrection => field.setAutocorrectionType(UITextAutocorrectionType::No),
+                SpellChecking => field.setSpellCheckingType(UITextSpellCheckingType::No),
+                InlinePrediction => field.setInlinePredictionType(UITextInlinePredictionType::No),
+            },
+        )
+    }
+
+    fn supplemental_traits(field: &UITextField, role: Role) {
+        // Day applies InputPurpose at mount and caches it. Its equality guard
+        // cannot repair a later native change while the purpose stays the same.
+        credential_traits(field, role);
         if let Role::NewPassword = role {
             if let Some(mtm) = MainThreadMarker::new() {
                 // The parent API accepts 12–15 characters and requires a letter
@@ -78,39 +131,11 @@ pub mod ios {
             }
         }
 
-        // Credential AutoFill comes from textContentType, not word prediction.
-        // Enabling autocorrection here allowed a language switch to replace
-        // Passwords with dictionary suggestions on the username keyboard.
-        if field.autocapitalizationType() != UITextAutocapitalizationType::None {
-            field.setAutocapitalizationType(UITextAutocapitalizationType::None);
-        }
-        if field.autocorrectionType() != UITextAutocorrectionType::No {
-            field.setAutocorrectionType(UITextAutocorrectionType::No);
-        }
-        if field.spellCheckingType() != UITextSpellCheckingType::No {
-            field.setSpellCheckingType(UITextSpellCheckingType::No);
-        }
-        // Inline predictions are a separate setting on iOS 17 and later.
-        // Keep the iOS 16 deployment target: never message an absent selector.
-        if field.respondsToSelector(objc2::sel!(inlinePredictionType))
-            && field.respondsToSelector(objc2::sel!(setInlinePredictionType:))
-            && field.inlinePredictionType() != UITextInlinePredictionType::No
-        {
-            field.setInlinePredictionType(UITextInlinePredictionType::No);
-        }
         if field.smartQuotesType() != UITextSmartQuotesType::No {
             field.setSmartQuotesType(UITextSmartQuotesType::No);
         }
         if field.smartDashesType() != UITextSmartDashesType::No {
             field.setSmartDashesType(UITextSmartDashesType::No);
-        }
-        let return_key = match role {
-            Role::Username => UIReturnKeyType::Next,
-            Role::Password => UIReturnKeyType::Go,
-            Role::NewPassword => UIReturnKeyType::Done,
-        };
-        if field.returnKeyType() != return_key {
-            field.setReturnKeyType(return_key);
         }
         let assistant = field.inputAssistantItem();
         if assistant.allowsHidingShortcuts() {
@@ -129,7 +154,7 @@ pub mod ios {
         let Some(field) = find_field(view) else {
             return;
         };
-        traits(&field, role);
+        supplemental_traits(&field, role);
         trace_traits(&field, role, "configured");
         FIELDS.with(|all| {
             let mut all = all.borrow_mut();
@@ -203,42 +228,18 @@ pub mod ios {
     }
 
     pub fn refresh_active() {
-        dispatch2::DispatchQueue::main().exec_async(|| {
-            LAST_MODE.with(|last| *last.borrow_mut() = None);
-            restore_current_traits("app-language");
-        });
+        reconcile_active_traits("app-language");
     }
 
-    /// Toggle masking on ONE field. Replacing a secure field with a plain field
-    /// loses focus, selection, and the password role used by Password AutoFill.
-    pub fn password(view: &UIView, shown: Signal<bool>, value: Signal<String>) {
+    /// Register the same field that Day configures and masks declaratively.
+    pub fn password(view: &UIView, value: Signal<String>) {
         configure(view, Role::Password);
         bind_value(view, value);
         let Some(field) = find_field(view) else {
             return;
         };
-        // Realize the captured value before UIKit starts the push/focus transfer.
-        field.setText(Some(&NSString::from_str(&value.get_untracked())));
         install_return_delegate(&field);
         install_edit_menu_button(&field);
-        let weak = Weak::new(&*field);
-        day::reactive::bind(
-            move || shown.get(),
-            move |&shown| {
-                let Some(field) = weak.load() else { return };
-                if field.isSecureTextEntry() == !shown {
-                    return;
-                }
-                let text = field.text();
-                let selection = field.selectedTextRange();
-                field.setSecureTextEntry(!shown);
-                field.setText(text.as_deref());
-                if let Some(selection) = selection {
-                    field.setSelectedTextRange(Some(&selection));
-                }
-                traits(&field, Role::Password);
-            },
-        );
     }
 
     /// A stable entry to UIKit's text-edit menu when QuickType is collapsed.
@@ -464,41 +465,77 @@ pub mod ios {
         // be read back by a queued input-mode notification after logout.
         VALUES.with(|values| values.borrow_mut().clear());
         FIELDS.with(|fields| fields.borrow_mut().clear());
-        LAST_MODE.with(|mode| *mode.borrow_mut() = None);
+    }
+
+    struct ReturnKeyIvars {
+        original: Option<Retained<ProtocolObject<dyn UITextFieldDelegate>>>,
     }
 
     define_class!(
         #[unsafe(super(NSObject))]
         #[thread_kind = MainThreadOnly]
         #[name = "EschoolAuthReturnDelegate"]
+        #[ivars = ReturnKeyIvars]
         struct ReturnKeyDelegate;
         unsafe impl NSObjectProtocol for ReturnKeyDelegate {}
         unsafe impl UITextFieldDelegate for ReturnKeyDelegate {
             #[unsafe(method(textFieldShouldReturn:))]
             fn should_return(&self, field: &UITextField) -> bool {
-                // Submit without UIKit's automatic resign/reopen cycle between
-                // username and password. The incoming field takes focus itself.
+                // Emit exactly one submit without UIKit's resign/reopen cycle.
+                // Day's target/action still dispatches the existing on_submit.
                 field.sendActionsForControlEvents(UIControlEvents::EditingDidEndOnExit);
                 false
             }
         }
+        impl ReturnKeyDelegate {
+            #[unsafe(method(respondsToSelector:))]
+            fn responds_to_selector(&self, selector: Sel) -> bool {
+                let own: bool = unsafe {
+                    objc2::msg_send![super(self), respondsToSelector: selector]
+                };
+                own || self.ivars().original.as_ref()
+                    .is_some_and(|original| original.respondsToSelector(selector))
+            }
+
+            #[unsafe(method_id(forwardingTargetForSelector:))]
+            fn forwarding_target(&self, selector: Sel)
+                -> Option<Retained<ProtocolObject<dyn UITextFieldDelegate>>>
+            {
+                // Preserve DayTarget's read-only edit policy and every other
+                // optional delegate method, including future toolkit additions.
+                self.ivars().original.as_ref()
+                    .filter(|original| original.respondsToSelector(selector))
+                    .cloned()
+            }
+        }
     );
 
+    // The field owns its proxy via this association; its UIKit delegate is weak.
+    // The proxy retains only the original delegate, never the field itself.
+    static RETURN_PROXY_KEY: u8 = 0;
+
     fn install_return_delegate(field: &UITextField) {
-        // Do not replace a delegate supplied by another component.
-        if field.delegate().is_some() {
-            return;
-        }
         let Some(mtm) = MainThreadMarker::new() else {
             return;
         };
-        RETURN_DELEGATE.with(|slot| {
-            let mut slot = slot.borrow_mut();
-            let delegate = slot.get_or_insert_with(|| unsafe {
-                objc2::msg_send![ReturnKeyDelegate::alloc(mtm), init]
+        let key = std::ptr::from_ref(&RETURN_PROXY_KEY).cast();
+        let object = std::ptr::from_ref(field).cast::<objc2::runtime::AnyObject>();
+        unsafe {
+            if !objc2::ffi::objc_getAssociatedObject(object, key).is_null() {
+                return;
+            }
+            let allocated = ReturnKeyDelegate::alloc(mtm).set_ivars(ReturnKeyIvars {
+                original: field.delegate(),
             });
-            field.setDelegate(Some(ProtocolObject::from_ref(&**delegate)));
-        });
+            let delegate: Retained<ReturnKeyDelegate> =
+                objc2::msg_send![super(allocated), init];
+            objc2::ffi::objc_setAssociatedObject(
+                object.cast_mut(), key,
+                Retained::as_ptr(&delegate).cast_mut().cast(),
+                objc2::ffi::OBJC_ASSOCIATION_RETAIN_NONATOMIC,
+            );
+            field.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+        }
     }
 
     fn trace_traits(field: &UITextField, role: Role, event: &str) {
@@ -525,41 +562,59 @@ pub mod ios {
         ));
     }
 
-    fn restore_current_traits(event: &str) {
-        let current = FIELDS.with(|all| {
+    fn active_field() -> Option<(Retained<UITextField>, Role)> {
+        FIELDS.with(|all| {
             let mut all = all.borrow_mut();
             all.retain(|(weak, _)| weak.load().is_some());
             all.iter().find_map(|(weak, role)| {
                 let field = weak.load()?;
                 field.isFirstResponder().then_some((field, *role))
             })
-        });
-        let Some((field, role)) = current else {
+        })
+    }
+
+    fn reconcile_active_traits(event: &str) {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Some((field, role)) = active_field() else {
             crate::shared::nslog::nslog(&format!("[AutoFill] event={event} active_field=none"));
             return;
         };
-        trace_traits(&field, role, event);
-        let language = field
-            .textInputMode()
-            .and_then(|mode| mode.primaryLanguage())
-            .map(|s| s.to_string())
-            .unwrap_or_default();
-        let key = (Retained::as_ptr(&field) as usize, language);
-        let changed = LAST_MODE.with(|last| {
-            if last.borrow().as_ref() == Some(&key) {
-                false
-            } else {
-                *last.borrow_mut() = Some(key);
-                true
+        trace_traits(&field, role, &format!("{event}:received"));
+        let repaired = credential_traits(&field, role);
+        trace_traits(&field, role, &format!("{event}:reconciled repaired={repaired}"));
+
+        // UIKit can finish the mode transition after notifying observers. Check
+        // the SAME weak field once more after returning to the main queue. A
+        // navigation/logout must not redirect this event to another input.
+        let bound = dispatch2::MainThreadBound::new(Weak::new(&*field), mtm);
+        let event = event.to_owned();
+        dispatch2::DispatchQueue::main().exec_async(move || {
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            let Some(field) = bound.get(mtm).load() else {
+                return;
+            };
+            let Some((current, current_role)) = active_field() else {
+                return;
+            };
+            if !std::ptr::eq(&*field, &*current)
+                || current_role != role
+                || field.window().is_none()
+                || !field.isUserInteractionEnabled()
+            {
+                return;
             }
+            trace_traits(&field, role, &format!("{event}:settled"));
+            let repaired = credential_traits(&field, role);
+            trace_traits(
+                &field,
+                role,
+                &format!("{event}:settled-reconciled repaired={repaired}"),
+            );
         });
-        // Input-mode changes do not require rebuilding the keyboard. Doing so
-        // interrupts the credential suggestion session on multilingual keyboards.
-        if changed {
-            trace_traits(&field, role, "mode-before-reconcile");
-            traits(&field, role);
-            trace_traits(&field, role, "mode-after-reconcile");
-        }
     }
 
     define_class!(
@@ -584,10 +639,10 @@ pub mod ios {
 
             #[unsafe(method(inputModeChanged:))]
             fn input_mode_changed(&self, notification: &NSNotification) {
-                // UIKit has to finish changing input modes before traits and
-                // the assistant bar can be reconciled. Never resign/refocus.
+                // Restore only actual drift, immediately and after the mode
+                // transition settles. Never reload or resign/refocus here.
                 let event = notification.name().to_string();
-                dispatch2::DispatchQueue::main().exec_async(move || restore_current_traits(&event));
+                reconcile_active_traits(&event);
             }
         }
     );
@@ -643,6 +698,61 @@ pub fn current_password(node: day::RNode) {
     let _ = day_uikit::with_native(node, |view, _, _| ios::configure(view, ios::Role::Password));
     #[cfg(not(target_os = "ios"))]
     let _ = node;
+}
+
+#[cfg(test)]
+mod credential_trait_tests {
+    use super::{CredentialTrait, reconcile_credential_traits};
+    use std::cell::RefCell;
+
+    #[test]
+    fn unchanged_credential_traits_never_invoke_native_setters() {
+        // Reassigning even an unchanged content type can disturb AutoFill.
+        for _ in 0..4 {
+            assert_eq!(reconcile_credential_traits(
+                |_| Some(true),
+                |_| panic!("an intact credential session must receive no setters"),
+            ), 0);
+        }
+    }
+
+    #[test]
+    fn repairs_only_drifted_traits_and_is_idle_on_the_next_input_mode_event() {
+        use CredentialTrait::*;
+        // Username content type is still correct; correction settings drifted.
+        let state = RefCell::new([Some(true), Some(false), Some(false), Some(false)]);
+        let writes = RefCell::new(Vec::new());
+        let reconcile = || reconcile_credential_traits(
+            |kind| state.borrow()[kind as usize],
+            |kind| {
+                writes.borrow_mut().push(kind);
+                state.borrow_mut()[kind as usize] = Some(true);
+            },
+        );
+        assert_eq!(reconcile(), 3);
+        assert_eq!(*writes.borrow(), [Autocorrection, SpellChecking, InlinePrediction]);
+        assert_eq!(reconcile(), 0);
+        assert_eq!(writes.borrow().len(), 3);
+
+        state.borrow_mut()[ContentType as usize] = Some(false);
+        assert_eq!(reconcile(), 1);
+        assert_eq!(writes.borrow().last(), Some(&ContentType));
+    }
+
+    #[test]
+    fn unsupported_inline_prediction_does_not_invoke_its_setter() {
+        use CredentialTrait::*;
+        let writes = RefCell::new(Vec::new());
+        assert_eq!(reconcile_credential_traits(
+            |kind| match kind {
+                ContentType | SpellChecking => Some(true),
+                Autocorrection => Some(false),
+                InlinePrediction => None, // iOS 16 has neither selector.
+            },
+            |kind| writes.borrow_mut().push(kind),
+        ), 1);
+        assert_eq!(*writes.borrow(), [Autocorrection]);
+    }
 }
 
 #[cfg(test)]

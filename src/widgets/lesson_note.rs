@@ -130,7 +130,7 @@ fn build_card(state: AppState, target: LessonNoteTarget) -> impl Piece {
                     .secondary(),
             ))
             .spacing(2.0)
-            .grow(),
+            .grow(Dimension::Both),
             label("✕")
                 .font(Font::Headline)
                 .secondary()

@@ -1,13 +1,25 @@
 //! System locale detection — maps the device language to our locale codes.
 
-pub fn system_locale() -> &'static str {
+#[cfg(not(target_os = "ios"))]
+thread_local! {
+    static STARTUP_LOCALE: std::cell::OnceCell<String> = const { std::cell::OnceCell::new() };
+}
+
+/// Capture the framework's launch locale before restoring the app's manual preference.
+/// iOS continues to ask NSLocale for the current device language.
+pub fn remember_startup_locale() {
+    #[cfg(not(target_os = "ios"))]
+    STARTUP_LOCALE.with(|locale| { locale.get_or_init(|| day::locale().get_untracked()); });
+}
+
+pub fn system_locale() -> String {
     #[cfg(target_os = "ios")]
     {
-        ios_preferred_locale()
+        ios_preferred_locale().to_owned()
     }
     #[cfg(not(target_os = "ios"))]
     {
-        "en"
+        STARTUP_LOCALE.with(|locale| locale.get_or_init(|| day::locale().get_untracked()).clone())
     }
 }
 
@@ -72,6 +84,25 @@ fn ios_preferred_locale() -> &'static str {
             "ru" => "ru",
             "be" => "be",
             _ => "en",
+        }
+    }
+}
+
+#[cfg(all(test, not(target_os = "ios")))]
+mod tests {
+    #[test]
+    fn system_language_restores_framework_launch_locale_after_manual_override() {
+        for startup in ["ru", "be"] {
+            std::thread::spawn(move || {
+                day::prelude::set_locale(startup);
+                super::remember_startup_locale();
+                day::prelude::set_locale("en");
+                // A second window/startup call must not capture the manual override.
+                super::remember_startup_locale();
+                assert_eq!(super::system_locale(), startup);
+                day::prelude::set_locale(&super::system_locale());
+                assert_eq!(day::locale().get_untracked(), startup);
+            }).join().unwrap();
         }
     }
 }

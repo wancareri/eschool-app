@@ -15,17 +15,17 @@ pub fn render(state: AppState, title: &'static str, value_fn: impl Fn() -> Strin
                 .color(move || Color::hex(s.accent_color.get()))
                 .align(TextAlign::Center),
         ))
-        .grow_w(),
+        .grow(Dimension::Width),
         zstack((
             label(title)
                 .font(Font::Caption)
                 .secondary()
                 .align(TextAlign::Center),
         ))
-        .grow_w(),
+        .grow(Dimension::Width),
     ))
     .align(HAlign::Center)
     .spacing(2.0)
     .padding(Insets { top: 8.0, leading: 8.0, bottom: 8.0, trailing: 8.0 })
-    .grow_w()
+    .grow(Dimension::Width)
 }

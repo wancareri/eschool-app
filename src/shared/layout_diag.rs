@@ -32,7 +32,7 @@ impl<P: Decorate> PosLogExt for P {}
 
 pub fn debug_log_button(open: Signal<bool>) -> impl Piece {
     row((
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
         button("📋 Логи")
             .action(move || {
                 crate::shared::haptics::tick();
@@ -50,7 +50,7 @@ pub fn debug_log_overlay(open: Signal<bool>) -> impl Piece {
 
     column((
         row((
-            label("Логи позиционирования").font(Font::Headline).grow(),
+            label("Логи позиционирования").font(Font::Headline).grow(Dimension::Both),
             button(move || if copied.get() { "Скопировано!" } else { "Скопировать" })
                 .action(move || {
                     let txt = crate::shared::nslog::get_logs();
@@ -78,9 +78,9 @@ pub fn debug_log_overlay(open: Signal<bool>) -> impl Piece {
             })
             .font(Font::Caption2)
             .padding(Insets { top: 8.0, leading: 12.0, bottom: 16.0, trailing: 12.0 })
-            .grow_w()
+            .grow(Dimension::Width)
         )
-        .grow(),
+        .grow(Dimension::Both),
     ))
     .background(move || {
         if day::dark_mode() {
@@ -91,7 +91,7 @@ pub fn debug_log_overlay(open: Signal<bool>) -> impl Piece {
     })
     .corner_radius(16.0)
     .padding(Insets { top: 44.0, leading: 8.0, bottom: 20.0, trailing: 8.0 })
-    .grow()
+    .grow(Dimension::Both)
 }
 
 #[cfg(target_os = "ios")]

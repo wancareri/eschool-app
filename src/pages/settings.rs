@@ -7,67 +7,23 @@ use day::prelude::*;
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let current_tab = state.settings_tab;
-    let pager_w = crate::pages::diary::get_screen_width();
-
-    // The pager's own report: a tab write that came FROM a scroll event is
-    // skipped by the scroll-back watch below (no scroll → scroll ping-pong).
-    let last_scroll_idx: Signal<Option<usize>> = Signal::new(None);
-    // Picker segment: the strip animates there natively.
-    let tap_target: Signal<Option<ScrollTarget>> = Signal::new(None);
-    // First mount lands on the persisted tab without sliding through the rest.
-    let initial_target: Signal<Option<ScrollTarget>> = Signal::new(Some(ScrollTarget::Offset(
-        Point::new(pager_w * current_tab.get() as f64, 0.0),
-    )));
-
-    // The tab this pager was BUILT for. It mounts at offset 0 regardless, so until
-    // the restore has actually landed, scroll reports must not be allowed to commit
-    // a different tab — that write was the bounce to «Основные». Tab 0 IS the mount
-    // offset: nothing to restore there, so start unguarded.
-    let built_tab = current_tab.get();
-    let restore: Signal<Option<(usize, u32)>> =
-        Signal::new(if built_tab == 0 { None } else { Some((built_tab, 0)) });
-
-    // The mount jump can be swallowed: the scroll applies before the pager's
-    // contentSize exists, scrollRectToVisible no-ops, no event fires — the content
-    // stays on page 0 while the strip shows the built tab. Re-send the target via
-    // the INSTANT jump signal (an animated target would visibly slide the page in);
-    // an already-landed pager ignores the redundant jumps, and the flag stops the
-    // timers once `restore` completes. Setters are Send (a plain Signal is not).
-    let restore_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    if built_tab != 0 {
-        for ms in [50u32, 160, 360, 700] {
-            let jump = initial_target.setter();
-            let done = restore_done.clone();
-            day::reactive::on_main_delayed(ms, move || {
-                if !done.load(std::sync::atomic::Ordering::Relaxed) {
-                    jump.set(Some(ScrollTarget::Offset(Point::new(
-                        pager_w * built_tab as f64,
-                        0.0,
-                    ))));
-                }
-            });
-        }
-    }
-
-    // A tab change from OUTSIDE the pager (picker segment) scrolls
-    // the strip there. The first callback is the mount one — the strip is
-    // already positioned by scroll_jump — so only later changes act.
-    {
-        let last = last_scroll_idx;
-        let tap = tap_target;
-        day::reactive::watch(
-            move || current_tab.get(),
-            move |&t, old| {
-                if old.is_none() || last.get() == Some(t) {
-                    return;
-                }
-                tap.set(Some(ScrollTarget::Offset(Point::new(
-                    pager_w * t as f64,
-                    0.0,
-                ))));
-            },
-        );
-    }
+    let pager_state = Signal::new(day::pager::PagerState {
+        order: vec![0, 1, 2, 3],
+        selected: current_tab.get().min(3),
+        epoch: 1,
+    });
+    let pager_busy = Signal::new(false);
+    day::reactive::watch(
+        move || (current_tab.get(), pager_busy.get()),
+        move |&(selected, busy), _| {
+            if !busy && pager_state.get().selected != selected {
+                pager_state.update(|s| {
+                    s.selected = selected.min(3);
+                    s.epoch += 1;
+                });
+            }
+        },
+    );
 
     let pin_enabled = Signal::new(crate::shared::pin::is_enabled());
 
@@ -106,21 +62,14 @@ pub fn render() -> impl Piece {
         );
     }
 
-    let rd = restore_done.clone();
     let piece = zstack((
-        scroll(column((
+        column((
 
 
-            picker(
-                vec![
-                    "Основные",
-                    "Вид",
-                    "Защита",
-                    "Dev",
-                ],
-                current_tab,
-            )
+            picker(current_tab, vec![(0usize, "Основные"), (1, "Вид"), (2, "Защита"), (3, "Dev")])
             .segmented()
+            .enabled(move || !pager_busy.get())
+            .id(day::id!(settings_tabs))
             .padding(Insets {
                 top: 4.0,
                 leading: 20.0,
@@ -128,53 +77,23 @@ pub fn render() -> impl Piece {
                 trailing: 20.0,
             }),
 
-            // Four-page native pager
-            scroll(row((
-                tab_body(state, 0, pin_enabled).width(pager_w),
-                tab_body(state, 1, pin_enabled).width(pager_w),
-                tab_body(state, 2, pin_enabled).width(pager_w),
-                tab_body(state, 3, pin_enabled).width(pager_w),
-            )))
-            .horizontal()
-            .paging(true)
-            .scroll_target(tap_target)
-            .scroll_jump(initial_target)
-            .on_scroll(move |p| {
-                let idx = ((p.x + pager_w * 0.5) / pager_w).floor() as usize;
-                let idx = idx.min(3);
-                let settled = (p.x - idx as f64 * pager_w).abs() < 0.5;
-                if let Some((want, tries)) = restore.get() {
-                    if settled {
-                        if idx == want {
-                            restore.set(None);
-                            rd.store(true, std::sync::atomic::Ordering::Relaxed);
-                            last_scroll_idx.set(Some(idx));
-                        } else if tries < 5 {
-                            initial_target.set(Some(ScrollTarget::Offset(Point::new(
-                                pager_w * want as f64,
-                                0.0,
-                            ))));
-                            restore.set(Some((want, tries + 1)));
-                        } else {
-                            restore.set(None);
-                            rd.store(true, std::sync::atomic::Ordering::Relaxed);
-                        }
+            day::pager(
+                pager_state,
+                pager_busy,
+                (0..4).map(|tab| scroll(tab_body(state, tab, pin_enabled)).any()).collect(),
+                move |selected| {
+                    if current_tab.get() != selected {
+                        haptics::tick();
+                        current_tab.set(selected);
                     }
-                    return;
-                }
-                if settled && current_tab.get() != idx {
-                    crate::shared::haptics::tick();
-                    last_scroll_idx.set(Some(idx));
-                    current_tab.set(idx);
-                }
-            })
-            .width(pager_w)
-            .grow()
-        )))
-        .grow(),
+                    pager_state.update(|s| s.selected = selected);
+                },
+            ).id(day::id!(settings_pager)).grow(Dimension::Both),
+        ))
+        .grow(Dimension::Both),
     ))
     .align(Alignment::TopLeading)
-    .grow();
+    .grow(Dimension::Both);
 
 
     piece
@@ -188,7 +107,7 @@ fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piec
             spacer().frame(0.0, 16.0),
         ))
         .spacing(0.0)
-        .grow()
+        .grow(Dimension::Both)
         .any(),
         1 => column((
             appearance_section(state),
@@ -197,7 +116,7 @@ fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piec
             spacer().frame(0.0, 16.0),
         ))
         .spacing(0.0)
-        .grow()
+        .grow(Dimension::Both)
         .any(),
         2 => column((
             pin_section(state, pin_enabled),
@@ -205,14 +124,14 @@ fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piec
             spacer().frame(0.0, 16.0),
         ))
         .spacing(0.0)
-        .grow()
+        .grow(Dimension::Both)
         .any(),
         _ => column((
             dev_settings(state),
             spacer().frame(0.0, 16.0),
         ))
         .spacing(0.0)
-        .grow()
+        .grow(Dimension::Both)
         .any(),
     }
 }
@@ -292,7 +211,7 @@ fn haptics_section(_state: AppState) -> impl Piece {
                 row((
                     label("Вибрация при действиях")
                         .font(Font::Body)
-                        .grow(),
+                        .grow(Dimension::Both),
                     toggle(haptics_on),
                 ))
                 .spacing(8.0),
@@ -305,12 +224,58 @@ fn haptics_section(_state: AppState) -> impl Piece {
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
+/// Keep the existing preference keys so upgrading preserves the user's choices.
+pub fn apply_startup() {
+    if day::env("DAY_THEME").is_none() {
+        let appearance = match day::prefs::get(crate::THEME_KEY).as_deref() {
+            Some("dark") => Some(true),
+            Some("light") => Some(false),
+            _ => None,
+        };
+        day::set_appearance(appearance);
+    }
+    if day::env("DAY_LOCALE").is_none() {
+        if let Some(locale) = day::prefs::get(crate::LOCALE_KEY).filter(|v| !v.is_empty()) {
+            set_locale(&locale);
+        }
+    }
+}
+
 fn system_settings() -> impl Piece {
-    form((day_piece_settings::settings_sections(
-        crate::THEME_KEY,
-        crate::LOCALE_KEY,
-        res::locales::ALL,
-    ),))
+    let theme = Signal::new(match day::prefs::get(crate::THEME_KEY).as_deref() {
+        Some("light") => 1usize,
+        Some("dark") => 2,
+        _ => 0,
+    });
+    let language = Signal::new(day::prefs::get(crate::LOCALE_KEY).unwrap_or_default());
+    day::reactive::watch(move || theme.get(), move |value, old| {
+        if old.is_none() { return; }
+        match value {
+            1 => day::prefs::set(crate::THEME_KEY, "light"),
+            2 => day::prefs::set(crate::THEME_KEY, "dark"),
+            _ => day::prefs::remove(crate::THEME_KEY),
+        };
+        day::set_appearance(match value { 1 => Some(false), 2 => Some(true), _ => None });
+    });
+    day::reactive::watch(move || language.get(), move |value, old| {
+        if old.is_none() { return; }
+        day::prefs::set(crate::LOCALE_KEY, value);
+        let locale = if value.is_empty() { crate::shared::locale::system_locale() } else { value.clone() };
+        set_locale(&locale);
+    });
+    let languages = move || {
+        let mut options = vec![(String::new(), res::str::auth_theme_system().format())];
+        options.extend(res::locales::ALL.iter().map(|(tag, name)| (tag.to_string(), name.to_string())));
+        options
+    };
+    form((
+        section((picker(theme, move || vec![
+            (0usize, res::str::auth_theme_system().format()),
+            (1, res::str::auth_theme_light().format()),
+            (2, res::str::auth_theme_dark().format()),
+        ]).segmented(),)).title(res::str::auth_appearance()),
+        section((picker(language, languages),)).title(res::str::auth_language()),
+    ))
 }
 
 fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
@@ -318,7 +283,7 @@ fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
     button(move || {
         if s.accent_color.get() == hex { format!("\u{2713} \u{25CF} {lbl}") } else { format!("\u{25CF} {lbl}") }
     })
-    .id(format!("accent-{hex}"))
+    .id(day::id!(accent, hex))
     .action(move || accent_commit(state, hex))
 }
 
@@ -330,7 +295,7 @@ fn pin_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
                     row((
                         label("PIN-код при входе")
                             .font(Font::Body)
-                            .grow(),
+                            .grow(Dimension::Both),
                         toggle(pin_enabled),
                     ))
                     .spacing(8.0),
@@ -341,7 +306,7 @@ fn pin_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
                             label("PIN-код активен")
                                 .font(Font::Caption)
                                 .secondary()
-                                .grow(),
+                                .grow(Dimension::Both),
                             button("Сменить")
                                 .action(move || {
                                     crate::shared::haptics::tick();
@@ -401,7 +366,7 @@ fn biometric_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
                         row((
                             label("Вход по Face ID / Touch ID")
                                 .font(Font::Body)
-                                .grow(),
+                                .grow(Dimension::Both),
                             toggle(biometric_on),
                         ))
                         .spacing(8.0)
@@ -439,11 +404,7 @@ fn logout_section(state: AppState) -> impl Piece {
 }
 
 pub fn settings_body() -> impl Piece {
-    form((day_piece_settings::settings_sections(
-        crate::THEME_KEY,
-        crate::LOCALE_KEY,
-        res::locales::ALL,
-    ),))
+    system_settings()
 }
 
 #[cfg(debug_assertions)]
@@ -555,4 +516,50 @@ fn input_diagnostics() -> impl Piece {
             label(move || result.get()).font(Font::Caption).secondary().any()
         }),
     )).title(res::str::autofill_diagnostics_title())
+}
+
+#[cfg(all(test, feature = "mock"))]
+mod pager_tests {
+    use super::*;
+    use day_spec::Event;
+
+    fn check_swipe_settle(landed: usize) {
+        day_core::uninstall_tree();
+        let (mock, probe) = day_mock::MockToolkit::new();
+        day_core::launch_with(mock, day_spec::WindowOptions::default(), || {
+            AppState::scoped(|state| {
+                state.settings_tab.set(0);
+                render()
+            }).any()
+        });
+        let find = |id: &str| {
+            probe.state.borrow().widgets.iter()
+                .find(|(_, widget)| day_core::id_of(day_spec::NodeId(widget.node)).as_deref() == Some(id))
+                .map(|(handle, widget)| (day_mock::MockHandle(*handle), day_spec::NodeId(widget.node)))
+                .unwrap_or_else(|| panic!("missing {id}"))
+        };
+        let (picker, picker_node) = find("settings_tabs");
+        let (_, pager_node) = find("settings_pager");
+        let state = AppState::get_main().unwrap();
+        assert!(probe.widget(picker).enabled);
+        probe.emit(pager_node, Event::Custom { tag: "", num: 0.0, text: "begin 1".into() });
+        assert!(!probe.widget(picker).enabled, "native picker must reject segment taps throughout a swipe");
+        assert_eq!(state.settings_tab.get(), 0);
+        probe.emit(pager_node, Event::Custom { tag: "", num: 0.0, text: format!("settle 1 {landed}") });
+        assert_eq!(state.settings_tab.get(), landed, "completed and cancelled swipes must report their landed slot");
+        assert!(probe.widget(picker).enabled, "picker must become usable again after settling");
+        probe.emit(picker_node, Event::SelectionChanged(3));
+        assert_eq!(state.settings_tab.get(), 3, "the next segment selection must be accepted");
+        // The picker change advances the presentation epoch; an obsolete native completion
+        // must not take the selection back to the previously settled page.
+        probe.emit(pager_node, Event::Custom { tag: "", num: 0.0, text: format!("settle 1 {landed}") });
+        assert_eq!(state.settings_tab.get(), 3);
+        day_core::uninstall_tree();
+    }
+
+    #[test]
+    fn settings_picker_reenabled_after_completed_swipe() { check_swipe_settle(1); }
+
+    #[test]
+    fn settings_picker_reenabled_after_cancelled_swipe() { check_swipe_settle(0); }
 }

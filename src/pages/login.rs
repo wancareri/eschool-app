@@ -1,4 +1,5 @@
 use crate::app::AppState;
+use crate::app::blur::ApplyGlassBlur;
 use crate::features;
 use crate::shared::colors;
 use crate::shared::layout_diag::{debug_log_button, debug_log_overlay, PosLogExt};
@@ -17,7 +18,7 @@ pub fn render() -> impl Piece {
         when(
             move || !state.is_authenticated.get() && state.setup_new_password_active.get(),
             move || crate::widgets::header::page(res::str::auth_setup_title(), Signal::new(Vec::<String>::new()), setup_password_form(state, show_logs))
-                .grow()
+                .grow(Dimension::Both)
                 .any(),
         ),
         when(
@@ -29,7 +30,7 @@ pub fn render() -> impl Piece {
             move || debug_log_overlay(show_logs).animation(AnimSpec::ease_out(250)).any(),
         ),
     ))
-    .grow()
+    .grow(Dimension::Both)
     .background(move || {
         if day::dark_mode() {
             Color::hex(0x000000)
@@ -56,7 +57,7 @@ fn profile_view(state: AppState) -> impl Piece {
             ))
             .spacing(6.0)
             .padding(Insets { top: 16.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-            .grow_w(),
+            .grow(Dimension::Width),
 
             spacer(),
 
@@ -99,7 +100,7 @@ fn profile_view(state: AppState) -> impl Piece {
                                                 .any(),
                                         ),
                                     ))
-                                    .grow(),
+                                    .grow(Dimension::Both),
                                     when(
                                         move || state.active_child_index.get() != this_idx,
                                         move || button("Выбрать")
@@ -116,7 +117,7 @@ fn profile_view(state: AppState) -> impl Piece {
                             })
                             .collect();
 
-                        section(PieceVec(rows)).title("Дети в дневнике").any()
+                        section(rows).title("Дети в дневнике").any()
                     },
                 ),
 
@@ -170,14 +171,14 @@ fn profile_view(state: AppState) -> impl Piece {
             .padding(Insets { top: 0.0, leading: 0.0, bottom: 20.0, trailing: 0.0 }),
         ))
         .spacing(0.0)
-        .grow(),
+        .grow(Dimension::Both),
 
         when(
             move || show_change_pwd.get(),
             move || change_password_form(state, show_change_pwd).animation(AnimSpec::ease_out(300)).any(),
         ),
     ))
-    .grow()
+    .grow(Dimension::Both)
 }
 
 struct AuthErrorInfo {
@@ -253,9 +254,9 @@ fn auth_action_button<M>(
     button(title)
         .prominent()
         .height(52.0)
-        .grow_w()
+        .grow(Dimension::Width)
         .action(action)
-        .id("login-btn")
+        .id(day::id!(login_btn))
         .log_pos("Auth:ActionButton")
         .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
 }
@@ -268,20 +269,20 @@ pub fn auth_toolbar() -> Vec<ToolbarEntry> {
     let theme = day::prefs::get(crate::THEME_KEY);
     let dark = day::dark_mode(); // React to appearance changes, including system changes.
     let language = sub_menu(res::str::auth_language().format(), vec![
-        menu_item("RU · Русский").id("auth-language-ru").checked(locale.starts_with("ru")).action(|| choose_auth_language("ru")),
-        menu_item("BE · Беларуская").id("auth-language-be").checked(locale.starts_with("be")).action(|| choose_auth_language("be")),
-        menu_item("EN · English").id("auth-language-en").checked(locale.starts_with("en")).action(|| choose_auth_language("en")),
+        menu_item("RU · Русский").id(day::id!(auth_language_ru)).checked(locale.starts_with("ru")).action(|| choose_auth_language("ru")),
+        menu_item("BE · Беларуская").id(day::id!(auth_language_be)).checked(locale.starts_with("be")).action(|| choose_auth_language("be")),
+        menu_item("EN · English").id(day::id!(auth_language_en)).checked(locale.starts_with("en")).action(|| choose_auth_language("en")),
     ]).image("globe");
     let appearance = sub_menu(res::str::auth_appearance().format(), vec![
-        menu_item(res::str::auth_theme_system().format()).id("auth-theme-system").icon(Symbol::Auto)
+        menu_item(res::str::auth_theme_system().format()).id(day::id!(auth_theme_system)).icon(Symbol::Auto)
             .checked(!matches!(theme.as_deref(), Some("light" | "dark"))).action(|| choose_auth_theme(None)),
-        menu_item(res::str::auth_theme_light().format()).id("auth-theme-light").icon(Symbol::Light)
+        menu_item(res::str::auth_theme_light().format()).id(day::id!(auth_theme_light)).icon(Symbol::Light)
             .checked(theme.as_deref() == Some("light")).action(|| choose_auth_theme(Some(false))),
-        menu_item(res::str::auth_theme_dark().format()).id("auth-theme-dark").icon(Symbol::Dark)
+        menu_item(res::str::auth_theme_dark().format()).id(day::id!(auth_theme_dark)).icon(Symbol::Dark)
             .checked(theme.as_deref() == Some("dark")).action(|| choose_auth_theme(Some(true))),
     ]).icon(if dark { Symbol::Dark } else { Symbol::Light });
     let diagnostics = menu_item(res::str::autofill_diagnostics_copy().format())
-        .id("auth-copy-input-diagnostics")
+        .id(day::id!(auth_copy_input_diagnostics))
         .icon(Symbol::Copy)
         .action(|| {
             let report = crate::shared::nslog::autofill_diagnostics();
@@ -293,7 +294,7 @@ pub fn auth_toolbar() -> Vec<ToolbarEntry> {
             day_part_clipboard::set_text(&report);
             crate::shared::haptics::tick();
         });
-    vec![toolbar_menu("auth-options", res::str::auth_options(), vec![language, appearance, diagnostics])
+    vec![toolbar_menu(day::id!(auth_options), res::str::auth_options(), vec![language, appearance, diagnostics])
         .icon(Symbol::More).placement(ToolbarPlacement::Primary)]
 }
 
@@ -337,17 +338,17 @@ fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
             .secondary()
             .align(TextAlign::Center)
             .padding(Insets { top: 0.0, leading: 32.0, bottom: 0.0, trailing: 32.0 }),
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
         row((
-            spacer().grow(),
+            spacer().grow(Dimension::Both),
             crate::widgets::lottie_view::duck_intro_animation(240.0),
-            spacer().grow(),
+            spacer().grow(Dimension::Both),
         )),
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
         auth_action_button(res::str::auth_start(), on_start),
         spacer().height(8.0),
     ))
-    .grow()
+    .grow(Dimension::Both)
     .background(move || {
         if day::dark_mode() {
             Color::hex(0x000000)
@@ -376,9 +377,9 @@ fn native_auth_input(
     field: impl Decorate,
     configure: impl FnOnce(day::RNode) + 'static,
 ) -> impl Piece {
-    // grow_w/height/frame return layout-only nodes in Day 0.4. Configure
+    // Layout decorators can return nodes without native handles. Configure
     // the leaf before wrapping it, otherwise with_native silently returns None.
-    field.tweak(configure).grow_w()
+    field.tweak(configure).grow(Dimension::Width)
 }
 
 fn username_step_view(
@@ -390,9 +391,9 @@ fn username_step_view(
     on_submit: impl Fn() + Clone + 'static,
 ) -> impl Piece {
     let sticker = row((
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
         crate::widgets::lottie_view::duck_login_animation(230.0),
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
     ));
 
     #[cfg(target_os = "ios")]
@@ -405,6 +406,8 @@ fn username_step_view(
 
     let on_sub = on_submit.clone();
     let input_field = text_field(username)
+        .input_purpose(InputPurpose::Username)
+        .submit_label(SubmitLabel::Next)
         .placeholder(res::str::auth_username_placeholder())
         .focused(username_focused)
         .log_pos("Auth:UsernameField")
@@ -417,7 +420,7 @@ fn username_step_view(
         });
     });
     #[cfg(not(target_os = "ios"))]
-    let input_field = input_field.grow_w();
+    let input_field = input_field.grow(Dimension::Width);
 
     let input_card = row((
         vector(res::vectors::tab_login)
@@ -457,7 +460,9 @@ fn username_step_view(
     #[cfg(target_os = "ios")]
     let credential_capture = {
         when(move || get_auth_state().path.get().last() == Some(&AuthRoute::Login), move || {
-            native_auth_input(text_field(password).secure(), move |node| {
+            native_auth_input(text_field(password).secure(true)
+                .input_purpose(InputPurpose::Password)
+                .submit_label(SubmitLabel::Go), move |node| {
                 let _ = day_uikit::with_native(node, move |view, _, _| {
                     crate::shared::autofill::ios::capture_password(view, password);
                 });
@@ -470,7 +475,7 @@ fn username_step_view(
     let content = column((
         input_card
             .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-            .grow_w(),
+            .grow(Dimension::Width),
         credential_capture,
 
         // Minimalist native session remember toggle
@@ -478,12 +483,12 @@ fn username_step_view(
             label(res::str::auth_remember())
                 .font(Font::Subheadline)
                 .secondary()
-                .grow(),
+                .grow(Dimension::Both),
             toggle(remember),
         ))
         .align(VAlign::Center)
         .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 })
-        .grow_w(),
+        .grow(Dimension::Width),
     ));
 
 
@@ -504,12 +509,12 @@ fn username_step_view(
     };
 
     let piece = column((
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
         sticker,
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
         bottom_section,
     ))
-    .grow()
+    .grow(Dimension::Both)
     .background(move || {
         if day::dark_mode() {
             Color::hex(0x000000)
@@ -541,9 +546,9 @@ fn password_step_view(
     on_submit: impl Fn() + Clone + 'static,
 ) -> impl Piece {
     let sticker = row((
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
         crate::widgets::lottie_view::duck_password_animation(230.0),
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
     ));
 
     #[cfg(target_os = "ios")]
@@ -573,36 +578,25 @@ fn password_step_view(
         }
     });
 
-    #[cfg(target_os = "ios")]
     let pw_field = text_field(password)
-        .secure()
+        .input_purpose(InputPurpose::Password)
+        .submit_label(SubmitLabel::Go)
+        .secure(move || !show_password.get())
         .placeholder(res::str::auth_password_placeholder())
         .focused(password_focused)
-        .id("password-field")
+        .id(day::id!(password_field))
         .log_pos("Auth:PasswordField")
         .on_submit(on_submit.clone());
 
     #[cfg(target_os = "ios")]
     let pw_field = native_auth_input(pw_field, move |node| {
         let _ = day_uikit::with_native(node, move |view, _, _| {
-            crate::shared::autofill::ios::password(view, show_password, password);
+            crate::shared::autofill::ios::password(view, password);
         });
     });
 
     #[cfg(not(target_os = "ios"))]
-    let pw_field = {
-        let submit_plain = on_submit.clone();
-        let submit_secure = on_submit.clone();
-        when(move || show_password.get(), move || {
-            text_field(password).placeholder(res::str::auth_password_placeholder())
-                .focused(password_focused).grow_w().id("password-field")
-                .on_submit(submit_plain.clone()).any()
-        }).otherwise(move || {
-            text_field(password).secure().placeholder(res::str::auth_password_placeholder())
-                .focused(password_focused).grow_w().id("password-field")
-                .on_submit(submit_secure.clone()).any()
-        })
-    };
+    let pw_field = pw_field.grow(Dimension::Width);
 
     let input_card = row((
         vector(res::vectors::lock)
@@ -640,7 +634,7 @@ fn password_step_view(
     let content = column((
         input_card
             .padding(Insets { top: 0.0, leading: 20.0, bottom: 8.0, trailing: 20.0 })
-            .grow_w(),
+            .grow(Dimension::Width),
     ));
 
 
@@ -670,12 +664,12 @@ fn password_step_view(
     };
 
     let piece = column((
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
         sticker,
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
         bottom_section,
     ))
-    .grow()
+    .grow(Dimension::Both)
     .background(move || {
         if day::dark_mode() {
             Color::hex(0x000000)
@@ -872,8 +866,8 @@ fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece {
                 .any(),
             }
         })
-        .id("auth-stack")
-        .grow()
+        .id(day::id!(auth_stack))
+        .grow(Dimension::Both)
         .background(move || {
             if day::dark_mode() {
                 Color::hex(0x000000)
@@ -930,7 +924,7 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                 .padding(Insets { top: 6.0, leading: 24.0, bottom: 16.0, trailing: 24.0 }),
             ))
             .log_pos("Setup:TitleColumn")
-            .grow_w(),
+            .grow(Dimension::Width),
 
             column((
                 label("НОВЫЙ ПАРОЛЬ")
@@ -938,9 +932,11 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                     .bold()
                     .secondary(),
                 text_field(new_password)
-                    .secure()
+                    .secure(true)
+                    .input_purpose(InputPurpose::NewPassword)
+                    .submit_label(SubmitLabel::Next)
                     .tweak(crate::shared::autofill::new_password)
-                    .grow_w()
+                    .grow(Dimension::Width)
                     .log_pos("Setup:NewPasswordField")
                     .on_submit(move || {
                         confirm_focused.set(true);
@@ -957,7 +953,7 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             })
             .corner_radius(16.0)
             .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-            .grow_w(),
+            .grow(Dimension::Width),
 
             column((
                 label("ПОВТОРИТЕ ПАРОЛЬ")
@@ -965,10 +961,12 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                     .bold()
                     .secondary(),
                 text_field(confirm_password)
-                    .secure()
+                    .secure(true)
+                    .input_purpose(InputPurpose::NewPassword)
+                    .submit_label(SubmitLabel::Done)
                     .tweak(crate::shared::autofill::new_password)
                     .focused(confirm_focused)
-                    .grow_w()
+                    .grow(Dimension::Width)
                     .log_pos("Setup:ConfirmPasswordField")
                     .on_submit(move || {
                         if state.loading.get() { return; }
@@ -1009,9 +1007,9 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             })
             .corner_radius(16.0)
             .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-            .grow_w(),
+            .grow(Dimension::Width),
 
-        spacer().grow(),
+        spacer().grow(Dimension::Both),
 
         button(move || {
             if state.loading.get() {
@@ -1022,7 +1020,7 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
         })
         .prominent()
         .height(50.0)
-        .grow_w()
+        .grow(Dimension::Width)
         .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
         .log_pos("Setup:SubmitButton")
         .action(move || {
@@ -1053,7 +1051,7 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             }
         })
         .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 })
-        .grow_w(),
+        .grow(Dimension::Width),
 
         button("← Назад к входу")
             .log_pos("Setup:BackButton")
@@ -1065,8 +1063,7 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
             })
             .padding(Insets { top: 0.0, leading: 24.0, bottom: 8.0, trailing: 24.0 }),
 
-        dyn_piece(
-            move || {
+        spacer().height(move || {
                 let h = kb_h.get();
                 if h > 0.0 {
                     let safe_b = crate::shared::keyboard::get_safe_area_bottom();
@@ -1074,11 +1071,9 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
                 } else {
                     4.0
                 }
-            },
-            move |lift| spacer().height(lift).any(),
-        ),
+            }),
     ))
-    .grow()
+    .grow(Dimension::Both)
 }
 
 fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
@@ -1109,7 +1104,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         .align(TextAlign::Center)
                         .padding(Insets { top: 6.0, leading: 24.0, bottom: 16.0, trailing: 24.0 }),
                 ))
-                .grow_w(),
+                .grow(Dimension::Width),
 
                 column((
                     label("ТЕКУЩИЙ ПАРОЛЬ")
@@ -1117,9 +1112,11 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         .bold()
                         .secondary(),
                     text_field(old_password)
-                        .secure()
+                        .secure(true)
+                        .input_purpose(InputPurpose::Password)
+                        .submit_label(SubmitLabel::Go)
                         .tweak(crate::shared::autofill::current_password)
-                        .grow_w()
+                        .grow(Dimension::Width)
                         .log_pos("ChangePwd:OldPasswordField"),
                 ))
                 .spacing(4.0)
@@ -1133,7 +1130,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                 })
                 .corner_radius(16.0)
                 .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-                .grow_w(),
+                .grow(Dimension::Width),
 
                 column((
                     label("НОВЫЙ ПАРОЛЬ")
@@ -1141,9 +1138,11 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         .bold()
                         .secondary(),
                     text_field(new_password)
-                        .secure()
-                    .tweak(crate::shared::autofill::new_password)
-                        .grow_w()
+                        .secure(true)
+                        .input_purpose(InputPurpose::NewPassword)
+                        .submit_label(SubmitLabel::Next)
+                        .tweak(crate::shared::autofill::new_password)
+                        .grow(Dimension::Width)
                         .log_pos("ChangePwd:NewPasswordField")
                         .on_submit(move || {
                             confirm_focused.set(true);
@@ -1160,7 +1159,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                 })
                 .corner_radius(16.0)
                 .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-                .grow_w(),
+                .grow(Dimension::Width),
 
                 column((
                     label("ПОВТОРИТЕ НОВЫЙ ПАРОЛЬ")
@@ -1168,10 +1167,12 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         .bold()
                         .secondary(),
                     text_field(confirm_password)
-                        .secure()
-                    .tweak(crate::shared::autofill::new_password)
+                        .secure(true)
+                        .input_purpose(InputPurpose::NewPassword)
+                        .submit_label(SubmitLabel::Done)
+                        .tweak(crate::shared::autofill::new_password)
                         .focused(confirm_focused)
-                        .grow_w()
+                        .grow(Dimension::Width)
                         .log_pos("ChangePwd:ConfirmPasswordField"),
                 ))
                 .spacing(4.0)
@@ -1185,7 +1186,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                 })
                 .corner_radius(16.0)
                 .padding(Insets { top: 0.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-                .grow_w(),
+                .grow(Dimension::Width),
 
                 button(move || {
                     if state.loading.get() {
@@ -1196,7 +1197,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                 })
                 .prominent()
                 .height(50.0)
-                .grow_w()
+                .grow(Dimension::Width)
                 .padding(Insets { top: 0.0, leading: 24.0, bottom: 12.0, trailing: 24.0 })
                 .log_pos("ChangePwd:SubmitButton")
                 .action(move || {
@@ -1246,7 +1247,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                     );
                 })
                 .padding(Insets { top: 8.0, leading: 20.0, bottom: 12.0, trailing: 20.0 })
-                .grow_w(),
+                .grow(Dimension::Width),
 
                 button("Отмена")
                     .action(move || {
@@ -1256,8 +1257,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                     })
                     .padding(Insets { top: 0.0, leading: 24.0, bottom: 16.0, trailing: 24.0 }),
 
-                dyn_piece(
-                    move || {
+                spacer().frame(0.0, move || {
                         let h = kb_h.get();
                         if h > 0.0 {
                             let safe_b = crate::shared::keyboard::get_safe_area_bottom();
@@ -1265,16 +1265,14 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
                         } else {
                             0.0
                         }
-                    },
-                    move |lift| spacer().frame(0.0, lift).any(),
-                ),
+                    }),
             ))
-            .grow_w()
+            .grow(Dimension::Width)
         )
         .on_tap(move || {
             crate::shared::keyboard::dismiss();
         })
-        .grow(),
+        .grow(Dimension::Both),
     ))
     .background(move || {
         if day::dark_mode() {
@@ -1283,7 +1281,7 @@ fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
             Color::hex(0xF2F2F7)
         }
     })
-    .grow()
+    .grow(Dimension::Both)
 }
 
 #[cfg(test)]
@@ -1317,28 +1315,68 @@ mod auth_error_tests {
     #[test]
     fn credential_configuration_receives_the_native_field_before_layout_wrappers() {
         use day::prelude::*;
-        use std::{cell::Cell, rc::Rc};
-        let configured = Rc::new(Cell::new(0));
-        let observed = configured.clone();
-        let (mock, _) = day_mock::MockToolkit::new();
+        use std::{cell::RefCell, rc::Rc};
+        let handles = Rc::new(RefCell::new(Vec::new()));
+        let observed = handles.clone();
+        let shown = Signal::global(false);
+        let (mock, probe) = day_mock::MockToolkit::new();
         day_core::uninstall_tree();
         day_core::launch_with(mock, day_spec::WindowOptions::default(), move || {
-            let input = |secure| {
+            let input = |purpose: InputPurpose, submit: SubmitLabel, capture: bool| {
                 let observed = observed.clone();
-                let value = Signal::new(String::new());
-                let field = if secure { text_field(value).secure() } else { text_field(value) };
+                let value = Signal::new(String::from("fixture"));
+                let focus = Signal::new(purpose == InputPurpose::Password && !capture);
+                let field = text_field(value)
+                    .focused(focus)
+                    .input_purpose(purpose)
+                    .submit_label(submit)
+                    .secure(move || purpose != InputPurpose::Username && (capture || !shown.get()));
                 super::native_auth_input(field, move |node| {
                     day_core::with_tree(|tree| {
-                        assert!(tree.node_handle_any(node).is_some(),
-                            "credential configuration was given a layout node without a native handle");
+                        let handle = tree.node_handle_any(node)
+                            .expect("credential configuration must receive a native handle");
                         assert_eq!(tree.node_kind(node), Some(day_spec::kinds::TEXT_FIELD));
+                        observed.borrow_mut().push(*handle.downcast::<day_mock::MockHandle>().unwrap());
                     });
-                    observed.set(observed.get() + 1);
-                }).height(44.0).any()
+                }).height(if capture { 1.0 } else { 44.0 }).any()
             };
-            column((input(false), input(true), input(true))).any()
+            column((
+                input(InputPurpose::Username, SubmitLabel::Next, false),
+                input(InputPurpose::Password, SubmitLabel::Go, false),
+                input(InputPurpose::Password, SubmitLabel::Go, true),
+                input(InputPurpose::NewPassword, SubmitLabel::Done, false),
+            )).any()
         });
-        assert_eq!(configured.get(), 3, "username, password and capture field must all configure");
+        let handles = handles.borrow().clone();
+        assert_eq!(handles.len(), 4, "all credential roles and capture must configure");
+        for (handle, (purpose, submit_label, secure)) in handles.iter().zip([
+            (InputPurpose::Username, SubmitLabel::Next, false),
+            (InputPurpose::Password, SubmitLabel::Go, true),
+            (InputPurpose::Password, SubmitLabel::Go, true),
+            (InputPurpose::NewPassword, SubmitLabel::Done, true),
+        ]) {
+            let traits = probe.widget(*handle).input_traits.unwrap();
+            assert_eq!(traits.purpose, purpose);
+            assert_eq!(traits.submit_label, submit_label);
+            assert_eq!(traits.secure, secure);
+        }
+        let password = probe.widget(handles[1]);
+        assert!(password.focused);
+        shown.set(true);
+        day::reactive::flush_sync();
+        let visible = probe.widget(handles[1]);
+        assert!(visible.focused, "masking must preserve focus");
+        assert_eq!(visible.node, password.node, "masking must preserve field identity");
+        assert_eq!(visible.text, password.text, "masking must preserve the captured value");
+        let traits = visible.input_traits.unwrap();
+        assert!(!traits.secure);
+        assert_eq!(traits.purpose, InputPurpose::Password);
+        assert_eq!(traits.submit_label, SubmitLabel::Go);
+        assert!(probe.widget(handles[2]).input_traits.unwrap().secure,
+            "the separate capture field keeps its secure role");
+        shown.set(false);
+        day::reactive::flush_sync();
+        assert!(probe.widget(handles[1]).input_traits.unwrap().secure);
         day_core::uninstall_tree();
     }
 

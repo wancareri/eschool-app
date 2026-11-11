@@ -54,10 +54,10 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
             status_icon,
             label(move || super::conn_status::title(state.conn_status.get()))
             .font(Font::Headline)
-            .grow(),
+            .grow(Dimension::Both),
         ))
         .spacing(10.0)
-        .grow()
+        .grow(Dimension::Both)
         .padding(Insets {
             top: 0.0,
             leading: 10.0,
@@ -68,7 +68,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
         let body = label(move || super::conn_status::message(state.conn_status.get()))
         .font(Font::Subheadline)
         .secondary()
-        .grow()
+        .grow(Dimension::Both)
         .padding(Insets {
             top: 0.0,
             leading: 10.0,
@@ -109,7 +109,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
             ))
             .spacing(8.0)
             .align(HAlign::Center)
-            .grow()
+            .grow(Dimension::Both)
             .padding(Insets {
                 top: 0.0,
                 leading: 2.0,
@@ -118,6 +118,6 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
             }),
         ))
         .spacing(10.0)
-        .grow()
+        .grow(Dimension::Both)
     })
 }

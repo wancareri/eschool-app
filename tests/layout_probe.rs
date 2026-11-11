@@ -88,7 +88,7 @@ fn mark_chips_center_text() {
             ))
             .spacing(6.0)
             .fit(RowFit::WrapColumns { run_spacing: 6.0 })
-            .grow_w(),
+            .grow(Dimension::Width),
         ))
         .spacing(10.0)
         .padding(14.0)
@@ -148,12 +148,12 @@ fn goal_value_box_centered() {
     let probe = boot(|| {
         column((
             row((
-                label("Цель по итогу:").grow_w(),
+                label("Цель по итогу:").grow(Dimension::Width),
                 column((label("42").font(Font::Title3),)).width(44.0),
             ))
             .spacing(8.0)
             .align(VAlign::Center)
-            .grow_w(),
+            .grow(Dimension::Width),
         ))
         .spacing(10.0)
         .padding(14.0)
@@ -182,7 +182,7 @@ fn chip(date: &'static str, mark: &'static str) -> AnyPiece {
     ))
     .spacing(1.0)
     .align(HAlign::Center)
-    .grow_w()
+    .grow(Dimension::Width)
     .padding(Insets {
         top: 4.0,
         leading: 6.0,
@@ -191,7 +191,7 @@ fn chip(date: &'static str, mark: &'static str) -> AnyPiece {
     })
     .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
     .corner_radius(8.0)
-    .grow_w()
+    .grow(Dimension::Width)
     .any()
 }
 
@@ -202,7 +202,7 @@ fn goal_bar() -> AnyPiece {
             .font(Font::Subheadline)
             .color(Color::rgba(0.5, 0.5, 0.5, 1.0)),
     ))
-    .grow_w()
+    .grow(Dimension::Width)
     .padding(Insets {
         top: 8.0,
         leading: 12.0,
@@ -211,7 +211,7 @@ fn goal_bar() -> AnyPiece {
     })
     .background(Color::rgba(0.0, 0.0, 0.0, 0.06))
     .corner_radius(14.0)
-    .grow_w()
+    .grow(Dimension::Width)
     .any()
 }
 
@@ -230,7 +230,7 @@ fn plus_chip() -> AnyPiece {
     ))
     .spacing(1.0)
     .align(HAlign::Center)
-    .grow_w()
+    .grow(Dimension::Width)
     .padding(Insets {
         top: 4.0,
         leading: 6.0,
@@ -239,7 +239,7 @@ fn plus_chip() -> AnyPiece {
     })
     .background(Color::rgba(0.0, 0.0, 0.0, 0.07))
     .corner_radius(8.0)
-    .grow_w()
+    .grow(Dimension::Width)
     .any()
 }
 
@@ -255,7 +255,7 @@ fn plus_chip_matches_chip_height() {
             ))
             .spacing(6.0)
             .fit(RowFit::WrapColumns { run_spacing: 6.0 })
-            .grow_w(),
+            .grow(Dimension::Width),
         ))
         .spacing(10.0)
         .padding(14.0)
@@ -286,7 +286,7 @@ fn short_grid_line_stays_leading() {
             ))
             .spacing(6.0)
             .fit(RowFit::WrapColumns { run_spacing: 6.0 })
-            .grow_w(),
+            .grow(Dimension::Width),
         ))
         .spacing(10.0)
         .padding(14.0)
@@ -318,10 +318,8 @@ fn keypad_lines_center() {
     let probe = boot(|| {
         let keys: Vec<AnyPiece> = (0..16).map(|_| digit_key()).collect();
         column((
-            row(PieceVec(keys))
-                .spacing(6.0)
-                .fit(RowFit::WrapCentered { run_spacing: 6.0 })
-                .grow_w(),
+            dayapp::widgets::centered_wrap::centered_wrap(keys, 6.0, 6.0)
+                .grow(Dimension::Width),
         ))
         .padding(14.0)
         .any()
