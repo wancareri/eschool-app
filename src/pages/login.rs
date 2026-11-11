@@ -12,10 +12,6 @@ pub fn render() -> impl Piece {
 
     zstack((
         when(
-            move || state.is_authenticated.get(),
-            move || profile_view(state).animation(AnimSpec::ease_out(350)).any(),
-        ),
-        when(
             move || !state.is_authenticated.get() && state.setup_new_password_active.get(),
             move || crate::widgets::header::page(res::str::auth_setup_title(), Signal::new(Vec::<String>::new()), setup_password_form(state, show_logs))
                 .grow(Dimension::Both)
@@ -40,6 +36,7 @@ pub fn render() -> impl Piece {
     })
 }
 
+#[allow(dead_code)]
 fn profile_view(state: AppState) -> impl Piece {
     let remember = crate::shared::secure::load("auth.remember_me")
         .map(|v| v == "true")
@@ -277,7 +274,7 @@ fn native_auth_action_button(node: day::RNode) {
     use objc2_ui_kit::{
         NSFontAttributeName, NSForegroundColorAttributeName,
         UIButton, UIButtonConfiguration, UIButtonConfigurationCornerStyle,
-        UIColor, UIFont, UIFontWeightSemibold,
+        UIColor, UIFont,
     };
     use std::ptr::NonNull;
 
@@ -286,13 +283,16 @@ fn native_auth_action_button(node: day::RNode) {
         let title = button.configuration().and_then(|config| config.title()).unwrap_or_default();
         let config = UIButtonConfiguration::borderedProminentButtonConfiguration(mtm);
         config.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
+        let bg = config.background();
+        bg.setCornerRadius(26.0);
+        config.setBackground(&bg);
         config.setTitle(Some(&title));
         // Leave the fill tied to the native tint and let UIKit derive the
         // highlighted/disabled colors from these base colors.
         config.setBaseForegroundColor(Some(&UIColor::whiteColor()));
-        let font = unsafe { UIFont::systemFontOfSize_weight(17.0, UIFontWeightSemibold) };
+        let font = UIFont::boldSystemFontOfSize(17.0);
         // Day patches the configuration's plain title for locale/loading changes.
-        // Transform its attributes without freezing that title.
+        // Transform its attributes to bold 17pt white without freezing that title.
         let transformer = block2::RcBlock::new(move |incoming: NonNull<NSDictionary<NSString, AnyObject>>| {
             let attributes = unsafe { incoming.as_ref() }.mutableCopy();
             unsafe {
@@ -305,6 +305,8 @@ fn native_auth_action_button(node: day::RNode) {
         });
         unsafe { config.setTitleTextAttributesTransformer(block2::RcBlock::as_ptr(&transformer)) };
         button.setConfiguration(Some(&config));
+        button.layer().setCornerRadius(26.0);
+        button.setClipsToBounds(true);
 
         // UIKit updates configuration for enabled/highlighted and title changes.
         // Only replace configuration when loading actually changes, so the
@@ -557,7 +559,7 @@ fn username_step_view(
                 let _ = day_uikit::with_native(node, move |view, _, _| {
                     crate::shared::autofill::ios::capture_password(view, password);
                 });
-            }).opacity(0.0).height(1.0).any()
+            }).height(0.5).any()
         })
     };
     #[cfg(not(target_os = "ios"))]
@@ -1142,6 +1144,7 @@ fn setup_password_form(state: AppState, show_logs: Signal<bool>) -> impl Piece {
     .grow(Dimension::Both)
 }
 
+#[allow(dead_code)]
 fn change_password_form(state: AppState, open: Signal<bool>) -> impl Piece {
     let old_password = Signal::new(String::new());
     let new_password = Signal::new(String::new());

@@ -247,8 +247,9 @@ fn animate_surfaces(
     let animation_root = root.clone();
     let animation_surfaces = surfaces.clone();
     let animation_dim = dim.clone();
+    let animation_clear = clear.clone();
     let animations = RcBlock::new(move || {
-        animation_root.setBackgroundColor(Some(if presenting { &animation_dim } else { &clear }));
+        animation_root.setBackgroundColor(Some(if presenting { &animation_dim } else { &animation_clear }));
         for (view, rest, offscreen) in &animation_surfaces {
             view.setTransform(if presenting { *rest } else { *offscreen });
         }
@@ -258,13 +259,29 @@ fn animate_surfaces(
     let context = context.clone();
     let completion = RcBlock::new(move |_finished: objc2::runtime::Bool| {
         let completed = !context.transitionWasCancelled();
-        if presenting != completed {
-            root.removeFromSuperview();
+        if presenting {
+            if completed {
+                for (view, rest, _) in &surfaces {
+                    view.setTransform(*rest);
+                }
+                root.setBackgroundColor(Some(&dim));
+            } else {
+                root.removeFromSuperview();
+            }
+        } else {
+            if completed {
+                root.removeFromSuperview();
+                for (view, _, offscreen) in &surfaces {
+                    view.setTransform(*offscreen);
+                }
+                root.setBackgroundColor(Some(&clear));
+            } else {
+                for (view, rest, _) in &surfaces {
+                    view.setTransform(*rest);
+                }
+                root.setBackgroundColor(Some(&dim));
+            }
         }
-        for (view, rest, _) in &surfaces {
-            view.setTransform(*rest);
-        }
-        root.setBackgroundColor(Some(&dim));
         context.completeTransition(completed);
     });
     UIView::animateWithDuration_delay_options_animations_completion(

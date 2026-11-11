@@ -393,6 +393,12 @@ mod ios {
             0.0
         };
 
+        // Ignore overlay sheets / password manager windows that cover most of the screen (> 420pt).
+        // The button dock should ONLY follow the actual on-screen keyboard.
+        if visible_h > 420.0 {
+            return;
+        }
+
         let dur_key =
             objc2_foundation::NSString::from_str("UIKeyboardAnimationDurationUserInfoKey");
         let duration_sec = info

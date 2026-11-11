@@ -294,3 +294,10 @@ eschool-app/
 - Submit handoff & diary redirection: `do_login` invokes `crate::shared::autofill::ios::sync_values()` before checking credentials so credentials inserted by AutoFill/Keychain are immediately populated into Day's reactive signals. On successful login, `finish_login` dismisses the keyboard via `shared::keyboard::dismiss()`, redirects `state.current_section` to `Section::Diary`, and marks `state.is_authenticated.set(true)`.
 - Modal accent retention: `colors::retint_existing` inspects the responder chain and does not clear the background if the view belongs to a `DayCoverVC`, keeping modal dim and card styling intact across accent switches. In `modal_ios.rs`, `animate_surfaces` runs synchronously inside `animate` within UIKit's presentation context instead of deferring to `exec_async`, eliminating animation race conditions and frame jumps.
 - Verification: `cargo check`, `cargo check --target aarch64-apple-ios --no-default-features --features uikit`, and `cargo test` pass (49 tests).
+
+### Build 81: Credential capture, auth handoff and modal dismissal
+- Password capture retains default alpha 1.0, uses a 0.01 scale with clipping and clear text/tint, and occupies 0.5pt without an opacity wrapper. AutoFill eligibility and bullet visibility still require device verification.
+- Auth actions use bold 17pt titles and a 26pt corner radius. Removed the profile branch from login rendering; successful login no longer resets the auth navigation stack. Logout retains its reset.
+- Keyboard-frame notifications above 420pt visible height are ignored to keep the action dock from following password-manager sheets; this is a height heuristic and also excludes any keyboard exceeding that height.
+- Completed modal dismissal removes the root from its superview, retains offscreen surface transforms and clears the background; cancellation restores the visible surfaces and dim.
+- Verification: both requested `cargo check` commands and `cargo test` pass (49 tests). Remaining warnings: unused `profile_view`/`change_password_form` and the existing `UIScreen::mainScreen` deprecation. UIKit behavior still needs device validation.

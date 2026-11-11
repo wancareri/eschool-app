@@ -59,12 +59,6 @@ fn finish_login(state: AppState, token: Token, username: &str, remember: bool) {
     crate::shared::keyboard::dismiss();
     state.current_section.set(crate::Section::Diary);
     state.is_authenticated.set(true);
-    let ticket = session::ticket();
-    ticket.publish(|state| {
-        if state.is_authenticated.get() {
-            crate::pages::login::reset_auth_flow();
-        }
-    });
 }
 
 pub fn login(state: AppState, username: &str, password: &str, remember: bool) {
