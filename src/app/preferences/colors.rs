@@ -58,6 +58,7 @@ pub fn apply_ios_tint(hex: u32) {
         let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![nav_appearance_class, new];
         let _: () = objc2::msg_send![&*nav_app, configureWithDefaultBackground];
+        let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
 
         // UINavigationBar.appearance()
         let nav_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
@@ -152,6 +153,7 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
             let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
                 objc2::msg_send![nav_appearance_class, new];
             let _: () = objc2::msg_send![&*nav_app, configureWithDefaultBackground];
+            let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
 
             let _: () = objc2::msg_send![bar, setStandardAppearance: &*nav_app];
             let _: () = objc2::msg_send![bar, setScrollEdgeAppearance: &*nav_app];
@@ -170,14 +172,19 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
                 use objc2::MainThreadOnly;
                 let pill = UIView::new(objc2::MainThreadMarker::new().expect("main thread"));
                 let label_size = label.frame().size;
-                let width = label_size.width + 20.0;
-                let height = label_size.height + 8.0;
+                let width = label_size.width + 24.0;
+                let height = label_size.height + 10.0;
                 pill.setFrame(CGRect::new(CGPoint::ZERO, CGSize::new(width, height)));
                 pill.setClipsToBounds(true);
-                pill.layer().setCornerRadius((height / 2.0) as _);
+                let layer = pill.layer();
+                layer.setCornerRadius((height / 2.0) as _);
+                let highlight = objc2_ui_kit::UIColor::colorWithWhite_alpha(1.0, 0.42);
+                let highlight_cg = highlight.CGColor();
+                layer.setBorderColor(Some(&highlight_cg));
+                layer.setBorderWidth(0.75);
                 let mtm = objc2::MainThreadMarker::new().expect("main thread");
                 let effect = UIBlurEffect::effectWithStyle(
-                    objc2_ui_kit::UIBlurEffectStyle::SystemUltraThinMaterial,
+                    objc2_ui_kit::UIBlurEffectStyle::SystemThinMaterial,
                     mtm,
                 );
                 let blur = UIVisualEffectView::initWithEffect(
@@ -187,7 +194,7 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
                 blur.setFrame(CGRect::new(CGPoint::ZERO, CGSize::new(width, height)));
                 let content = blur.contentView();
                 label.setFrame(CGRect::new(
-                    CGPoint::new(10.0, 4.0),
+                    CGPoint::new(12.0, 5.0),
                     CGSize::new(label_size.width, label_size.height),
                 ));
                 content.addSubview(label);
