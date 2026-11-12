@@ -120,3 +120,6 @@ autofill_diagnostics_hint = After reproducing the Passwords issue, copy the log.
 autofill_diagnostics_copy = Copy input diagnostics
 autofill_diagnostics_empty = No entries yet. Open the sign-in form and switch keyboard layouts.
 autofill_diagnostics_copied = Diagnostics copied
+
+permission_biometrics = Use biometrics to unlock your account
+permission_notifications = To notify you when grades change

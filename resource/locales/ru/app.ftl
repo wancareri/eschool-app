@@ -111,3 +111,6 @@ autofill_diagnostics_hint = После воспроизведения пробл
 autofill_diagnostics_copy = Скопировать диагностику ввода
 autofill_diagnostics_empty = Записей пока нет. Откройте форму входа и переключите раскладку.
 autofill_diagnostics_copied = Диагностика скопирована
+
+permission_biometrics = Для входа в приложение
+permission_notifications = Чтобы сообщать об изменении оценок

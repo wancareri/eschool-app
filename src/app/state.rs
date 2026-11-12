@@ -2,7 +2,8 @@
 
 use day::prelude::*;
 use eschool_api::entities::*;
-use crate::shared::{nslog, secure};
+use crate::ios::nslog;
+use crate::app::data::credentials as secure;
 
 /// Connection status for the Telegram-style indicator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,16 +101,16 @@ pub struct AppState {
     /// `Some` presents the network-status sheet as a fullscreen cover (the
     /// value is the cover's route key; the cover is unrouted).
     pub show_network_modal: Signal<Option<String>>,
-    pub notice: Signal<Option<crate::widgets::notice::Notice>>,
+    pub notice: Signal<Option<crate::components::notice::Notice>>,
     pub notice_route: Signal<Option<String>>,
 
     // ── lesson notes & peek ────────────────────────────────────────────────
     pub lesson_notes: Signal<std::collections::HashMap<String, String>>,
-    pub lesson_attachments: Signal<std::collections::HashMap<String, Vec<crate::features::attachments::LessonAttachment>>>,
+    pub lesson_attachments: Signal<std::collections::HashMap<String, Vec<crate::pages::diary::attachments::LessonAttachment>>>,
     pub attachments_loading: Signal<std::collections::HashSet<String>>,
     pub downloading_files: Signal<std::collections::HashSet<String>>,
-    pub active_note: Signal<Option<crate::widgets::lesson_note::LessonNoteTarget>>,
-    pub active_lesson_peek: Signal<Option<crate::widgets::lesson_peek::LessonDetailTarget>>,
+    pub active_note: Signal<Option<crate::pages::diary::lesson_note::LessonNoteTarget>>,
+    pub active_lesson_peek: Signal<Option<crate::pages::diary::lesson_peek::LessonDetailTarget>>,
 
     // ── keyboard ───────────────────────────────────────────────────────────
     pub keyboard_height: Signal<f64>,
@@ -119,8 +120,8 @@ impl Ambient for AppState {
     fn create() -> Self {
         nslog::nslog("[App] AppState::create()");
         let has_token = secure::load(TOKEN_KEY).is_some();
-        crate::features::auth::ensure_account_id();
-        crate::shared::cache::migrate_legacy_notes();
+        crate::pages::login::auth::ensure_account_id();
+        crate::app::data::cache::migrate_legacy_notes();
 
         let remember = secure::load("auth.remember_me")
             .map(|v| v == "true")
@@ -128,13 +129,13 @@ impl Ambient for AppState {
 
         let accent = day::prefs::get("app.accent_color")
             .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(crate::shared::colors::DEFAULT_ACCENT);
+            .unwrap_or(crate::app::preferences::colors::DEFAULT_ACCENT);
 
         let biometric_lock = has_token
-            && crate::shared::biometric::is_available()
-            && crate::shared::biometric::is_enabled();
+            && crate::pages::pin::biometric::is_available()
+            && crate::pages::pin::biometric::is_enabled();
 
-        let pin_lock = has_token && crate::shared::pin::is_enabled();
+        let pin_lock = has_token && crate::pages::pin::security::is_enabled();
         let lock_active = biometric_lock || pin_lock;
 
         let state = Self {
@@ -180,7 +181,7 @@ impl Ambient for AppState {
             bell_times: Signal::new(Vec::new()),
             timetable_days: Signal::new(Vec::new()),
             schedule_loading: Signal::new(false),
-            schedule_day: Signal::new(crate::shared::utils::today_dow()),
+            schedule_day: Signal::new(crate::app::format::today_dow()),
             subjects_teachers: Signal::new(Vec::new()),
             teachers_loading: Signal::new(false),
             conn_status: Signal::new(ConnStatus::Idle),
@@ -188,7 +189,7 @@ impl Ambient for AppState {
             notice: Signal::new(None),
             notice_route: Signal::new(None),
             log_version: Signal::new(0u64),
-            lesson_notes: Signal::new(crate::widgets::lesson_note::load_notes_map()),
+            lesson_notes: Signal::new(crate::pages::diary::data::load_notes_map()),
             lesson_attachments: Signal::new(std::collections::HashMap::new()),
             attachments_loading: Signal::new(std::collections::HashSet::new()),
             downloading_files: Signal::new(std::collections::HashSet::new()),

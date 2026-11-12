@@ -14,9 +14,7 @@ urlencoding = "2"
 base64 = "0.22"
 regex = "1"
 
-# Match the application's TLS backend so Android never pulls in OpenSSL.
-[target.'cfg(not(target_os = "ios"))'.dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-
-[target.'cfg(target_os = "ios")'.dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
+[features]
+default = ["tls-rustls"]
+tls-rustls = ["reqwest/rustls-tls"]
+tls-native = ["reqwest/native-tls"]

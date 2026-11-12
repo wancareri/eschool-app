@@ -3,8 +3,9 @@
 use day::prelude::*;
 use dayapp::{
     AppState,
-    features::{auth, diary},
-    shared::{cache, secure, session},
+    app::data::{cache, session, credentials as secure},
+    pages::diary::data as diary,
+    pages::login::auth,
 };
 use std::{
     collections::{HashMap, VecDeque},
@@ -54,8 +55,8 @@ fn switching_identity_and_logout_reject_queued_replies_and_clear_state() {
     let (mock, _) = day_mock::MockToolkit::new();
     day_core::launch_with(mock, day_spec::WindowOptions::default(), || {
         AppState::scoped(|state| {
-            dayapp::widgets::notice::bind_error(state, state.error_msg, |message| {
-                dayapp::widgets::notice::Notice::error("Connection", message)
+            dayapp::components::notice::bind_error(state, state.error_msg, |message| {
+                dayapp::components::notice::Notice::error("Connection", message)
             });
             spacer()
         }).any()
@@ -119,8 +120,8 @@ fn switching_identity_and_logout_reject_queued_replies_and_clear_state() {
     assert_eq!(state.notice_route.get().as_deref(), Some("notice"));
     assert_eq!(state.notice.get().unwrap().message, "Connection failed");
     // An old queued presentation must not reopen after logout.
-    dayapp::widgets::notice::presenter(state).show(
-        dayapp::widgets::notice::Notice::error("Old account", "Queued message"),
+    dayapp::components::notice::presenter(state).show(
+        dayapp::components::notice::Notice::error("Old account", "Queued message"),
     );
 
     secure::save("auth.account_id", "test-parent");

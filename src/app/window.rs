@@ -1,10 +1,12 @@
 use day::prelude::*;
 use crate::app::AppState;
-use crate::shared::{log_bridge, nslog, locale};
-use crate::pages;
+use crate::app::log_bridge;
+use crate::ios::nslog;
+use crate::app::preferences::locale;
 use crate::res;
 
 pub fn window() -> day::WindowOptions {
+    day_part_local_notify::prepare_delivery();
     log_bridge::install();
     day::WindowOptions {
         locales: Some((res::locales::DEFAULT, res::locales::CATALOG)),
@@ -28,16 +30,16 @@ pub fn root() -> impl Piece {
         nslog::nslog(&format!("[init] First launch — system locale: {sys}"));
     }
     crate::pages::settings::apply_startup();
-    crate::shared::colors::init_accent();
-    #[cfg(target_os = "ios")]
-    crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
-    #[cfg(target_os = "ios")]
-    crate::shared::ios_nav::ios_impl::install_auth_menu_icons();
-    #[cfg(target_os = "ios")]
-    crate::widgets::modal::ios::install_presentation_hook();
-    crate::shared::keyboard::init();
-    crate::shared::layout_diag::init();
-    day::register_preferences(pages::settings::settings_body);
+    crate::app::preferences::colors::init_accent();
+    #[cfg(feature = "uikit")]
+    crate::app::preferences::colors::apply_ios_tint(crate::app::preferences::colors::accent_hex());
+    #[cfg(feature = "uikit")]
+    crate::ios::ios_nav::ios_impl::install_auth_menu_icons();
+    #[cfg(feature = "uikit")]
+    crate::ios::modal::install_presentation_hook();
+    crate::ios::keyboard::init();
+    crate::ios::layout_diag::init();
+    day::register_preferences(crate::pages::settings::settings_body);
     day::register_new_window(|| window_shell(false));
 
     window_shell(true)
@@ -48,8 +50,8 @@ fn window_shell(primary: bool) -> impl Piece {
         state.register_main();
         day::window_title(move || res::str::app_title().format());
 
-        #[cfg(target_os = "ios")]
-        crate::shared::pin::install_lifecycle_observers();
+        #[cfg(feature = "uikit")]
+        crate::ios::pin::install_lifecycle_observers();
 
         // Reactive: trigger load_all when is_authenticated transitions to true
         day::reactive::watch(
@@ -57,22 +59,18 @@ fn window_shell(primary: bool) -> impl Piece {
             move |&auth, old| {
                 if auth && old != Some(&true) {
                     nslog::nslog("[App] is_authenticated changed true, triggering load_all");
-                    crate::features::auth::start_background_refresh();
-                    crate::features::grade_checker::start_grade_checker();
-                    #[cfg(target_os = "ios")]
-                    crate::shared::notifications::ios::request_permission();
-                    crate::features::diary::load_all(state);
+                    crate::pages::login::auth::start_background_refresh();
+                    crate::pages::diary::grade_checker::start_grade_checker();
+                    crate::pages::diary::data::load_all(state);
                 }
             },
         );
 
         // `watch` skips its initial value; load an unlocked stored session once.
         if state.is_authenticated.get() {
-            crate::features::auth::start_background_refresh();
-            crate::features::grade_checker::start_grade_checker();
-            #[cfg(target_os = "ios")]
-            crate::shared::notifications::ios::request_permission();
-            crate::features::diary::load_all(state);
+            crate::pages::login::auth::start_background_refresh();
+            crate::pages::diary::grade_checker::start_grade_checker();
+            crate::pages::diary::data::load_all(state);
         }
 
         // Watch biometric signal — set by Setter from Face ID reply block
@@ -93,7 +91,7 @@ fn window_shell(primary: bool) -> impl Piece {
             move || state.settings_tab.get(),
             move |&t, old| {
                 if old.is_some() && old != Some(&t) {
-                    crate::shared::haptics::tick();
+                    crate::app::preferences::haptics::tick();
                 }
             },
         );
@@ -105,17 +103,17 @@ fn window_shell(primary: bool) -> impl Piece {
             move |&locked, old| {
                 if locked
                     && old == Some(&false)
-                    && crate::shared::biometric::is_available()
-                    && crate::shared::biometric::is_enabled()
+                    && crate::pages::pin::biometric::is_available()
+                    && crate::pages::pin::biometric::is_enabled()
                 {
-                    crate::shared::biometric::authenticate_async(state);
+                    crate::pages::pin::biometric::authenticate_async(state);
                 }
             },
         );
 
         // Haptics: a tab-bar page change, an appearance flip, a language switch.
         {
-            use crate::shared::haptics;
+            use crate::app::preferences::haptics;
             day::reactive::watch(
                 move || state.current_section.get(),
                 move |sec, old| {
@@ -145,12 +143,12 @@ fn window_shell(primary: bool) -> impl Piece {
         // Biometric lock: if token exists + biometric enabled, prompt Face ID on startup
         // Works for both pure biometric lock and PIN+biometric combo
         if !state.is_authenticated.get()
-            && crate::shared::secure::load("auth.token").is_some()
-            && crate::shared::biometric::is_available()
-            && crate::shared::biometric::is_enabled()
+            && crate::app::data::credentials::load("auth.token").is_some()
+            && crate::pages::pin::biometric::is_available()
+            && crate::pages::pin::biometric::is_enabled()
         {
             nslog::nslog("[App] Biometric lock: prompting Face ID on startup");
-            crate::shared::biometric::authenticate_async(state);
+            crate::pages::pin::biometric::authenticate_async(state);
         }
 
         // Keep pin_setup_active and pin_setup_route in sync
@@ -180,13 +178,13 @@ fn window_shell(primary: bool) -> impl Piece {
             },
         );
 
-        #[cfg(target_os = "ios")]
+        #[cfg(feature = "uikit")]
         {
             day::reactive::on_main_delayed(200, move || {
-                crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
+                crate::app::preferences::colors::apply_ios_tint(crate::app::preferences::colors::accent_hex());
             });
             day::reactive::on_main_delayed(800, move || {
-                crate::shared::colors::apply_ios_tint(crate::shared::colors::accent_hex());
+                crate::app::preferences::colors::apply_ios_tint(crate::app::preferences::colors::accent_hex());
             });
 
         }
@@ -198,16 +196,7 @@ fn window_shell(primary: bool) -> impl Piece {
 fn build_nav(primary: bool) -> impl Piece {
     let state = AppState::ambient();
 
-    crate::widgets::notice::bind_error(state, state.error_msg, move |raw| {
-        if !state.is_authenticated.get_untracked() && !state.setup_new_password_active.get_untracked() {
-            pages::login::error_notice(raw)
-        } else {
-            let message = if raw.len() <= 240 && !raw.contains("http") && !raw.contains('{') {
-                raw.to_owned()
-            } else { res::str::notice_error_message().format() };
-            crate::widgets::notice::Notice::error(res::str::notice_error_title().format(), message)
-        }
-    });
+    crate::components::error_handler::bind(state);
 
     // The status sheet is a cover: day never attaches a cover's view to this
     // page (it lives in its own modal VC, its node measures 0×0), so the
@@ -217,15 +206,15 @@ fn build_nav(primary: bool) -> impl Piece {
     // visible beneath its translucent dim.
     zstack((
         nav_body(state, primary),
-        crate::pages::pin_lock::modal(state),
-        crate::widgets::grade_peek::modal(state),
-        crate::widgets::lesson_note::modal(state),
-        crate::widgets::lesson_peek::modal(state),
-        crate::widgets::bottom_sheet::network_error_sheet(state),
-        crate::widgets::notice::modal(state),
+        crate::pages::pin::modal(state),
+        crate::pages::diary::grade_peek::modal(state),
+        crate::pages::diary::lesson_note::modal(state),
+        crate::pages::diary::lesson_peek::modal(state),
+        crate::components::bottom_sheet::network_error_sheet(state),
+        crate::components::notice::modal(state),
     ))
     .grow(Dimension::Both)
-    .toolbar(move || crate::widgets::header::toolbar(state))
+    .toolbar(move || crate::components::header::toolbar(state))
 }
 
 fn nav_body(state: AppState, primary: bool) -> impl Piece {
@@ -241,9 +230,9 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
             else { Screen::Login }
         },
         move |screen| match screen {
-            Screen::Unlock => pages::pin_lock::render_unlock(state).any(),
+            Screen::Unlock => crate::pages::pin::render_unlock(state).any(),
             Screen::Tabs => render_nav_content(state, primary).any(),
-            Screen::Login => pages::login::render().any(),
+            Screen::Login => crate::pages::login::render().any(),
         },
     )
     .grow(Dimension::Both)
@@ -258,28 +247,28 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
 
 fn diary_tab() -> impl Piece {
     let path = Signal::new(Vec::<String>::new());
-    crate::widgets::header::page(res::str::diary_title(), path, pages::diary::render())
+    crate::components::header::page(res::str::diary_title(), path, crate::pages::diary::render())
 }
 
 fn schedule_tab() -> impl Piece {
     let path = Signal::new(Vec::<String>::new());
-    crate::widgets::header::page(res::str::schedule_title(), path, pages::schedule::render())
+    crate::components::header::page(res::str::schedule_title(), path, crate::pages::schedule::render())
 }
 
 fn teachers_tab() -> impl Piece {
     let path = Signal::new(Vec::<String>::new());
-    crate::widgets::header::page(res::str::teachers_title(), path, pages::teachers::render())
+    crate::components::header::page(res::str::teachers_title(), path, crate::pages::teachers::render())
 }
 
 fn settings_tab() -> impl Piece {
     let path = Signal::new(Vec::<String>::new());
-    crate::widgets::header::page(res::str::settings_title(), path, pages::settings::render())
+    crate::components::header::page(res::str::settings_title(), path, crate::pages::settings::render())
 }
 
 fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
     let section = state.current_section;
-    #[cfg(target_os = "ios")]
-    crate::shared::colors::apply_ios_tint(state.accent_color.get());
+    #[cfg(feature = "uikit")]
+    crate::app::preferences::colors::apply_ios_tint(state.accent_color.get());
 
     let sel = nav(section)
         .style(day::prelude::NavStyle::Tabs)
@@ -289,9 +278,9 @@ fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
         .items(item(crate::Section::Settings, res::str::nav_settings()).icon(res::vectors::tab_settings).page(settings_tab));
 
     if primary {
-        sel.title(move || crate::widgets::header::section_title(section.get())).id(day::id!(nav)).background(Color::rgba(0.0, 0.0, 0.0, 0.0)).any()
+        sel.title(move || crate::components::header::section_title(section.get())).id(day::id!(nav)).background(Color::rgba(0.0, 0.0, 0.0, 0.0)).any()
     } else {
-        sel.local().title(move || crate::widgets::header::section_title(section.get())).id(day::id!(nav)).background(Color::rgba(0.0, 0.0, 0.0, 0.0)).any()
+        sel.local().title(move || crate::components::header::section_title(section.get())).id(day::id!(nav)).background(Color::rgba(0.0, 0.0, 0.0, 0.0)).any()
     }
 }
 

@@ -318,7 +318,7 @@ fn keypad_lines_center() {
     let probe = boot(|| {
         let keys: Vec<AnyPiece> = (0..16).map(|_| digit_key()).collect();
         column((
-            dayapp::widgets::centered_wrap::centered_wrap(keys, 6.0, 6.0)
+            dayapp::components::centered_wrap::centered_wrap(keys, 6.0, 6.0)
                 .grow(Dimension::Width),
         ))
         .padding(14.0)

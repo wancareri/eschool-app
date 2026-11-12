@@ -57,36 +57,42 @@ The project uses a dual-remote Git setup:
 
 ## 3. Architecture & Key Files
 
-```
-eschool-app/
-├── Day.toml                 # App metadata, window options, build number (e.g. build = 62)
-├── Cargo.toml               # Dependencies: day, eschool-api, objc2, etc.
-├── build.rs                 # Resource codegen via day_build::generate_resources()
-├── resource/
-│   ├── vectors/             # SVG icons (lock, eye, sun, moon, globe, tab_login...)
-│   └── locales/             # Fluent (.ftl) translation catalogs (ru, be, en)
-└── src/
-    ├── main.rs / lib.rs     # Entry point: day_start!(options: window(), root)
-    ├── app/
-    │   ├── state.rs         # Global AppState (auth tokens, profile, signals)
-    │   └── window.rs        # Window shell, nav_body (switches between Login and Tab Nav)
-    ├── pages/
-    │   ├── login.rs         # Intro splash, username step, password step, theme/lang sheets
-    │   ├── diary.rs         # Diary lessons, marks, homework
-    │   ├── schedule.rs      # Timetable
-    │   ├── teachers.rs      # Teachers directory
-    │   └── settings.rs      # User settings, preferences
-    ├── shared/
-    │   ├── ios_nav.rs       # Native UINavigationBar items, trailingItemGroups attachment
-    │   ├── keyboard.rs      # Keyboard height tracking, 120fps hardware follower, UITextField swizzles
-    │   ├── colors.rs        # Dynamic hex/accent color management
-    │   ├── haptics.rs       # iOS UIImpactFeedbackGenerator / UINotificationFeedbackGenerator
-    │   └── secure.rs        # iOS Keychain token persistence
-    └── widgets/
-        └── lottie_view.rs   # Duck stickers (duck_intro_animation, duck_login_animation, duck_password_animation)
+```text
+src/
+├── app/                    # startup, window, global state
+│   ├── data/                # cache, session checks, and credentials
+│   ├── preferences/         # colors, haptics, and language
+│   ├── format.rs            # school dates and grades
+│   ├── i18n/                # translations
+│   ├── log_bridge.rs        # app logging setup
+│   ├── state.rs             # shared app state
+│   └── window.rs            # app entry and screen selection
+├── pages/                  # screens grouped by app function
+│   ├── diary/              # screen, diary UI, data, and behavior
+│   ├── login/              # screen, auth flow, and illustration
+│   ├── pin/
+│   ├── schedule/
+│   ├── settings/
+│   └── teachers/
+├── components/             # UI pieces imported by screens
+└── ios/                    # UIKit compatibility code
 ```
 
----
+- `app/window.rs` starts the app and selects pages. Put window-level behavior such as error handling in `components/`.
+- Keep a screen and its related data/flow modules together under `pages/<screen>/`.
+- Keep screen-specific files beside their page. Put UI used by multiple screens in the single top-level `components/` folder.
+- Shared app state lives in `app/state.rs`; saved data and preferences are grouped in their named folders. UIKit compatibility lives in `ios/`.
+- Prefer Day's public APIs when they preserve behavior. Document each remaining native adapter and its Day capability gap.
+- Keep one clear responsibility per file. Avoid reintroducing generic `features/`, `widgets/`, or `shared/` layers.
+
+### Platform support and platform-specific behavior
+- Shared UI and application logic target Day's `ios-uikit`, `android-material`, `harmony-arkui`, `macos-appkit`, `macos-gtk`, `macos-qt`, `linux-gtk`, `linux-qt`, and `windows-xaml` toolkits. Keep platform differences at capability boundaries, not in page implementations.
+- Select app-side platform integrations by Day toolkit features (`uikit`, `appkit`, `material`, etc.), not compiler OS checks. Native dependencies must be optional and activated by the relevant feature; TLS and browser entropy use explicit Cargo features. Do not add target-specific dependency tables.
+- Prefer Day parts for system capabilities: `day-part-permissions`, `day-part-local-notify`, `day-part-biometrics`, `day-part-haptics`, and `day-part-clipboard`. Check `is_supported`/availability before offering optional behavior; Windows notification support is not assumed. Use native code only for iOS behaviors Day does not expose (UIKit keyboard tracking, credential traits, native navigation/transition integration, lifecycle lock handling).
+- Lottie uses native players on UIKit/Material and the Day webview-backed piece on the other configured toolkits. Keep the matching `day-piece-webview = 0.5.1` optional dependency and backend features aligned with Lottie 0.5.2; broad semver resolution selected an incompatible 0.6 API in the past.
+- Credentials must never be written to `day::prefs`. `app/data/credentials.rs` uses the single `day-part-keychain` API with no platform branches in app code. Day selects the native backend internally: Apple Keychain, Android Keystore, HarmonyOS HUKS, Windows DPAPI, or Linux Secret Service. The web backend reports `Unsupported`; do not add a plaintext preferences or memory fallback. Use `Protection::WhenUnlocked` for session credentials unless background access is explicitly needed. Platform-specific storage code belongs in the Day dependency, not this app.
+- `web-dom` is declared but is not a supported login target yet: the app and `eschool-api` still use synchronous/blocking HTTP and a multi-origin OAuth redirect flow. Browser `fetch` cannot expose arbitrary redirect headers and requires compatible CORS policy from the school service. Do not add web to release support until the login/data path is async and verified against the real service.
+- Validation status is host-dependent. Run `cargo check --no-default-features --features gtk` on Linux; iOS/macOS CLI packaging requires macOS/Xcode; Android requires an installed NDK; Windows XAML requires the Windows SDK/MSVC toolchain. A cross-target Rust check is not a substitute for device behavior checks of permissions, biometrics, notifications, file sharing, or AutoFill.
 
 ## 4. Critical Rules & Solved Traps
 
@@ -118,14 +124,14 @@ eschool-app/
 - While the native transition coordinator reports `initiallyInteractive`, defer keyboard end-frame updates until transition completion. On cancellation keep the previous lift; after a committed pop use UIKit's settled keyboard layout guide. Do not animate the form towards a predicted hidden keyboard while the swipe is still cancellable.
 - Suppress DayAppDelegate's root-resize callback without processing the frame there again. The dedicated keyboard observer owns the one animation.
 - Authentication pages use the global control-aware tap-to-dismiss recognizer. Do not add ancestor `.on_tap(dismiss)` recognizers over input fields and buttons.
-- In `keyboard.rs`, only observe `UIKeyboardWillChangeFrameNotification`. Do NOT register redundant observers for `didShow`, `didHide`, or `didChangeFrame` — `didShow` has `duration = 0.0`, which causes an instant jump after the smooth animation ends.
+- In `ios/keyboard.rs`, only observe `UIKeyboardWillChangeFrameNotification`. Do NOT register redundant observers for `didShow`, `didHide`, or `didChangeFrame` — `didShow` has `duration = 0.0`, which causes an instant jump after the smooth animation ends.
 - Apply hardware translations via `CGAffineTransform` within `UIView::animateWithDuration` using the keyboard notification's duration and curve.
-- When the keyboard is hidden, authentication focus waits for the destination controller’s actual UIKit transition completion (`shared/autofill.rs::focus_after_navigation`), including the welcome push; do not use fixed focus timers. Build 79 exception: an already visible keyboard hands off to the attached, top destination during a noninteractive push using `performWithoutAnimation`, without resigning or waiting for completion. Interactive transitions still wait for commit/cancel. Keep route/session/window/top-controller guards and never focus after cancellation. A newly mounted dock inherits `CURRENT_LIFT` only when its own page already contains the first responder; otherwise it starts at rest. After a visible-keyboard handoff, synchronize that page’s dock explicitly because UIKit may not emit another keyboard-frame notification.
+- When the keyboard is hidden, authentication focus waits for the destination controller’s actual UIKit transition completion (`ios/autofill.rs::focus_after_navigation`), including the welcome push; do not use fixed focus timers. Build 79 exception: an already visible keyboard hands off to the attached, top destination during a noninteractive push using `performWithoutAnimation`, without resigning or waiting for completion. Interactive transitions still wait for commit/cancel. Keep route/session/window/top-controller guards and never focus after cancellation. A newly mounted dock inherits `CURRENT_LIFT` only when its own page already contains the first responder; otherwise it starts at rest. After a visible-keyboard handoff, synchronize that page’s dock explicitly because UIKit may not emit another keyboard-frame notification.
 
 ### D. iOS AutoFill & Passwords on Russian / Multilingual Keyboards
 - **Do NOT use overlapping invisible companion fields (`companion_pw` / `opacity(0.02)`):**
   Overlapping two text fields at the same location confuses iOS AutoFill and accessibility heuristics. Keep a single interactive `text_field` per step. Explicit user exception in build 66: a separate one-point password capture field below the username card is mounted only while the username step is active. Build 82 retains default accessibility and unscaled geometry, clear text/tint/background and native clipping on the field and its 1pt wrapper. It cannot receive touches and is removed before the visible password field is used. Read native values before advancing; do not assume every iOS credential provider will fill the capture field.
-- **AutoFill traits are configured AFTER Day realizes a field:** `shared/autofill.rs` configures only authentication fields. Register the explicit username/password/newPassword role; on input-mode changes restore traits for the current field without resigning focus. Keep `autocorrectionType = No`, `spellCheckingType = No`, and (where available, guarded by selector availability) `inlinePredictionType = No`. Password AutoFill is enabled by the credential content type, not by dictionary predictions. Do not force `autocorrectionType = Yes`: that let language changes replace the Passwords entry with word suggestions. Avoid reassigning unchanged traits during input-mode changes. The password visibility button changes masking on the same UITextField and keeps its `.password` role. Use UIKit’s `UITextContentTypeUsername`, `UITextContentTypePassword`, and `UITextContentTypeNewPassword` constants. Authentication inputs must not install a key button or any other `rightView`; the password visibility control remains a separate control beside the field.
+- **AutoFill traits are configured AFTER Day realizes a field:** `ios/autofill.rs` configures only authentication fields. Register the explicit username/password/newPassword role; on input-mode changes restore traits for the current field without resigning focus. Keep `autocorrectionType = No`, `spellCheckingType = No`, and (where available, guarded by selector availability) `inlinePredictionType = No`. Password AutoFill is enabled by the credential content type, not by dictionary predictions. Do not force `autocorrectionType = Yes`: that let language changes replace the Passwords entry with word suggestions. Avoid reassigning unchanged traits during input-mode changes. The password visibility button changes masking on the same UITextField and keeps its `.password` role. Use UIKit’s `UITextContentTypeUsername`, `UITextContentTypePassword`, and `UITextContentTypeNewPassword` constants. Authentication inputs must not install a key button or any other `rightView`; the password visibility control remains a separate control beside the field.
 - **System save prompts:** setting text traits improves AutoFill heuristics; it does not establish ownership of a third-party website. Guaranteed domain credential sharing/saving requires associated domains, matching signing entitlements and the website's AASA configuration. Do not promise that an unsigned/sideloaded build can force Apple Passwords to save credentials for e-schools.by.
 - Do not call `reloadInputViews` on input-mode changes: it can interrupt the active Password AutoFill session. Preserve the existing content type when it already matches.
 - **Locking Assistant Bar:**
@@ -154,7 +160,7 @@ eschool-app/
 - **Build 68:** Authentication autofocus follows the actual native transition completion instead of timers, with guarded responder handoff after layout. A visible keyboard stays in place during secure-field activation. The password sticker WebView is preloaded while the welcome screen is idle, consumed once at mount, and never reparented from an active page. Sticker WebViews/configurations now release their creation retain correctly. Validate keyboard direction and frame pacing on a physical iPhone.
 
 ### Native Lottie migration (build 69)
-- `src/widgets/lottie_view.rs` wraps `day_piece_lottie::lottie` for the three authentication stickers. Do not restore the app-owned WebView/HTML/JavaScript player or WebView prewarming.
+- `src/pages/login/lottie_view.rs` wraps `day_piece_lottie::lottie` for the three authentication stickers. Do not restore the app-owned WebView/HTML/JavaScript player or WebView prewarming.
 - Native JSON assets are in `resource/assets/animations/`. Pass `animations/duck_intro`, `animations/duck_login`, or `animations/duck_password` to the player; it appends `.json` and resolves the bundled asset.
 - The component is pinned to its Day 0.4-compatible revision. Its canonical Day dependencies are redirected to the existing `wancareri/day` source through `[patch]` so the app and the component use one framework instance.
 - Native iOS SwiftPM Lottie dependencies/shims are contributed by the piece’s Cargo metadata; no duplicate app-specific Swift bridge is needed.
@@ -164,10 +170,10 @@ eschool-app/
 - This addresses the reported switch from Passwords to word corrections on iOS 27. Actual Passwords visibility still needs on-device verification.
 
 ### Shared page chrome and in-app notices (build 69)
-- Use `widgets::header::page(title, path, content)` for page navigation and native titles. Main page headings belong in the navbar; do not repeat them in scroll content.
-- `build_nav` owns the one window-level toolbar via `widgets::header::toolbar`. It switches between the login options menu and the authenticated connection-status bar item. Do not inject status buttons from individual pages or timers.
-- `widgets::conn_status::toolbar` creates a native toolbar button; UIKit provides its navigation-bar glass treatment. It opens the existing `bottom_sheet::network_error_sheet`, built on `modal_window`.
-- `widgets::notice` is the shared message UI using the same modal shell. `bind_error` consumes an error source once and presents it, so repeating the same failed action can show the error again. `presenter(state)` exposes Send-safe setters for async success callbacks.
+- Use `components::header::page(title, path, content)` for page navigation and native titles. Main page headings belong in the navbar; do not repeat them in scroll content.
+- `build_nav` owns the one window-level toolbar via `components::header::toolbar`. It switches between the login options menu and the authenticated connection-status bar item. Do not inject status buttons from individual pages or timers.
+- `components::connection_status::toolbar` creates a native toolbar button; UIKit provides its navigation-bar glass treatment. It opens the existing `bottom_sheet::network_error_sheet`, built on `modal_window`.
+- `components::notice` is the shared message UI using the same modal shell. `bind_error` consumes an error source once and presents it, so repeating the same failed action can show the error again. `presenter(state)` exposes Send-safe setters for async success callbacks.
 - Global app errors, login validation, password creation/change and biometric setup notices use this shell. Network-status text and shared actions are localized in RU/BE/EN. PIN keypad validation remains part of the PIN form.
 - Logout closes notice/network routes and clears their payload. The user subsequently requested publishing these accumulated changes to GitHub as build 69.
 
@@ -178,7 +184,7 @@ eschool-app/
 - Need actual device reproduction/logs to determine whether fields lose credential traits or UIKit loses its candidate session. USB device access is currently unavailable; the user cannot connect the iPhone now.
 
 ### AutoFill documentation investigation after build 70
-- Current Day documentation exposes `.input_purpose(InputPurpose::Username/Password)`. The app’s pinned Day 0.4.3 revision does not expose `InputPurpose`; its UIKit renderer sets initial content type from `secure`, while app-owned `shared/autofill.rs` restores explicit UIKit credential constants after realization. Do not paste APIs from current docs into this older fork without checking source compatibility.
+- Current Day documentation exposes `.input_purpose(InputPurpose::Username/Password)`. The app’s pinned Day 0.4.3 revision does not expose `InputPurpose`; its UIKit renderer sets initial content type from `secure`, while app-owned `ios/autofill.rs` restores explicit UIKit credential constants after realization. Do not paste APIs from current docs into this older fork without checking source compatibility.
 - Apple explicitly supports separate-page username/password AutoFill with corresponding content types. Multi-step login alone does not establish the cause of the intermittent empty strip.
 - The login ellipsis menu now includes Copy input diagnostics so it can be exported before authentication, with no modal, form reset or forced responder handoff. Empty logs copy the localized explanation instead of leaving stale clipboard text. Included in the build 71 migration.
 - References: https://daybrite.dev/docs/reference/textfield/ ; https://daybrite.dev/docs/reference/cli/ ; https://developer.apple.com/documentation/security/enabling-password-autofill-on-a-text-input-view ; https://developer.apple.com/documentation/uikit/uitextinputassistantitem
@@ -227,7 +233,7 @@ eschool-app/
 ### Keyboard-layout investigation on the current Day 0.7.1 runtime
 - The current working tree uses `day-app` and `day-toolkit-uikit` 0.7.1. The user reports the layout-switch symptom on the current iOS build; treat it as an active bug, not just a pre-migration report.
 - Source inspection: Day installs username/password purposes before native tweaks, sets correction/spell checking to No, and caches `InputTraits`. Unchanged purposes do not reapply native traits. The migrated app's input-mode observer was read-only, leaving no repair path if native traits drift. This is a confirmed resilience gap, not proof that UIKit actually resets these traits or that drift causes the reported QuickType failure.
-- `shared/autofill.rs` now conditionally repairs credential content type, autocorrection, spell checking and supported inline prediction at configuration, editing begin and input-mode changes. Notifications receive an immediate check and one main-queue follow-up bound to the same weak, still-registered first responder. Already-correct and unsupported traits receive no setters. No input-mode reload, keyboard replacement, responder cycling, secure-mode change or credential-text inspection is introduced.
+- `ios/autofill.rs` now conditionally repairs credential content type, autocorrection, spell checking and supported inline prediction at configuration, editing begin and input-mode changes. Notifications receive an immediate check and one main-queue follow-up bound to the same weak, still-registered first responder. Already-correct and unsupported traits receive no setters. No input-mode reload, keyboard replacement, responder cycling, secure-mode change or credential-text inspection is introduced.
 - Dedicated policy tests cover selective repair, idempotence across repeated layout events, and skipping unsupported inline prediction. They do not reproduce or verify iOS QuickType UI. Native diagnostics record received/reconciled/settled phases and repair counts without credential contents or lengths.
 - The return-key proxy already forwards Day's optional delegate methods; UITextInputTraits belongs to the field, not its delegate. No missing trait-related delegate requirement was found. The separate capture field is retained as explicitly requested; its involvement in this symptom is unproven.
 - Apple documents input-mode notification as notification of a mode change, without a promise that credential/correction properties reset. Inline prediction controls inline suggestions, not every keyboard candidate UI. `inputAssistantItem` configures the iPad shortcuts bar and cannot pin iPhone Passwords. Stable No values with a missing Passwords control remain an unresolved case; do not call this guarded repair a confirmed on-device fix.
@@ -236,7 +242,7 @@ eschool-app/
 ### Native button appearance and input-trait hardening (build 75)
 - **Primary action button native styling:** In Day 0.7.1, `button().prominent()` on UIKit defaulted to standard dynamic rounded rectangle and regular font weight. `native_auth_action_button` now restores the native iOS pill shape (`UIButtonConfigurationCornerStyle::Capsule`) and Semibold 17.0pt font (`UIFont::systemFontOfSize_weight(17.0, UIFontWeightSemibold)`). A `titleTextAttributesTransformer` ensures dynamic title updates retain the semibold typography while letting UIKit handle state-dependent coloring.
 - **Empty input disabled state:** The bottom action button is reactively disabled (`.enabled(false)`) whenever the active input field (username or password) is empty/whitespace-only or `state.loading` is active. Disabled buttons remain in place, preserving layout stability, and UIKit natively dims the control to indicate non-interactivity.
-- **Extended text-input trait protection:** `reconcile_credential_traits` in `shared/autofill.rs` now covers `smartQuotesType`, `smartDashesType`, `smartInsertDeleteType`, and `grammarCheckingType` (`UITextGrammarCheckingTypeNo` via runtime selectors where supported). This ensures that multilingual layout transitions (such as switching to Russian) cannot re-enable smart formatting or grammar suggestions. All 36 host unit/integration tests and iOS UIKit compilation pass.
+- **Extended text-input trait protection:** `reconcile_credential_traits` in `ios/autofill.rs` now covers `smartQuotesType`, `smartDashesType`, `smartInsertDeleteType`, and `grammarCheckingType` (`UITextGrammarCheckingTypeNo` via runtime selectors where supported). This ensures that multilingual layout transitions (such as switching to Russian) cannot re-enable smart formatting or grammar suggestions. All 36 host unit/integration tests and iOS UIKit compilation pass.
 
 
 
@@ -260,7 +266,7 @@ eschool-app/
 - These checks do not exercise UIKit animation pacing, physical keyboard-language changes, or QuickType candidate visibility. Device validation remains required for those behaviors; this work is not published as a new build.
 
 ### Shared modal presentation after Build 76 (unreleased)
-- Day UIKit 0.7.1 realizes ordinary covers as `FullScreen`, which removes the presenting page after the transition. The shared translucent `modal_window` now configures its own `DayCoverVC` as `OverFullScreen` through `widgets/modal_ios.rs`; the presenting app remains attached below the 50% dim. This is app-owned compatibility code, not a registry edit or a framework fork.
+- Day UIKit 0.7.1 realizes ordinary covers as `FullScreen`, which removes the presenting page after the transition. The shared translucent `modal_window` now configures its own `DayCoverVC` as `OverFullScreen` through `ios/modal.rs`; the presenting app remains attached below the 50% dim. This is app-owned compatibility code, not a registry edit or a framework fork.
 - Configure from the dim button's native leaf while the cover body is being built, **before** `CoverPatch::Present`. The responder chain already reaches its owning cover at this point. Applying a tweak to the cover after its build can be too late when its initial binding is already open. Guard the controller class; the separate opaque PIN setup cover retains its existing presentation.
 - A main-thread-retained `UIViewControllerTransitioningDelegate` provides per-transition animators (the UIKit delegate property is weak). Entrance/exit animate the cover background between clear and its dim color while independently translating the tagged card and gap-filler surfaces. Keep the entering root invisible during preparation and start on the next main-queue turn: a synchronous UIKit callback can occur while Day holds the Present patch's tree borrow, delaying `FrameChanged` and leaving the card at 0×0. Measure travel after that event drains and native layout completes. Finish through UIKit's transition context so Day's dismissal completion/CoverHidden retains content until exit completes. Restore surfaces on cancellation/removal.
 - Tag the complete painted card/filler before adding layout and translation wrappers. Native transition transforms belong to those inner surfaces; Day continues to own the outer drag/keyboard translation. This preserves the released swipe position at dismissal rather than resetting the card upward. Before revealing the entering root, remove its preparation-time layer animations: Day otherwise applies the implicit resize animation to the first zero-to-real frames, competing with the slide. Later content resize animations remain enabled. Disable interaction on the filler's translation layer as well as its painted child so exposed filler passes taps to the dim.
@@ -270,7 +276,7 @@ eschool-app/
 - Verification: `cargo check --target aarch64-apple-ios --no-default-features --features uikit`, `cargo check` and `cargo test` pass (42 tests: 31 unit, 7 layout, 3 modal, 1 session). UIKit compilation retains the existing `UIScreen::mainScreen` deprecation warning in `diary.rs`.
 
 ### Build 78: Diary gestures and authentication polish
-- Diary week and totals pagers register their drag on the concrete deck before width/layout wrappers. `shared/gestures.rs` assigns a retained, stateless UIKit delegate to that deck's pan: `gestureRecognizerShouldBegin` accepts only horizontally dominant velocity. The nearest ancestor `UIScrollView` pan waits for this recognizer to fail, so vertical/diagonal travel releases native scrolling and `UIRefreshControl` before a Day drag can begin. The ancestor relationship is installed immediately and after attachment on the next main-queue turn through a weak view reference. Do not replace this with direction checks only inside `DragPhase::Changed`: recognition has already occurred by then. Both Rust pager handlers also lock the initial dominant axis through release; a vertical gesture cannot switch into week/quarter paging midway.
+- Diary week and totals pagers register their drag on the concrete deck before width/layout wrappers. `ios/gestures.rs` assigns a retained, stateless UIKit delegate to that deck's pan: `gestureRecognizerShouldBegin` accepts only horizontally dominant velocity. The nearest ancestor `UIScrollView` pan waits for this recognizer to fail, so vertical/diagonal travel releases native scrolling and `UIRefreshControl` before a Day drag can begin. The ancestor relationship is installed immediately and after attachment on the next main-queue turn through a weak view reference. Do not replace this with direction checks only inside `DragPhase::Changed`: recognition has already occurred by then. Both Rust pager handlers also lock the initial dominant axis through release; a vertical gesture cannot switch into week/quarter paging midway.
 - Connection status keeps the single window-level native toolbar and its action. Before Day replaces the native bar items, `conn_status_ios.rs` checks the existing status in the top navigation item's `pinnedTrailingGroup` (Day 0.7.1 uses this for Primary placement, not `rightBarButtonItems`). A 220ms ease-in/out `CATransition` crossfades the stable navbar layer's changed pixels; no custom button or duplicate toolbar is installed. Transitions between statuses sharing the same artwork do not animate, and reduced-motion/fast mode skips the effect.
 - Welcome uses the same `auth_keyboard_dock(auth_action_button(...))` as both credential steps. Removed its extra 8pt spacer and set zero column spacing explicitly: all three actions end 8pt above the safe-area bottom, with the shared native keyboard follower.
 - Username and password leading vector icons interpolate from gray to the current accent, and back, over 200ms ease-out using Day's `Tweened<Color>` frame clock. Day 0.7.1's UIKit image-tint patch ignores implicit animation intent, so merely adding `.animation()` would still snap. Interrupted focus changes start from the displayed color; accent changes update the focused icon, reduced motion lands immediately, and scope cleanup cancels pending frames. Fields and whole-form layout are not animated or recreated.
@@ -327,8 +333,8 @@ eschool-app/
 - Verification: `cargo test` passes all 52 tests; `cargo check --target aarch64-apple-ios --no-default-features --features uikit` compiles cleanly.
 
 ### Build 86: Preserve tab navigation controllers on auth switch and synchronous bottom-up modal presentation
-- **Post-login black screen fix (`app/window_ios.rs`, `pages/login.rs`):** In Build 85, `sync_root_controllers` indiscriminately unparented all `UINavigationController` children from `DayRootVC`. Because Day attaches `diary_tab`'s `nav_stack` (`DayNavController`) directly to `DayRootVC`, it stripped the active diary navigation controller and removed its view, leaving a black screen. In Build 86, the login navigation stack is explicitly tagged with `AUTH_NAV_TAG` (`0x41555448`), and `sync_root_controllers` inspects `tabbar.viewControllers()` and view descent: tab child controllers and views descending from `tabbar.view()` are strictly preserved. Only non-tab navigation controllers (tagged login nav or stale detached navs) are unparented. `tabbar.view()` is brought to the front of its immediate parent and laid out.
-- **Modal bottom-up presentation fix (`widgets/modal.rs`, `widgets/modal_ios.rs`):** In Build 85, on repeated modal opening, the sheet popped out from left-center rather than sliding up from the bottom. This was caused by two issues: (1) `modal.rs` placed an outer `.animation(AnimSpec::ease_out(RESIZE_MS))` on the card and gap filler, which triggered Day's `with_uikit_anim` during the initial `set_frame` from `(0, 0, 0, 0)` on fresh mount; (2) `modal_ios.rs` deferred `animate_surfaces` to `exec_async` while resetting `view.setTransform(identity_transform())` for travel measurement. In Build 86, iOS omits the outer `.animation(...)` on the card container so Day applies the frame immediately; `modal_ios.rs` executes presentation and dismissal synchronously inside `animateTransition:`, clears stray layer animations with `settle_initial_layout(&root)`, positions the card off-screen at `ty = root.bounds().size.height` without flashing, and smoothly animates to `identity` with the dim fading in.
+- **Post-login black screen fix (`app/window_ios.rs`, `pages/login/page.rs`):** In Build 85, `sync_root_controllers` indiscriminately unparented all `UINavigationController` children from `DayRootVC`. Because Day attaches `diary_tab`'s `nav_stack` (`DayNavController`) directly to `DayRootVC`, it stripped the active diary navigation controller and removed its view, leaving a black screen. In Build 86, the login navigation stack is explicitly tagged with `AUTH_NAV_TAG` (`0x41555448`), and `sync_root_controllers` inspects `tabbar.viewControllers()` and view descent: tab child controllers and views descending from `tabbar.view()` are strictly preserved. Only non-tab navigation controllers (tagged login nav or stale detached navs) are unparented. `tabbar.view()` is brought to the front of its immediate parent and laid out.
+- **Modal bottom-up presentation fix (`components/modal.rs`, `ios/modal.rs`):** In Build 85, on repeated modal opening, the sheet popped out from left-center rather than sliding up from the bottom. This was caused by two issues: (1) `modal.rs` placed an outer `.animation(AnimSpec::ease_out(RESIZE_MS))` on the card and gap filler, which triggered Day's `with_uikit_anim` during the initial `set_frame` from `(0, 0, 0, 0)` on fresh mount; (2) `modal_ios.rs` deferred `animate_surfaces` to `exec_async` while resetting `view.setTransform(identity_transform())` for travel measurement. In Build 86, iOS omits the outer `.animation(...)` on the card container so Day applies the frame immediately; `modal_ios.rs` executes presentation and dismissal synchronously inside `animateTransition:`, clears stray layer animations with `settle_initial_layout(&root)`, positions the card off-screen at `ty = root.bounds().size.height` without flashing, and smoothly animates to `identity` with the dim fading in.
 - **Verification:** All 52 tests pass (41 unit, 7 layout, 3 modal, 1 session); `cargo check --target aarch64-apple-ios --no-default-features --features uikit` compiles cleanly.
 
 ### Build 87: Eliminate artificial UIKit controller unparenting and preserve Day's native screen lifecycle

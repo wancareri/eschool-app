@@ -1,11 +1,9 @@
 //! Eschool App — a Day framework cross-platform school diary.
 
 pub mod app;
-pub mod features;
-pub mod native;
 pub mod pages;
-pub mod shared;
-pub mod widgets;
+pub mod ios;
+pub mod components;
 
 pub mod swiftui {
     include!(concat!(env!("OUT_DIR"), "/day_swiftui.rs"));

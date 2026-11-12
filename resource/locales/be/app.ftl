@@ -111,3 +111,6 @@ autofill_diagnostics_hint = Пасля паўтарэння праблемы з 
 autofill_diagnostics_copy = Скапіраваць дыягностыку ўводу
 autofill_diagnostics_empty = Запісаў пакуль няма. Адкрыйце форму ўваходу і пераключыце раскладку.
 autofill_diagnostics_copied = Дыягностыка скапіравана
+
+permission_biometrics = Для ўваходу ў праграму
+permission_notifications = Каб паведамляць пра змены адзнак

@@ -1,0 +1,188 @@
+use crate::app::AppState;
+use crate::res;
+use crate::app::preferences::colors;
+use day::prelude::*;
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LessonNoteTarget {
+    pub key: String,
+    pub subject_title: String,
+    pub lesson_number: u32,
+    pub start_time: String,
+    pub topic: Option<String>,
+}
+
+impl Route for LessonNoteTarget {
+    fn key(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|_| self.key.clone())
+    }
+    fn from_key(key: &str) -> Option<Self> {
+        serde_json::from_str(key).ok()
+    }
+}
+
+pub fn open_note(state: AppState, target: LessonNoteTarget) {
+    crate::ios::nslog::nslog(&format!("[LessonNote] open_note forwarding to peek: key='{}'", target.key));
+    let peek_target = crate::pages::diary::lesson_peek::LessonDetailTarget {
+        key: target.key.clone(),
+        lesson_uuid: target.key,
+        subject_title: target.subject_title,
+        lesson_number: target.lesson_number,
+        date_str: None,
+        start_time: target.start_time,
+        end_time: None,
+        topic: target.topic,
+        homework: None,
+        teacher: None,
+        comment: None,
+        mark: None,
+        has_attachments: false,
+        is_substitution: false,
+        start_editing_note: true,
+    };
+    crate::pages::diary::lesson_peek::open_peek(state, peek_target);
+}
+
+pub fn close_note(state: AppState) {
+    crate::ios::nslog::nslog("[LessonNote] close_note");
+    crate::ios::keyboard::dismiss();
+    state.active_note.set(None);
+}
+
+pub fn modal(_state: AppState) -> impl Piece {
+    spacer().height(0.0)
+}
+
+#[allow(dead_code)]
+fn build_card(state: AppState, target: LessonNoteTarget) -> impl Piece {
+    let existing_note = crate::pages::diary::data::get_note(state, &target.key).unwrap_or_default();
+    let note_text = Signal::new(existing_note.clone());
+    let has_existing = !existing_note.is_empty();
+
+    let key_save = target.key.clone();
+    let text_save = note_text.clone();
+    let on_save = move || {
+        let t = text_save.get();
+        crate::pages::diary::data::save_note(state, &key_save, &t);
+        close_note(state);
+    };
+
+    let key_del = target.key.clone();
+    let on_delete = move || {
+        crate::pages::diary::data::delete_note(state, &key_del);
+        close_note(state);
+    };
+
+    let s_top = target.topic.clone();
+    let time_str = crate::app::format::strip_seconds(&target.start_time);
+
+    column((
+        // Header
+        row((
+            vector(res::vectors::kind_note)
+                .frame(22.0, 22.0)
+                .tint(move || Color::hex(state.accent_color.get())),
+            column((
+                label(target.subject_title.clone())
+                    .font(Font::Headline)
+                    .bold(),
+                label(format!("Урок {} • {}", target.lesson_number, time_str))
+                    .font(Font::Caption)
+                    .secondary(),
+            ))
+            .spacing(2.0)
+            .grow(Dimension::Both),
+            label("✕")
+                .font(Font::Headline)
+                .secondary()
+                .padding(Insets {
+                    top: 10.0,
+                    leading: 16.0,
+                    bottom: 10.0,
+                    trailing: 16.0,
+                })
+                .on_tap(move || close_note(state)),
+        ))
+        .spacing(12.0)
+        .align(VAlign::Center)
+        .padding(Insets {
+            top: 4.0,
+            leading: 20.0,
+            bottom: 8.0,
+            trailing: 20.0,
+        }),
+
+        // Topic if present
+        when(
+            move || s_top.is_some() && !s_top.as_ref().unwrap().is_empty(),
+            move || {
+                let top_str = target.topic.clone().unwrap_or_default();
+                label(format!("Тема: {}", top_str))
+                    .font(Font::Caption)
+                    .secondary()
+                    .padding(Insets {
+                        top: 0.0,
+                        leading: 20.0,
+                        bottom: 8.0,
+                        trailing: 20.0,
+                    })
+            },
+        ),
+
+        // Text input field
+        text_field(note_text.clone())
+            .placeholder("Заметка к уроку (видна только в приложении)...")
+            .on_submit(move || {
+                crate::ios::keyboard::dismiss();
+            })
+            .padding(Insets {
+                top: 8.0,
+                leading: 20.0,
+                bottom: 12.0,
+                trailing: 20.0,
+            }),
+
+        // Action buttons
+        row((
+            when(
+                move || has_existing,
+                move || {
+                    let del = on_delete.clone();
+                    label("Удалить")
+                        .font(Font::Subheadline)
+                        .color(colors::ERROR)
+                        .padding(Insets {
+                            top: 10.0,
+                            leading: 16.0,
+                            bottom: 10.0,
+                            trailing: 16.0,
+                        })
+                        .on_tap(del)
+                        .any()
+                },
+            ),
+            spacer(),
+            label("Сохранить")
+                .font(Font::Headline)
+                .color(Color::WHITE)
+                .padding(Insets {
+                    top: 10.0,
+                    leading: 24.0,
+                    bottom: 10.0,
+                    trailing: 24.0,
+                })
+                .background(move || Color::hex(state.accent_color.get()))
+                .corner_radius(20.0)
+                .on_tap(on_save),
+        ))
+        .spacing(8.0)
+        .align(VAlign::Center)
+        .padding(Insets {
+            top: 8.0,
+            leading: 20.0,
+            bottom: 24.0,
+            trailing: 20.0,
+        }),
+    ))
+    .spacing(4.0)
+}

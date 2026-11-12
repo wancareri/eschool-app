@@ -9,16 +9,19 @@ build = "build.rs"
 # `mock` keeps bare cargo and rust-analyzer compiling; `day build` overrides it with
 # `--no-default-features --features <backend>` (https://daybrite.dev/docs/project-structure).
 default = ["mock"]
-appkit = ["day/appkit", "day-piece-swiftui/appkit"]
-gtk = ["day/gtk"]
-qt = ["day/qt"]
-uikit = ["day/uikit", "day-piece-lottie/uikit", "day-piece-swiftui/uikit"]
+appkit = ["day/appkit", "day-piece-lottie/appkit", "day-piece-swiftui/appkit", "day-piece-webview/appkit", "tls-rustls"]
+gtk = ["day/gtk", "day-piece-lottie/gtk", "day-piece-webview/gtk", "tls-rustls"]
+qt = ["day/qt", "day-piece-lottie/qt", "day-piece-webview/qt", "tls-rustls"]
+uikit = ["day/uikit", "day-piece-lottie/uikit", "day-piece-swiftui/uikit", "tls-native", "dep:day-uikit", "dep:block2", "dep:objc2", "dep:objc2-foundation", "dep:objc2-core-foundation", "dep:objc2-core-graphics", "dep:objc2-quartz-core", "dep:dispatch2", "dep:objc2-ui-kit", "dep:objc2-local-authentication"]
 mdc = ["material"]
-material = ["day/material", "day-piece-lottie/material"]
-xaml = ["day/xaml"]
-arkui = ["day/arkui"]
-dom = ["day/dom"]
-mock = ["day/mock"]
+material = ["day/material", "day-piece-lottie/material", "tls-rustls"]
+xaml = ["day/xaml", "day-piece-lottie/xaml", "day-piece-webview/xaml", "tls-rustls"]
+arkui = ["day/arkui", "day-piece-lottie/arkui", "day-piece-webview/arkui", "tls-rustls"]
+dom = ["day/dom", "day-piece-lottie/dom", "day-piece-webview/dom", "tls-rustls", "web-entropy"]
+mock = ["day/mock", "tls-rustls"]
+tls-rustls = ["reqwest/rustls-tls", "eschool-api/tls-rustls"]
+tls-native = ["reqwest/native-tls", "eschool-api/tls-native"]
+web-entropy = ["dep:getrandom", "dep:getrandom_02"]
 
 # rlib for the desktop bin; the mobile pipeline requests staticlib/cdylib via `cargo rustc`.
 [lib]
@@ -29,14 +32,18 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 day-spec = "=0.7.1"
 day-core = "=0.7.1"
-eschool-api = { path = "crates/eschool-api" }
+eschool-api = { path = "crates/eschool-api", default-features = false }
 day = { package = "day-app", version = "=0.7.1", features = ["model"] }
 day-piece-lottie = "=0.5.2"
+# Lottie 0.5.x declares a broad 0.* range but needs the matching 0.5 webview API.
+day-piece-webview = { version = "=0.5.1", optional = true }
 day-piece-settings = "=0.7.1"
 day-piece-swiftui = "=0.7.1"
 day-part-clipboard = "=0.7.1"
 day-part-biometrics = "=0.7.1"
 day-part-haptics = "=0.7.1"
+day-part-local-notify = "=0.7.1"
+day-part-permissions = "=0.7.1"
 # The item list persists as one JSON blob in `day::prefs` (src/model.rs).
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -48,23 +55,19 @@ rand = "0.8"
 log = "0.4"
 toml = "0.8"
 regex = "1"
-keyring = { version = "3", features = ["apple-native"] }
+day-part-keychain = "=0.7.1"
+getrandom = { version = "0.4", features = ["wasm_js"], optional = true }
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"], optional = true }
 
-# Keep Apple system trust on iOS; Android/other cross targets use rustls.
-[target.'cfg(not(target_os = "ios"))'.dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-
-[target.'cfg(target_os = "ios")'.dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
-day-uikit = { package = "day-toolkit-uikit", version = "=0.7.1" }
-block2 = "0.6"
-objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSArray", "NSDictionary", "NSUserDefaults", "NSError", "NSNotification", "NSPathUtilities"] }
-objc2-core-foundation = { version = "0.3", features = ["CFCGTypes"] }
-objc2-core-graphics = { version = "0.3", features = [] }
-objc2-quartz-core = { version = "0.3", features = ["CALayer"] }
-dispatch2 = "0.3"
-objc2-ui-kit = { version = "0.3", features = [
+day-uikit = { package = "day-toolkit-uikit", version = "=0.7.1", optional = true }
+block2 = { version = "0.6", optional = true }
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", optional = true, features = ["NSString", "NSURL", "NSArray", "NSDictionary", "NSUserDefaults", "NSError", "NSNotification", "NSPathUtilities"] }
+objc2-core-foundation = { version = "0.3", optional = true, features = ["CFCGTypes"] }
+objc2-core-graphics = { version = "0.3", optional = true, features = [] }
+objc2-quartz-core = { version = "0.3", optional = true, features = ["CALayer"] }
+dispatch2 = { version = "0.3", optional = true }
+objc2-ui-kit = { version = "0.3", optional = true, features = [
     "UIApplication", "UIView", "UIWindow", "UIScreen", "UIViewController",
     "UINavigationController", "UIKitCore", "block2",
     "UIColor", "UINavigationBar", "UITabBar", "UISwitch", "UIButton", "UIBarButtonItem",
@@ -73,11 +76,8 @@ objc2-ui-kit = { version = "0.3", features = [
     "UIGeometry", "UIAlertController", "UIAction", "UIMenu", "UIMenuElement", "UIImage",
     "UIImageSymbolConfiguration",
 ] }
-objc2-user-notifications = { version = "0.3", features = [
-    "UNUserNotificationCenter", "UNNotificationSettings", "UNNotificationRequest",
-    "UNNotificationContent", "UNNotificationSound",
-] }
-objc2-local-authentication = { version = "0.3", features = ["block2"] }
+
+objc2-local-authentication = { version = "0.3", optional = true, features = ["block2"] }
 
 [package.metadata.day.ios]
 swift-packages = [{ path = "platform/swiftui", products = ["EschoolViews"] }]

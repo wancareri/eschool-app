@@ -6,11 +6,11 @@ use day_spec::{Event, NodeId, WindowOptions};
 
 fn boot() -> (MockProbe, Signal<Option<String>>) {
     day_core::uninstall_tree();
-    dayapp::shared::keyboard::set_keyboard_height(0.0);
+    dayapp::ios::keyboard::set_keyboard_height(0.0);
     let open = Signal::global(None::<String>);
     let (mock, probe) = MockToolkit::new();
     day_core::launch_with(mock, WindowOptions::default(), move || {
-        dayapp::widgets::modal::modal_window(open, 100.0, |_| label("Sheet body")).any()
+        dayapp::components::modal::modal_window(open, 100.0, |_| label("Sheet body")).any()
     });
     open.set(Some("test".into()));
     day::reactive::flush_sync();
@@ -128,12 +128,12 @@ fn card_swipe_closes_only_past_threshold_and_can_reopen() {
 fn keyboard_takes_priority_over_sheet_dismissal() {
     let (probe, open) = boot();
     let node = card_drag(&probe);
-    dayapp::shared::keyboard::set_keyboard_height(300.0);
+    dayapp::ios::keyboard::set_keyboard_height(300.0);
     drag(&probe, node, DragPhase::Began, 0.0);
     drag(&probe, node, DragPhase::Changed, 100.0);
     drag(&probe, node, DragPhase::Ended, 100.0);
     assert!(open.get().is_some(), "first swipe must keep the sheet open");
-    dayapp::shared::keyboard::set_keyboard_height(0.0);
+    dayapp::ios::keyboard::set_keyboard_height(0.0);
     drag(&probe, node, DragPhase::Began, 0.0);
     drag(&probe, node, DragPhase::Changed, 100.0);
     drag(&probe, node, DragPhase::Ended, 100.0);
@@ -149,14 +149,14 @@ fn dim_tap_closes_sheet() {
         .find(|(_, w)| w.text.is_empty())
         .expect("dim button");
     let node = probe.widget(handle).node;
-    dayapp::shared::keyboard::set_keyboard_height(300.0);
+    dayapp::ios::keyboard::set_keyboard_height(300.0);
     probe.emit(NodeId(node), Event::Pressed);
     day::reactive::flush_sync();
     assert!(
         open.get().is_some(),
         "dim tap with keyboard must keep the sheet open"
     );
-    dayapp::shared::keyboard::set_keyboard_height(0.0);
+    dayapp::ios::keyboard::set_keyboard_height(0.0);
     probe.emit(NodeId(node), Event::Pressed);
     day::reactive::flush_sync();
     assert!(open.get().is_none());

@@ -107,7 +107,7 @@ jobs:
             ~/.cargo/git
             target
           key: cargo-${{ runner.os }}-linux-${{ hashFiles('Cargo.lock') }}
-      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libadwaita-1-dev libwebkitgtk-6.0-dev
       - run: cargo install day-cli --version ${{ env.DAY_CLI_VERSION }} --locked
       - run: day pack -t linux-gtk --profile release --verbose
       - uses: actions/upload-artifact@v4
