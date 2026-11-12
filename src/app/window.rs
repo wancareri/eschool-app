@@ -232,8 +232,8 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
     #[derive(Clone, PartialEq)]
     enum Screen { Unlock, Tabs, Login }
 
-    // One owner replaces the complete controller tree. Nested auth conditions
-    // can tear down the login stack before its replacement is attached on UIKit.
+    // Dispose the complete outgoing screen before building its replacement.
+    // Credential animation cleanup must run before its signals are freed.
     switch(
         move || {
             if state.pin_lock_active.get() { Screen::Unlock }
@@ -312,6 +312,24 @@ mod tests {
             }).any()
         });
         let state = AppState::get_main().unwrap();
+        // Reproduce the real submission path, including the scoped icon/eye
+        // tweens on the credential pages. The welcome page has no such cleanup.
+        let press = |title: String| {
+            let (_, button) = probe.find_by_kind(day_spec::kinds::BUTTON).into_iter()
+                .find(|(_, widget)| widget.text == title).expect("authentication action");
+            probe.emit(day_spec::NodeId(button.node), day_spec::Event::Pressed);
+            day::reactive::flush_sync();
+        };
+        press(res::str::auth_start().format());
+        let (_, username) = probe.find_by_kind(day_spec::kinds::TEXT_FIELD).into_iter()
+            .find(|(_, widget)| widget.input_traits.as_ref()
+                .is_some_and(|traits| traits.purpose == InputPurpose::Username)).unwrap();
+        probe.emit(day_spec::NodeId(username.node), day_spec::Event::TextChanged("fixture".into()));
+        day::reactive::flush_sync();
+        press(res::str::auth_continue().format());
+        assert!(probe.find_by_kind(day_spec::kinds::TEXT_FIELD).iter()
+            .any(|(_, widget)| widget.input_traits.as_ref()
+                .is_some_and(|traits| traits.purpose == InputPurpose::Password)));
         let login_hosts: Vec<_> = probe.find_by_kind(day_spec::kinds::NAV)
             .into_iter().map(|(handle, _)| handle).collect();
         assert!(!login_hosts.is_empty());

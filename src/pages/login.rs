@@ -486,7 +486,9 @@ fn animated_focus_tint(focused: Signal<bool>, accent: Signal<u32>) -> day::tween
         animated.animate_to(*color, AnimSpec::ease_out(200));
     });
     let cleanup = tint.clone();
-    Scope::current().on_cleanup(move || cleanup.set(cleanup.get_untracked()));
+    // Day disposes child scopes before freeing this scope's signals. A cleanup
+    // on the current scope would read an already-disposed tween during login.
+    Scope::child().on_cleanup(move || cleanup.set(cleanup.get_untracked()));
     tint
 }
 
@@ -498,7 +500,8 @@ fn animated_visibility(visible: Signal<bool>) -> day::tween::Tweened<f64> {
         animated.animate_to(if *visible { 1.0 } else { 0.0 }, AnimSpec::ease_out(200));
     });
     let cleanup = opacity.clone();
-    Scope::current().on_cleanup(move || cleanup.set(cleanup.get_untracked()));
+    // Cancel while the owning scope's tween signal is still alive.
+    Scope::child().on_cleanup(move || cleanup.set(cleanup.get_untracked()));
     opacity
 }
 
@@ -1470,6 +1473,51 @@ mod auth_error_tests {
         assert!(images.iter().all(|h| probe.state.borrow().widgets.contains_key(&h.0)),
             "neither artwork nor field may be recreated");
         assert!(pending.borrow().is_empty());
+        day_core::uninstall_tree();
+    }
+
+    #[cfg(feature = "mock")]
+    #[test]
+    fn disposing_credential_animations_cancels_pending_frames() {
+        use day::prelude::*;
+        use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+        day_core::uninstall_tree();
+        let focused = Signal::global(false);
+        let visible = Signal::global(false);
+        let saved = Rc::new(RefCell::new(None));
+        let result = saved.clone();
+        let (mock, _) = day_mock::MockToolkit::new();
+        day_core::launch_with(mock, day_spec::WindowOptions::default(), move || {
+            let scope = Scope::child();
+            scope.enter(|| {
+                let tint = super::animated_focus_tint(focused, Signal::new(0x007AFF));
+                let eye = super::animated_visibility(visible);
+                *result.borrow_mut() = Some((scope, tint, eye));
+            });
+            spacer().any()
+        });
+        let pending: Rc<RefCell<VecDeque<day_spec::FrameCallback>>> = Rc::default();
+        let queue = pending.clone();
+        day::frame::install_frame_requester(move |_, callback| {
+            queue.borrow_mut().push_back(callback);
+            Box::new(|| {})
+        });
+        focused.set(true);
+        visible.set(true);
+        day::reactive::flush_sync();
+        let (scope, tint, eye) = saved.borrow_mut().take().unwrap();
+        assert!(tint.is_animating() && eye.is_animating());
+        assert!(!pending.borrow().is_empty());
+
+        scope.dispose();
+        assert!(!tint.is_animating() && !eye.is_animating(),
+            "teardown must cancel both animations before freeing their signals");
+        let stale_frames = std::mem::take(&mut *pending.borrow_mut());
+        for callback in stale_frames {
+            callback(day_spec::FrameStamp::new(1.0));
+        }
+        day::reactive::flush_sync();
+        assert!(pending.borrow().is_empty(), "disposed pages must not request more frames");
         day_core::uninstall_tree();
     }
 
