@@ -53,13 +53,11 @@ pub fn apply_ios_tint(hex: u32) {
         let _: () = objc2::msg_send![&*tab_appearance, setStandardAppearance: &*tab_app];
         let _: () = objc2::msg_send![&*tab_appearance, setScrollEdgeAppearance: &*tab_app];
 
-        // Opaque system background matches the page without a gray material tint.
+        // Keep UIKit's native navigation-bar material (Liquid Glass on current iOS).
         let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
         let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![nav_appearance_class, new];
-        let _: () = objc2::msg_send![&*nav_app, configureWithOpaqueBackground];
-        let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*objc2_ui_kit::UIColor::systemBackgroundColor()];
-        let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
+        let _: () = objc2::msg_send![&*nav_app, configureWithDefaultBackground];
 
         // UINavigationBar.appearance()
         let nav_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
@@ -153,14 +151,49 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
             let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
             let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
                 objc2::msg_send![nav_appearance_class, new];
-            let _: () = objc2::msg_send![&*nav_app, configureWithOpaqueBackground];
-            let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*objc2_ui_kit::UIColor::systemBackgroundColor()];
-            let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
+            let _: () = objc2::msg_send![&*nav_app, configureWithDefaultBackground];
 
             let _: () = objc2::msg_send![bar, setStandardAppearance: &*nav_app];
             let _: () = objc2::msg_send![bar, setScrollEdgeAppearance: &*nav_app];
             let _: () = objc2::msg_send![bar, setCompactAppearance: &*nav_app];
             let _: () = objc2::msg_send![bar, setCompactScrollEdgeAppearance: &*nav_app];
+
+            // Day renders page titles as native UILabel titleViews. Wrap only the Diary
+            // title in a small native material capsule; all other pages keep system chrome.
+            if let Some(item) = bar.topItem()
+                && let Some(title) = item.titleView()
+                && let Some(label) = title.downcast_ref::<objc2_ui_kit::UILabel>()
+                && label.text().is_some_and(|text| text.to_string() == crate::res::str::diary_title().format())
+            {
+                use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+                use objc2_ui_kit::{UIBlurEffect, UIVisualEffectView, UIView};
+                use objc2::MainThreadOnly;
+                let pill = UIView::new(objc2::MainThreadMarker::new().expect("main thread"));
+                let label_size = label.frame().size;
+                let width = label_size.width + 20.0;
+                let height = label_size.height + 8.0;
+                pill.setFrame(CGRect::new(CGPoint::ZERO, CGSize::new(width, height)));
+                pill.setClipsToBounds(true);
+                pill.layer().setCornerRadius((height / 2.0) as _);
+                let mtm = objc2::MainThreadMarker::new().expect("main thread");
+                let effect = UIBlurEffect::effectWithStyle(
+                    objc2_ui_kit::UIBlurEffectStyle::SystemUltraThinMaterial,
+                    mtm,
+                );
+                let blur = UIVisualEffectView::initWithEffect(
+                    UIVisualEffectView::alloc(mtm),
+                    Some(&effect),
+                );
+                blur.setFrame(CGRect::new(CGPoint::ZERO, CGSize::new(width, height)));
+                let content = blur.contentView();
+                label.setFrame(CGRect::new(
+                    CGPoint::new(10.0, 4.0),
+                    CGSize::new(label_size.width, label_size.height),
+                ));
+                content.addSubview(label);
+                pill.addSubview(&blur);
+                item.setTitleView(Some(&pill));
+            }
         };
     } else if let Some(sw) = obj.downcast_ref::<objc2_ui_kit::UISwitch>() {
         sw.setOnTintColor(Some(color));
