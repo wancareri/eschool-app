@@ -14,7 +14,6 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 
 const DIARY_BAR_STYLE_TAG: isize = 8_417_265;
 const DIARY_TITLE_BUTTON_TAG: isize = 8_417_268;
-const DIARY_BAR_GLASS_TAG: isize = 8_417_269;
 static ORIGINAL_VIEW_DID_LAYOUT: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 static ORIGINAL_NAV_BAR_LAYOUT: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 
@@ -175,44 +174,6 @@ fn apply_system_bar_appearance(bar: &UINavigationBar) {
     bar.setCompactScrollEdgeAppearance(Some(&appearance));
     bar.setTranslucent(true);
     bar.setTag(DIARY_BAR_STYLE_TAG);
-    install_bar_glass(bar, mtm);
-}
-
-fn install_bar_glass(bar: &UINavigationBar, mtm: MainThreadMarker) {
-    let Some(title_view) = bar
-        .topItem()
-        .and_then(|item| item.titleView())
-        .filter(|view| view.tag() == DIARY_TITLE_BUTTON_TAG)
-    else {
-        return;
-    };
-    let title_frame = title_view.frame();
-    let bar_bounds = bar.bounds();
-    let x = (title_frame.origin.x - 12.0).max(8.0);
-    let y = (title_frame.origin.y - 6.0).max(0.0);
-    let right = bar_bounds.size.width - 8.0;
-    let height = title_frame.size.height + 12.0;
-    let frame = CGRect::new(
-        CGPoint::new(x, y),
-        CGSize::new((right - x).max(title_frame.size.width + 24.0), height),
-    );
-    if let Some(existing) = bar
-        .subviews()
-        .iter()
-        .find(|view| view.tag() == DIARY_BAR_GLASS_TAG)
-    {
-        existing.setFrame(frame);
-        existing.layer().setCornerRadius((height / 2.0) as _);
-        return;
-    }
-    let effect = native_glass_effect(mtm);
-    let glass = UIVisualEffectView::initWithEffect(UIVisualEffectView::alloc(mtm), Some(&effect));
-    glass.setTag(DIARY_BAR_GLASS_TAG);
-    glass.setFrame(frame);
-    glass.setUserInteractionEnabled(false);
-    glass.layer().setCornerRadius((height / 2.0) as _);
-    glass.layer().setMasksToBounds(true);
-    bar.insertSubview_atIndex(&glass, 0);
 }
 
 /// Replace Day's non-interactive title label with a native glass button.
@@ -253,31 +214,47 @@ fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
     });
     let action = unsafe { UIAction::actionWithHandler(block2::RcBlock::as_ptr(&handler), mtm) };
 
-    let configuration = UIButtonConfiguration::plainButtonConfiguration(mtm);
+    let supports_clear_glass = objc2::class!(UIButtonConfiguration)
+        .class_method(objc2::sel!(clearGlassButtonConfiguration))
+        .is_some();
+    let configuration = if supports_clear_glass {
+        UIButtonConfiguration::clearGlassButtonConfiguration(mtm)
+    } else {
+        UIButtonConfiguration::plainButtonConfiguration(mtm)
+    };
     configuration.setTitle(Some(&title));
     if let Some(label) = label {
         configuration.setBaseForegroundColor(label.textColor().as_deref());
     }
     configuration.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
     configuration.setContentInsets(NSDirectionalEdgeInsets {
-        top: 9.0,
-        leading: 22.0,
-        bottom: 9.0,
-        trailing: 22.0,
+        top: 10.0,
+        leading: 28.0,
+        bottom: 10.0,
+        trailing: 28.0,
     });
     let button = UIButton::buttonWithConfiguration_primaryAction(&configuration, Some(&action));
     button.setTag(DIARY_TITLE_BUTTON_TAG);
     let label_size = label
         .map(|label| label.frame().size)
         .unwrap_or_else(|| CGSize::new(title.to_string().chars().count() as f64 * 9.0, 20.0));
-    let height = label_size.height + 18.0;
+    let height = label_size.height + 20.0;
     button.setFrame(CGRect::new(
         CGPoint::ZERO,
-        CGSize::new(label_size.width + 44.0, height),
+        CGSize::new(label_size.width + 56.0, height),
     ));
     crate::ios::nslog::nslog(&format!("[NavGlass] installed title glass: {}", title));
     item.setTitleView(Some(&button));
-    install_bar_glass(bar, mtm);
+    if !supports_clear_glass {
+        let effect = native_glass_effect(mtm);
+        let background =
+            UIVisualEffectView::initWithEffect(UIVisualEffectView::alloc(mtm), Some(&effect));
+        background.setFrame(button.bounds());
+        background.setUserInteractionEnabled(false);
+        background.layer().setCornerRadius((height / 2.0) as _);
+        background.layer().setMasksToBounds(true);
+        button.insertSubview_atIndex(&background, 0);
+    }
 }
 
 fn is_app_page_title(title: &str) -> bool {
