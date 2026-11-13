@@ -42,17 +42,17 @@ unsafe extern "C-unwind" fn diary_view_did_layout(controller: &UIViewController,
         return;
     };
     let bar = nav_controller.navigationBar();
-    let diary_title = crate::res::str::diary_title().format();
     let item = controller.navigationItem();
-    let is_diary = item
-        .title()
-        .is_some_and(|title| title.to_string() == diary_title)
+    let is_app_page = item.title().is_some_and(|title| is_app_page_title(&title.to_string()))
+        || item
+            .titleView()
+            .is_some_and(|view| view.tag() == DIARY_TITLE_BUTTON_TAG)
         || item
             .titleView()
             .and_then(|view| view.downcast::<UILabel>().ok())
             .and_then(|label| label.text())
-            .is_some_and(|title| title.to_string() == diary_title);
-    if !is_diary {
+            .is_some_and(|title| is_app_page_title(&title.to_string()));
+    if !is_app_page {
         return;
     }
     install_title_button(controller, &bar);
@@ -137,7 +137,9 @@ fn apply_system_bar_appearance(bar: &UINavigationBar) {
     let appearance = UINavigationBarAppearance::new(mtm);
     appearance.configureWithTransparentBackground();
     let clear = objc2_ui_kit::UIColor::clearColor();
+    let blur = UIBlurEffect::effectWithStyle(UIBlurEffectStyle::SystemUltraThinMaterial, mtm);
     appearance.setBackgroundColor(Some(&clear));
+    appearance.setBackgroundEffect(Some(&blur));
     appearance.setShadowColor(Some(&clear));
     bar.setBackgroundColor(Some(&clear));
     bar.setStandardAppearance(&appearance);
@@ -164,7 +166,7 @@ fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
         return;
     };
     let Some(title) = label.text() else { return };
-    if title.to_string() != crate::res::str::diary_title().format() {
+    if !is_app_page_title(&title.to_string()) {
         return;
     }
 
@@ -218,6 +220,13 @@ fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
         button.insertSubview_atIndex(&background, 0);
     }
     item.setTitleView(Some(&button));
+}
+
+fn is_app_page_title(title: &str) -> bool {
+    title == crate::res::str::diary_title().format()
+        || title == crate::res::str::schedule_title().format()
+        || title == crate::res::str::teachers_title().format()
+        || title == crate::res::str::settings_title().format()
 }
 
 fn native_glass_effect(mtm: MainThreadMarker) -> objc2::rc::Retained<objc2_ui_kit::UIVisualEffect> {

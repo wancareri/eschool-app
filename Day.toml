@@ -5,7 +5,7 @@ schema = 1
 [app]
 id = "by.eschool.app"
 title = "OpenSchool"
-build = 111
+build = 112
 targets = ["ios-uikit", "android-material", "harmony-arkui", "macos-appkit", "macos-gtk", "macos-qt", "linux-gtk", "linux-qt", "windows-xaml", "web-dom"]
 
 # The window's geometry in points (https://daybrite.dev/docs/size-classes). `width`/`height` are
