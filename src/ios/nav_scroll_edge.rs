@@ -3,18 +3,17 @@
 use dispatch2::{DispatchQueue, MainThreadBound};
 use objc2::{MainThreadMarker, MainThreadOnly, rc::Weak, runtime::Sel};
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-use objc2_core_graphics::CGColor;
-use objc2_foundation::NSArray;
-use objc2_quartz_core::CAGradientLayer;
 use objc2_ui_kit::{
-    NSDirectionalRectEdge, UIColor, UIBlurEffect, UIBlurEffectStyle, UINavigationBar,
-    UINavigationBarAppearance, UINavigationController, UIVisualEffectView, UIScrollView, UIView,
-    UIViewController, UIViewAutoresizing,
+    NSDirectionalEdgeInsets, NSDirectionalRectEdge, UIAction, UIBlurEffect, UIBlurEffectStyle,
+    UIButton, UIButtonConfiguration, UIButtonConfigurationCornerStyle, UILabel, UINavigationBar,
+    UINavigationBarAppearance, UINavigationController, UIScrollView, UIView, UIViewController,
+    UIVisualEffectView,
 };
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 const DIARY_BAR_STYLE_TAG: isize = 8_417_265;
-const UNDER_BAR_BLUR_TAG: isize = 8_417_267;
+const DIARY_TITLE_BUTTON_TAG: isize = 8_417_268;
 static ORIGINAL_VIEW_DID_LAYOUT: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 
 /// Reapply the system appearance after Day configures its page controller's bar.
@@ -27,17 +26,14 @@ pub fn install_diary_navigation_hook() {
         };
         ORIGINAL_VIEW_DID_LAYOUT.store(method.implementation() as *mut (), Ordering::Release);
         unsafe {
-            method.set_implementation(std::mem::transmute(
-                diary_view_did_layout as *const (),
-            ));
+            method.set_implementation(std::mem::transmute(diary_view_did_layout as *const ()));
         }
     });
 }
 
 unsafe extern "C-unwind" fn diary_view_did_layout(controller: &UIViewController, selector: Sel) {
-    let original: unsafe extern "C-unwind" fn(&UIViewController, Sel) = unsafe {
-        std::mem::transmute(ORIGINAL_VIEW_DID_LAYOUT.load(Ordering::Acquire))
-    };
+    let original: unsafe extern "C-unwind" fn(&UIViewController, Sel) =
+        unsafe { std::mem::transmute(ORIGINAL_VIEW_DID_LAYOUT.load(Ordering::Acquire)) };
     unsafe { original(controller, selector) };
 
     let diary_title = crate::res::str::diary_title().format();
@@ -48,19 +44,17 @@ unsafe extern "C-unwind" fn diary_view_did_layout(controller: &UIViewController,
     {
         return;
     }
-    let nav_controller: Option<objc2::rc::Retained<UINavigationController>> = unsafe {
-        objc2::msg_send![controller, navigationController]
-    };
+    let nav_controller: Option<objc2::rc::Retained<UINavigationController>> =
+        unsafe { objc2::msg_send![controller, navigationController] };
     let Some(nav_controller) = nav_controller else {
         return;
     };
     let bar = nav_controller.navigationBar();
+    install_title_button(controller);
     if bar.tag() == DIARY_BAR_STYLE_TAG {
-        apply_under_bar_blur(controller, &bar);
         return;
     }
     apply_system_bar_appearance(&bar);
-    apply_under_bar_blur(controller, &bar);
 }
 
 /// Register the Diary scroll view after Day has mounted it in its page controller.
@@ -94,13 +88,12 @@ fn configure(view: &UIView, scroll: &UIScrollView) {
             let edge = NSDirectionalRectEdge::Top;
             controller.setContentScrollView_forEdge(Some(scroll), edge);
 
-            let nav_controller: Option<objc2::rc::Retained<UINavigationController>> = unsafe {
-                objc2::msg_send![controller, navigationController]
-            };
+            let nav_controller: Option<objc2::rc::Retained<UINavigationController>> =
+                unsafe { objc2::msg_send![controller, navigationController] };
             if let Some(nav_controller) = nav_controller {
                 let bar: objc2::rc::Retained<UINavigationBar> = nav_controller.navigationBar();
                 apply_system_bar_appearance(&bar);
-                apply_under_bar_blur(controller, &bar);
+                install_title_button(controller);
                 return;
             }
         }
@@ -122,62 +115,88 @@ fn apply_system_bar_appearance(bar: &UINavigationBar) {
     bar.setTag(DIARY_BAR_STYLE_TAG);
 }
 
-/// Extend the native blur below the bar and fade it into the scrolling content.
-fn apply_under_bar_blur(controller: &UIViewController, bar: &UINavigationBar) {
+/// Replace Day's non-interactive title label with a native glass button.
+fn install_title_button(controller: &UIViewController) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
-    let Some(root) = controller.viewIfLoaded() else {
+    let item = controller.navigationItem();
+    let Some(title_view) = item.titleView() else {
         return;
     };
-    let bar_rect = bar.convertRect_toView(bar.bounds(), Some(&root));
-    let start_y = bar_rect.origin.y + bar_rect.size.height - 8.0;
-    let height = 72.0;
-
-    let blur = root
-        .subviews()
-        .iter()
-        .find(|view| view.tag() == UNDER_BAR_BLUR_TAG)
-        .and_then(|view| view.downcast::<UIVisualEffectView>().ok())
-        .unwrap_or_else(|| {
-            let effect = UIBlurEffect::effectWithStyle(UIBlurEffectStyle::SystemUltraThinMaterial, mtm);
-            let blur = UIVisualEffectView::initWithEffect(UIVisualEffectView::alloc(mtm), Some(&effect));
-            blur.setTag(UNDER_BAR_BLUR_TAG);
-            blur.setUserInteractionEnabled(false);
-            root.addSubview(&blur);
-
-            let mask = CAGradientLayer::layer();
-            let white = UIColor::whiteColor();
-            let clear = UIColor::clearColor();
-            let white_cg = unsafe { white.CGColor() };
-            let clear_cg = unsafe { clear.CGColor() };
-            // CAGradientLayer's `colors` NSArray stores Core Graphics objects as ObjC ids.
-            let white_obj = unsafe {
-                &*((&*white_cg as *const CGColor).cast::<objc2::runtime::AnyObject>())
-            };
-            let clear_obj = unsafe {
-                &*((&*clear_cg as *const CGColor).cast::<objc2::runtime::AnyObject>())
-            };
-            let colors = NSArray::from_slice(&[white_obj, white_obj, clear_obj]);
-            unsafe { mask.setColors(Some(&colors)) };
-            let locations = NSArray::from_retained_slice(&[
-                objc2_foundation::NSNumber::new_f64(0.0),
-                objc2_foundation::NSNumber::new_f64(0.34),
-                objc2_foundation::NSNumber::new_f64(1.0),
-            ]);
-            mask.setLocations(Some(&locations));
-            mask.setStartPoint(CGPoint::new(0.5, 0.0));
-            mask.setEndPoint(CGPoint::new(0.5, 1.0));
-            unsafe { blur.layer().setMask(Some(&mask)) };
-            blur
-        });
-
-    blur.setFrame(CGRect::new(
-        CGPoint::new(0.0, start_y),
-        CGSize::new(root.bounds().size.width, height),
-    ));
-    blur.setAutoresizingMask(UIViewAutoresizing::FlexibleWidth);
-    if let Some(mask) = blur.layer().mask() {
-        mask.setFrame(CGRect::new(CGPoint::ZERO, CGSize::new(root.bounds().size.width, height)));
+    if title_view.tag() == DIARY_TITLE_BUTTON_TAG {
+        return;
     }
+    let Some(label) = title_view.downcast_ref::<UILabel>() else {
+        return;
+    };
+    let Some(title) = label.text() else { return };
+    if title.to_string() != crate::res::str::diary_title().format() {
+        return;
+    }
+
+    let scroll = controller.contentScrollViewForEdge(NSDirectionalRectEdge::Top);
+    let weak_scroll = scroll.as_ref().map(|scroll| Weak::new(&**scroll));
+    let handler = block2::RcBlock::new(move |_action: NonNull<UIAction>| {
+        if let Some(scroll) = weak_scroll.as_ref().and_then(Weak::load) {
+            let offset = scroll.contentOffset();
+            scroll.setContentOffset_animated(
+                CGPoint::new(offset.x, -scroll.adjustedContentInset().top),
+                true,
+            );
+        }
+    });
+    let action = unsafe { UIAction::actionWithHandler(block2::RcBlock::as_ptr(&handler), mtm) };
+
+    let config_class = objc2::class!(UIButtonConfiguration);
+    let native_glass = config_class
+        .class_method(objc2::sel!(glassButtonConfiguration))
+        .is_some();
+    let configuration = if native_glass {
+        UIButtonConfiguration::glassButtonConfiguration(mtm)
+    } else {
+        UIButtonConfiguration::plainButtonConfiguration(mtm)
+    };
+    configuration.setTitle(Some(&title));
+    configuration.setBaseForegroundColor(label.textColor().as_deref());
+    configuration.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
+    configuration.setContentInsets(NSDirectionalEdgeInsets {
+        top: 9.0,
+        leading: 22.0,
+        bottom: 9.0,
+        trailing: 22.0,
+    });
+    let button = UIButton::buttonWithConfiguration_primaryAction(&configuration, Some(&action));
+    button.setTag(DIARY_TITLE_BUTTON_TAG);
+    let label_size = label.frame().size;
+    let height = label_size.height + 18.0;
+    button.setFrame(CGRect::new(
+        CGPoint::ZERO,
+        CGSize::new(label_size.width + 44.0, height),
+    ));
+
+    if !native_glass {
+        let effect = native_glass_fallback(mtm);
+        let background =
+            UIVisualEffectView::initWithEffect(UIVisualEffectView::alloc(mtm), Some(&effect));
+        background.setFrame(button.bounds());
+        background.setUserInteractionEnabled(false);
+        button.insertSubview_atIndex(&background, 0);
+        button.layer().setCornerRadius((height / 2.0) as _);
+        button.layer().setMasksToBounds(true);
+    }
+    item.setTitleView(Some(&button));
+}
+
+fn native_glass_fallback(
+    mtm: MainThreadMarker,
+) -> objc2::rc::Retained<objc2_ui_kit::UIVisualEffect> {
+    if let Some(class) = objc2::runtime::AnyClass::get(c"UIGlassEffect") {
+        let effect: objc2::rc::Retained<objc2::runtime::AnyObject> =
+            unsafe { objc2::msg_send![class, effectWithStyle: 0isize] };
+        if let Ok(effect) = effect.downcast::<objc2_ui_kit::UIVisualEffect>() {
+            return effect;
+        }
+    }
+    UIBlurEffect::effectWithStyle(UIBlurEffectStyle::SystemThinMaterial, mtm).into_super()
 }

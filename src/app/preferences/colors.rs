@@ -4,26 +4,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// Global accent color — updated atomically when user picks a new color.
 static ACCENT_HEX: AtomicU32 = AtomicU32::new(0x3B82F6);
 
-/// Prefer iOS 26's clear Liquid Glass. Older UIKit versions fall back to
-/// ultra-thin material because UIGlassEffect is not available there.
-#[cfg(feature = "uikit")]
-fn clear_glass_effect(mtm: objc2::MainThreadMarker) -> objc2::rc::Retained<objc2_ui_kit::UIVisualEffect> {
-    if let Some(class) = objc2::runtime::AnyClass::get(c"UIGlassEffect") {
-        let effect: objc2::rc::Retained<objc2::runtime::AnyObject> = unsafe {
-            objc2::msg_send![class, effectWithStyle: 1isize] // UIGlassEffectStyleClear
-        };
-        if let Ok(effect) = effect.downcast::<objc2_ui_kit::UIVisualEffect>() {
-            return effect;
-        }
-    }
-
-    objc2_ui_kit::UIBlurEffect::effectWithStyle(
-        objc2_ui_kit::UIBlurEffectStyle::SystemUltraThinMaterial,
-        mtm,
-    )
-    .into_super()
-}
-
 /// Initialize the global accent color from prefs (call once at startup).
 pub fn init_accent() {
     let hex = day::prefs::get("app.accent_color")
@@ -178,42 +158,6 @@ unsafe fn retint_existing(
                 let _: () = objc2::msg_send![bar, setCompactScrollEdgeAppearance: &*nav_app];
             }
 
-            // Copy Day's title label into the capsule instead of reparenting the
-            // toolkit-owned label, which otherwise disappears during reconciliation.
-            if let Some(item) = bar.topItem()
-                && let Some(title) = item.titleView()
-                && let Some(label) = title.downcast_ref::<objc2_ui_kit::UILabel>()
-                && label.text().is_some_and(|text| text.to_string() == crate::res::str::diary_title().format())
-            {
-                use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-                use objc2_ui_kit::{UILabel, UIVisualEffectView};
-                use objc2::MainThreadOnly;
-                let label_size = label.frame().size;
-                let width = label_size.width + 44.0;
-                let height = label_size.height + 18.0;
-                let mtm = objc2::MainThreadMarker::new().expect("main thread");
-                let effect = clear_glass_effect(mtm);
-                let blur = UIVisualEffectView::initWithEffect(
-                    UIVisualEffectView::alloc(mtm),
-                    Some(&effect),
-                );
-                blur.setTag(8_417_264);
-                blur.setFrame(CGRect::new(CGPoint::ZERO, CGSize::new(width, height)));
-                blur.setClipsToBounds(true);
-                blur.layer().setCornerRadius((height / 2.0) as _);
-                let content = blur.contentView();
-                let pill_label = UILabel::new(mtm);
-                pill_label.setText(label.text().as_deref());
-                pill_label.setFont(label.font().as_deref());
-                pill_label.setTextColor(label.textColor().as_deref());
-                pill_label.setNumberOfLines(1);
-                pill_label.setFrame(CGRect::new(
-                    CGPoint::new(22.0, 9.0),
-                    CGSize::new(label_size.width, label_size.height),
-                ));
-                content.addSubview(&pill_label);
-                item.setTitleView(Some(&blur));
-            }
         };
     } else if let Some(sw) = obj.downcast_ref::<objc2_ui_kit::UISwitch>() {
         sw.setOnTintColor(Some(color));

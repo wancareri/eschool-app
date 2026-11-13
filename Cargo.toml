@@ -65,12 +65,12 @@ objc2 = { version = "0.6", optional = true }
 objc2-foundation = { version = "0.3", optional = true, features = ["NSString", "NSURL", "NSArray", "NSDictionary", "NSUserDefaults", "NSError", "NSNotification", "NSPathUtilities"] }
 objc2-core-foundation = { version = "0.3", optional = true, features = ["CFCGTypes"] }
 objc2-core-graphics = { version = "0.3", optional = true, features = [] }
-objc2-quartz-core = { version = "0.3", optional = true, features = ["CALayer", "CAGradientLayer"] }
+objc2-quartz-core = { version = "0.3", optional = true, features = ["CALayer"] }
 dispatch2 = { version = "0.3", optional = true }
 objc2-ui-kit = { version = "0.3", optional = true, features = [
     "UIApplication", "UIView", "UIScrollView", "UIWindow", "UIScreen", "UIViewController",
     "UINavigationController", "UINavigationBarAppearance", "UIBarAppearance", "UIKitCore", "block2",
-    "UIColor", "UINavigationBar", "UITabBar", "UISwitch", "UIButton", "UIBarButtonItem",
+    "UIColor", "UINavigationBar", "UITabBar", "UISwitch", "UIButton", "UIButtonConfiguration", "UIBarButtonItem",
     "UIVisualEffectView", "UIBlurEffect", "UIVisualEffect",
     "UIFeedbackGenerator", "UIImpactFeedbackGenerator", "UISelectionFeedbackGenerator",
     "UIGeometry", "UIAlertController", "UIAction", "UIMenu", "UIMenuElement", "UIImage",
