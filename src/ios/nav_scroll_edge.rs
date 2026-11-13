@@ -117,8 +117,8 @@ fn apply_system_bar_appearance(bar: &UINavigationBar) {
     bar.setBackgroundColor(Some(&objc2_ui_kit::UIColor::clearColor()));
     bar.setStandardAppearance(&appearance);
     bar.setCompactAppearance(Some(&appearance));
-    bar.setScrollEdgeAppearance(None);
-    bar.setCompactScrollEdgeAppearance(None);
+    bar.setScrollEdgeAppearance(Some(&appearance));
+    bar.setCompactScrollEdgeAppearance(Some(&appearance));
     bar.setTranslucent(true);
     bar.setTag(DIARY_BAR_STYLE_TAG);
 }
