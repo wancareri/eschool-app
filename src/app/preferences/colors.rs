@@ -53,11 +53,13 @@ pub fn apply_ios_tint(hex: u32) {
         let _: () = objc2::msg_send![&*tab_appearance, setStandardAppearance: &*tab_app];
         let _: () = objc2::msg_send![&*tab_appearance, setScrollEdgeAppearance: &*tab_app];
 
-        // Keep UIKit's native navigation-bar material (Liquid Glass on current iOS).
+        // Use a clear, edge-to-edge blur instead of UIKit's tinted default bar fill.
         let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
         let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![nav_appearance_class, new];
-        let _: () = objc2::msg_send![&*nav_app, configureWithDefaultBackground];
+        let _: () = objc2::msg_send![&*nav_app, configureWithTransparentBackground];
+        let _: () = objc2::msg_send![&*nav_app, setBackgroundEffect: Some(&*blur)];
+        let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*clear];
         let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
 
         // UINavigationBar.appearance()
@@ -68,6 +70,8 @@ pub fn apply_ios_tint(hex: u32) {
         let _: () = objc2::msg_send![&*nav_appearance, setScrollEdgeAppearance: &*nav_app];
         let _: () = objc2::msg_send![&*nav_appearance, setCompactAppearance: &*nav_app];
         let _: () = objc2::msg_send![&*nav_appearance, setCompactScrollEdgeAppearance: &*nav_app];
+        let empty_shadow = objc2_ui_kit::UIImage::new();
+        let _: () = objc2::msg_send![&*nav_appearance, setShadowImage: Some(&*empty_shadow)];
 
         // UISwitch.appearance().onTintColor — switch accent color
         let switch_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
@@ -152,13 +156,20 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
             let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
             let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
                 objc2::msg_send![nav_appearance_class, new];
-            let _: () = objc2::msg_send![&*nav_app, configureWithDefaultBackground];
+            let blur_class = objc2::class!(UIBlurEffect);
+            let nav_blur: objc2::rc::Retained<objc2::runtime::AnyObject> =
+                objc2::msg_send![blur_class, effectWithStyle: 6isize]; // SystemUltraThinMaterial
+            let _: () = objc2::msg_send![&*nav_app, configureWithTransparentBackground];
+            let _: () = objc2::msg_send![&*nav_app, setBackgroundEffect: Some(&*nav_blur)];
+            let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*clear];
             let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
 
             let _: () = objc2::msg_send![bar, setStandardAppearance: &*nav_app];
             let _: () = objc2::msg_send![bar, setScrollEdgeAppearance: &*nav_app];
             let _: () = objc2::msg_send![bar, setCompactAppearance: &*nav_app];
             let _: () = objc2::msg_send![bar, setCompactScrollEdgeAppearance: &*nav_app];
+            let empty_shadow = objc2_ui_kit::UIImage::new();
+            bar.setShadowImage(Some(&empty_shadow));
 
             // Give only the Diary title a directly attached rounded blur surface. No
             // border or extra shell separates the native title from its glass material.
@@ -175,7 +186,7 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
                 let height = label_size.height + 10.0;
                 let mtm = objc2::MainThreadMarker::new().expect("main thread");
                 let effect = UIBlurEffect::effectWithStyle(
-                    objc2_ui_kit::UIBlurEffectStyle::SystemThinMaterial,
+                    objc2_ui_kit::UIBlurEffectStyle::SystemUltraThinMaterial,
                     mtm,
                 );
                 let blur = UIVisualEffectView::initWithEffect(
