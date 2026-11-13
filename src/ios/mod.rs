@@ -18,6 +18,8 @@ pub mod pin;
 pub mod conn_status;
 #[cfg(feature = "uikit")]
 pub mod modal;
+#[cfg(feature = "uikit")]
+pub mod nav_glass;
 
 pub(crate) mod drag;
 pub(crate) mod viewport;
