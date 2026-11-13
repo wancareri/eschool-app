@@ -76,12 +76,6 @@ pub fn apply_ios_tint(hex: u32) {
         let _: () = objc2::msg_send![&*tab_appearance, setStandardAppearance: &*tab_app];
         let _: () = objc2::msg_send![&*tab_appearance, setScrollEdgeAppearance: &*tab_app];
 
-        // Set only the tint globally. UIKit owns the navigation-bar background so
-        // its native Liquid Glass and scroll-edge treatment remain intact.
-        let nav_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
-            objc2::msg_send![objc2::class!(UINavigationBar), appearance];
-        let _: () = objc2::msg_send![&*nav_appearance, setTintColor: &*color];
-
         // UISwitch.appearance().onTintColor — switch accent color
         let switch_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UISwitch), appearance];
@@ -165,23 +159,9 @@ unsafe fn retint_existing(
                 .topItem()
                 .and_then(|item| item.title())
                 .is_some_and(|title| title.to_string() == diary_title);
-            bar.setTintColor(Some(color));
-            if is_diary {
-                bar.setTranslucent(true);
-                bar.setBackgroundColor(Some(&clear));
-
-                let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
-                let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
-                    objc2::msg_send![nav_appearance_class, new];
-                let _: () = objc2::msg_send![&*nav_app, configureWithTransparentBackground];
-                let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*clear];
-                let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
-                let _: () = objc2::msg_send![bar, setStandardAppearance: &*nav_app];
-                let _: () = objc2::msg_send![bar, setScrollEdgeAppearance: &*nav_app];
-                let _: () = objc2::msg_send![bar, setCompactAppearance: &*nav_app];
-                let _: () = objc2::msg_send![bar, setCompactScrollEdgeAppearance: &*nav_app];
-                crate::ios::nav_glass::apply(bar, mtm);
-            } else {
+            // Leave the Diary navigation bar untouched: UIKit provides the
+            // transparent Liquid Glass bar and its native scroll-edge treatment.
+            if !is_diary {
                 bar.setTranslucent(false);
                 let bar_background = objc2_ui_kit::UIColor::systemBackgroundColor();
                 bar.setBackgroundColor(Some(&bar_background));
