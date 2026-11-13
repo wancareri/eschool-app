@@ -160,28 +160,19 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
             let _: () = objc2::msg_send![bar, setCompactAppearance: &*nav_app];
             let _: () = objc2::msg_send![bar, setCompactScrollEdgeAppearance: &*nav_app];
 
-            // Day renders page titles as native UILabel titleViews. Wrap only the Diary
-            // title in a small native material capsule; all other pages keep system chrome.
+            // Give only the Diary title a directly attached rounded blur surface. No
+            // border or extra shell separates the native title from its glass material.
             if let Some(item) = bar.topItem()
                 && let Some(title) = item.titleView()
                 && let Some(label) = title.downcast_ref::<objc2_ui_kit::UILabel>()
                 && label.text().is_some_and(|text| text.to_string() == crate::res::str::diary_title().format())
             {
                 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-                use objc2_ui_kit::{UIBlurEffect, UIVisualEffectView, UIView};
+                use objc2_ui_kit::{UIBlurEffect, UIVisualEffectView};
                 use objc2::MainThreadOnly;
-                let pill = UIView::new(objc2::MainThreadMarker::new().expect("main thread"));
                 let label_size = label.frame().size;
                 let width = label_size.width + 24.0;
                 let height = label_size.height + 10.0;
-                pill.setFrame(CGRect::new(CGPoint::ZERO, CGSize::new(width, height)));
-                pill.setClipsToBounds(true);
-                let layer = pill.layer();
-                layer.setCornerRadius((height / 2.0) as _);
-                let highlight = objc2_ui_kit::UIColor::colorWithWhite_alpha(1.0, 0.42);
-                let highlight_cg = highlight.CGColor();
-                layer.setBorderColor(Some(&highlight_cg));
-                layer.setBorderWidth(0.75);
                 let mtm = objc2::MainThreadMarker::new().expect("main thread");
                 let effect = UIBlurEffect::effectWithStyle(
                     objc2_ui_kit::UIBlurEffectStyle::SystemThinMaterial,
@@ -192,14 +183,15 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
                     Some(&effect),
                 );
                 blur.setFrame(CGRect::new(CGPoint::ZERO, CGSize::new(width, height)));
+                blur.setClipsToBounds(true);
+                blur.layer().setCornerRadius((height / 2.0) as _);
                 let content = blur.contentView();
                 label.setFrame(CGRect::new(
                     CGPoint::new(12.0, 5.0),
                     CGSize::new(label_size.width, label_size.height),
                 ));
                 content.addSubview(label);
-                pill.addSubview(&blur);
-                item.setTitleView(Some(&pill));
+                item.setTitleView(Some(&blur));
             }
         };
     } else if let Some(sw) = obj.downcast_ref::<objc2_ui_kit::UISwitch>() {
