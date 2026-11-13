@@ -6,8 +6,8 @@ use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_ui_kit::{
     NSDirectionalEdgeInsets, NSDirectionalRectEdge, UIAction, UIBlurEffect, UIBlurEffectStyle,
     UIButton, UIButtonConfiguration, UIButtonConfigurationCornerStyle, UILabel, UINavigationBar,
-    UINavigationBarAppearance, UINavigationController, UIScrollView, UIView, UIViewController,
-    UIVisualEffectView,
+    UINavigationBarAppearance, UINavigationController, UIGlassEffect, UIGlassEffectStyle,
+    UIScrollView, UIView, UIViewController, UIVisualEffectView,
 };
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, Ordering};
@@ -36,21 +36,26 @@ unsafe extern "C-unwind" fn diary_view_did_layout(controller: &UIViewController,
         unsafe { std::mem::transmute(ORIGINAL_VIEW_DID_LAYOUT.load(Ordering::Acquire)) };
     unsafe { original(controller, selector) };
 
-    let diary_title = crate::res::str::diary_title().format();
-    if !controller
-        .navigationItem()
-        .title()
-        .is_some_and(|title| title.to_string() == diary_title)
-    {
-        return;
-    }
     let nav_controller: Option<objc2::rc::Retained<UINavigationController>> =
         unsafe { objc2::msg_send![controller, navigationController] };
     let Some(nav_controller) = nav_controller else {
         return;
     };
     let bar = nav_controller.navigationBar();
-    install_title_button(controller);
+    let diary_title = crate::res::str::diary_title().format();
+    let item = controller.navigationItem();
+    let is_diary = item
+        .title()
+        .is_some_and(|title| title.to_string() == diary_title)
+        || item
+            .titleView()
+            .and_then(|view| view.downcast::<UILabel>().ok())
+            .and_then(|label| label.text())
+            .is_some_and(|title| title.to_string() == diary_title);
+    if !is_diary {
+        return;
+    }
+    install_title_button(controller, &bar);
     if bar.tag() == DIARY_BAR_STYLE_TAG {
         return;
     }
@@ -93,7 +98,7 @@ fn configure(view: &UIView, scroll: &UIScrollView) {
             if let Some(nav_controller) = nav_controller {
                 let bar: objc2::rc::Retained<UINavigationBar> = nav_controller.navigationBar();
                 apply_system_bar_appearance(&bar);
-                install_title_button(controller);
+                install_title_button(controller, &bar);
                 return;
             }
         }
@@ -116,11 +121,11 @@ fn apply_system_bar_appearance(bar: &UINavigationBar) {
 }
 
 /// Replace Day's non-interactive title label with a native glass button.
-fn install_title_button(controller: &UIViewController) {
+fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
-    let item = controller.navigationItem();
+    let Some(item) = bar.topItem() else { return };
     let Some(title_view) = item.titleView() else {
         return;
     };
@@ -148,15 +153,7 @@ fn install_title_button(controller: &UIViewController) {
     });
     let action = unsafe { UIAction::actionWithHandler(block2::RcBlock::as_ptr(&handler), mtm) };
 
-    let config_class = objc2::class!(UIButtonConfiguration);
-    let native_glass = config_class
-        .class_method(objc2::sel!(glassButtonConfiguration))
-        .is_some();
-    let configuration = if native_glass {
-        UIButtonConfiguration::glassButtonConfiguration(mtm)
-    } else {
-        UIButtonConfiguration::plainButtonConfiguration(mtm)
-    };
+    let configuration = UIButtonConfiguration::plainButtonConfiguration(mtm);
     configuration.setTitle(Some(&title));
     configuration.setBaseForegroundColor(label.textColor().as_deref());
     configuration.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
@@ -175,28 +172,24 @@ fn install_title_button(controller: &UIViewController) {
         CGSize::new(label_size.width + 44.0, height),
     ));
 
-    if !native_glass {
-        let effect = native_glass_fallback(mtm);
-        let background =
-            UIVisualEffectView::initWithEffect(UIVisualEffectView::alloc(mtm), Some(&effect));
-        background.setFrame(button.bounds());
-        background.setUserInteractionEnabled(false);
-        button.insertSubview_atIndex(&background, 0);
-        button.layer().setCornerRadius((height / 2.0) as _);
-        button.layer().setMasksToBounds(true);
-    }
+    let effect = native_glass_effect(mtm);
+    let background =
+        UIVisualEffectView::initWithEffect(UIVisualEffectView::alloc(mtm), Some(&effect));
+    background.setFrame(button.bounds());
+    background.setUserInteractionEnabled(false);
+    background.layer().setCornerRadius((height / 2.0) as _);
+    background.layer().setMasksToBounds(true);
+    button.insertSubview_atIndex(&background, 0);
     item.setTitleView(Some(&button));
 }
 
-fn native_glass_fallback(
+fn native_glass_effect(
     mtm: MainThreadMarker,
 ) -> objc2::rc::Retained<objc2_ui_kit::UIVisualEffect> {
-    if let Some(class) = objc2::runtime::AnyClass::get(c"UIGlassEffect") {
-        let effect: objc2::rc::Retained<objc2::runtime::AnyObject> =
-            unsafe { objc2::msg_send![class, effectWithStyle: 0isize] };
-        if let Ok(effect) = effect.downcast::<objc2_ui_kit::UIVisualEffect>() {
-            return effect;
-        }
+    if objc2::runtime::AnyClass::get(c"UIGlassEffect").is_some() {
+        let effect = UIGlassEffect::effectWithStyle(UIGlassEffectStyle::Regular, mtm);
+        effect.setInteractive(true);
+        return effect.into_super();
     }
     UIBlurEffect::effectWithStyle(UIBlurEffectStyle::SystemThinMaterial, mtm).into_super()
 }

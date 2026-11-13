@@ -61,12 +61,6 @@ pub fn render() -> impl Piece {
             ),
         ))
         .spacing(0.0)
-        .padding(Insets {
-            top: 8.0,
-            leading: 0.0,
-            bottom: 0.0,
-            trailing: 0.0,
-        })
         .grow(Dimension::Width),
     )
 }
