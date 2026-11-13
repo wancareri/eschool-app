@@ -179,20 +179,39 @@ fn apply_system_bar_appearance(bar: &UINavigationBar) {
 }
 
 fn install_bar_glass(bar: &UINavigationBar, mtm: MainThreadMarker) {
-    let bounds = bar.bounds();
+    let Some(title_view) = bar
+        .topItem()
+        .and_then(|item| item.titleView())
+        .filter(|view| view.tag() == DIARY_TITLE_BUTTON_TAG)
+    else {
+        return;
+    };
+    let title_frame = title_view.frame();
+    let bar_bounds = bar.bounds();
+    let x = (title_frame.origin.x - 12.0).max(8.0);
+    let y = (title_frame.origin.y - 6.0).max(0.0);
+    let right = bar_bounds.size.width - 8.0;
+    let height = title_frame.size.height + 12.0;
+    let frame = CGRect::new(
+        CGPoint::new(x, y),
+        CGSize::new((right - x).max(title_frame.size.width + 24.0), height),
+    );
     if let Some(existing) = bar
         .subviews()
         .iter()
         .find(|view| view.tag() == DIARY_BAR_GLASS_TAG)
     {
-        existing.setFrame(bounds);
+        existing.setFrame(frame);
+        existing.layer().setCornerRadius((height / 2.0) as _);
         return;
     }
     let effect = native_glass_effect(mtm);
     let glass = UIVisualEffectView::initWithEffect(UIVisualEffectView::alloc(mtm), Some(&effect));
     glass.setTag(DIARY_BAR_GLASS_TAG);
-    glass.setFrame(bounds);
+    glass.setFrame(frame);
     glass.setUserInteractionEnabled(false);
+    glass.layer().setCornerRadius((height / 2.0) as _);
+    glass.layer().setMasksToBounds(true);
     bar.insertSubview_atIndex(&glass, 0);
 }
 
@@ -258,6 +277,7 @@ fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
     ));
     crate::ios::nslog::nslog(&format!("[NavGlass] installed title glass: {}", title));
     item.setTitleView(Some(&button));
+    install_bar_glass(bar, mtm);
 }
 
 fn is_app_page_title(title: &str) -> bool {
