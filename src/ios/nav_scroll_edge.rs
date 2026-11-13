@@ -201,9 +201,9 @@ fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
     configuration.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
     configuration.setContentInsets(NSDirectionalEdgeInsets {
         top: 9.0,
-        leading: 22.0,
+        leading: 32.0,
         bottom: 9.0,
-        trailing: 22.0,
+        trailing: 32.0,
     });
     let button = UIButton::buttonWithConfiguration_primaryAction(&configuration, Some(&action));
     button.setTag(DIARY_TITLE_BUTTON_TAG);
@@ -211,7 +211,7 @@ fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
     let height = label_size.height + 18.0;
     button.setFrame(CGRect::new(
         CGPoint::ZERO,
-        CGSize::new(label_size.width + 44.0, height),
+        CGSize::new(label_size.width + 64.0, height),
     ));
 
     if !supports_clear_glass {
