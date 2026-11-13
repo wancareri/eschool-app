@@ -72,13 +72,19 @@ pub fn render() -> impl Piece {
 }
 
 fn diary_scroll(state: AppState, refreshing: Signal<bool>, content: impl Piece) -> impl Piece {
+    let scroll_view = scroll(
+        column((content, spacer().height(16.0)))
+            .spacing(0.0)
+            .grow(Dimension::Width),
+    );
+    #[cfg(feature = "uikit")]
+    let scroll_view = {
+        use day_uikit::UiKitExt;
+        scroll_view.uikit(crate::ios::nav_scroll_edge::bind_diary_scroll)
+    };
     pull_to_refresh(
         refreshing,
-        scroll(
-            column((content, spacer().height(16.0)))
-                .spacing(0.0)
-                .grow(Dimension::Width),
-        ),
+        scroll_view,
     )
     .on_refresh(move || {
         haptics::tick();

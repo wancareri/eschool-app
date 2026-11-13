@@ -68,8 +68,8 @@ objc2-core-graphics = { version = "0.3", optional = true, features = [] }
 objc2-quartz-core = { version = "0.3", optional = true, features = ["CALayer"] }
 dispatch2 = { version = "0.3", optional = true }
 objc2-ui-kit = { version = "0.3", optional = true, features = [
-    "UIApplication", "UIView", "UIWindow", "UIScreen", "UIViewController",
-    "UINavigationController", "UIKitCore", "block2",
+    "UIApplication", "UIView", "UIScrollView", "UIWindow", "UIScreen", "UIViewController",
+    "UINavigationController", "UINavigationBarAppearance", "UIBarAppearance", "UIKitCore", "block2",
     "UIColor", "UINavigationBar", "UITabBar", "UISwitch", "UIButton", "UIBarButtonItem",
     "UIVisualEffectView", "UIBlurEffect", "UIVisualEffect",
     "UIFeedbackGenerator", "UIImpactFeedbackGenerator", "UISelectionFeedbackGenerator",

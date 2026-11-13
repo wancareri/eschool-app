@@ -122,7 +122,7 @@ pub fn apply_ios_tint(hex: u32) {
     }
 }
 
-/// Recursively retint live UIKit classes and enforce liquid glass transparency.
+/// Recursively retint live UIKit controls while preserving native bar effects.
 #[cfg(feature = "uikit")]
 unsafe fn retint_existing(
     view: &objc2_ui_kit::UIView,
