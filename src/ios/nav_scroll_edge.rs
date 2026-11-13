@@ -57,9 +57,33 @@ unsafe extern "C-unwind" fn diary_view_did_layout(controller: &UIViewController,
     }
     install_title_button(controller, &bar);
     if bar.tag() == DIARY_BAR_STYLE_TAG {
+        schedule_title_button_retry(controller);
         return;
     }
     apply_system_bar_appearance(&bar);
+    schedule_title_button_retry(controller);
+}
+
+fn schedule_title_button_retry(controller: &UIViewController) {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let weak = MainThreadBound::new(Weak::new(controller), mtm);
+    DispatchQueue::main().exec_async(move || {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Some(controller) = weak.get(mtm).load() else {
+            return;
+        };
+        let Some(nav_controller): Option<objc2::rc::Retained<UINavigationController>> =
+            (unsafe { objc2::msg_send![&*controller, navigationController] })
+        else {
+            return;
+        };
+        let bar = nav_controller.navigationBar();
+        install_title_button(&controller, &bar);
+    });
 }
 
 /// Register the Diary scroll view after Day has mounted it in its page controller.
