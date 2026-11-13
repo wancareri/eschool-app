@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 const DIARY_BAR_STYLE_TAG: isize = 8_417_265;
 const DIARY_TITLE_BUTTON_TAG: isize = 8_417_268;
 static ORIGINAL_VIEW_DID_LAYOUT: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
+static ORIGINAL_NAV_BAR_LAYOUT: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 
 /// Reapply the system appearance after Day configures its page controller's bar.
 pub fn install_diary_navigation_hook() {
@@ -28,7 +29,37 @@ pub fn install_diary_navigation_hook() {
         unsafe {
             method.set_implementation(std::mem::transmute(diary_view_did_layout as *const ()));
         }
+        let nav_class = objc2::class!(UINavigationBar);
+        let Some(nav_method) = nav_class.instance_method(objc2::sel!(layoutSubviews)) else {
+            return;
+        };
+        ORIGINAL_NAV_BAR_LAYOUT.store(nav_method.implementation() as *mut (), Ordering::Release);
+        unsafe {
+            nav_method.set_implementation(std::mem::transmute(nav_bar_layout as *const ()));
+        }
     });
+}
+
+unsafe extern "C-unwind" fn nav_bar_layout(bar: &UINavigationBar, selector: Sel) {
+    let original: unsafe extern "C-unwind" fn(&UINavigationBar, Sel) =
+        unsafe { std::mem::transmute(ORIGINAL_NAV_BAR_LAYOUT.load(Ordering::Acquire)) };
+    unsafe { original(bar, selector) };
+
+    let mut responder = bar.nextResponder();
+    while let Some(current) = responder {
+        if let Some(nav_controller) = current.downcast_ref::<UINavigationController>() {
+            let Some(controller) = nav_controller.topViewController() else {
+                return;
+            };
+            if is_supported_controller(&controller) {
+                apply_system_bar_appearance(bar);
+                install_title_button(&controller, bar);
+                schedule_title_button_retry(&controller);
+            }
+            return;
+        }
+        responder = current.nextResponder();
+    }
 }
 
 unsafe extern "C-unwind" fn diary_view_did_layout(controller: &UIViewController, selector: Sel) {
@@ -42,17 +73,7 @@ unsafe extern "C-unwind" fn diary_view_did_layout(controller: &UIViewController,
         return;
     };
     let bar = nav_controller.navigationBar();
-    let item = controller.navigationItem();
-    let is_app_page = item.title().is_some_and(|title| is_app_page_title(&title.to_string()))
-        || item
-            .titleView()
-            .is_some_and(|view| view.tag() == DIARY_TITLE_BUTTON_TAG)
-        || item
-            .titleView()
-            .and_then(|view| view.downcast::<UILabel>().ok())
-            .and_then(|label| label.text())
-            .is_some_and(|title| is_app_page_title(&title.to_string()));
-    if !is_app_page {
+    if !is_supported_controller(controller) {
         return;
     }
     install_title_button(controller, &bar);
@@ -232,6 +253,19 @@ fn is_app_page_title(title: &str) -> bool {
         || title == crate::res::str::schedule_title().format()
         || title == crate::res::str::teachers_title().format()
         || title == crate::res::str::settings_title().format()
+}
+
+fn is_supported_controller(controller: &UIViewController) -> bool {
+    let item = controller.navigationItem();
+    item.title()
+        .is_some_and(|title| is_app_page_title(&title.to_string()))
+        || item.titleView().is_some_and(|view| {
+            view.tag() == DIARY_TITLE_BUTTON_TAG
+                || view
+                    .downcast_ref::<UILabel>()
+                    .and_then(|label| label.text())
+                    .is_some_and(|title| is_app_page_title(&title.to_string()))
+        })
 }
 
 fn native_glass_effect(mtm: MainThreadMarker) -> objc2::rc::Retained<objc2_ui_kit::UIVisualEffect> {
