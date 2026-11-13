@@ -36,6 +36,8 @@ pub fn root() -> impl Piece {
     #[cfg(feature = "uikit")]
     crate::ios::ios_nav::ios_impl::install_auth_menu_icons();
     #[cfg(feature = "uikit")]
+    crate::ios::nav_scroll_edge::install_diary_navigation_hook();
+    #[cfg(feature = "uikit")]
     crate::ios::modal::install_presentation_hook();
     crate::ios::keyboard::init();
     crate::ios::layout_diag::init();
