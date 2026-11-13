@@ -65,6 +65,10 @@ unsafe extern "C-unwind" fn diary_view_did_layout(controller: &UIViewController,
 }
 
 fn schedule_title_button_retry(controller: &UIViewController) {
+    schedule_title_button_retry_with_remaining(controller, 3);
+}
+
+fn schedule_title_button_retry_with_remaining(controller: &UIViewController, remaining: u8) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
@@ -83,6 +87,9 @@ fn schedule_title_button_retry(controller: &UIViewController) {
         };
         let bar = nav_controller.navigationBar();
         install_title_button(&controller, &bar);
+        if remaining > 0 {
+            schedule_title_button_retry_with_remaining(&controller, remaining - 1);
+        }
     });
 }
 
@@ -137,9 +144,7 @@ fn apply_system_bar_appearance(bar: &UINavigationBar) {
     let appearance = UINavigationBarAppearance::new(mtm);
     appearance.configureWithTransparentBackground();
     let clear = objc2_ui_kit::UIColor::clearColor();
-    let blur = UIBlurEffect::effectWithStyle(UIBlurEffectStyle::SystemUltraThinMaterial, mtm);
     appearance.setBackgroundColor(Some(&clear));
-    appearance.setBackgroundEffect(Some(&blur));
     appearance.setShadowColor(Some(&clear));
     bar.setBackgroundColor(Some(&clear));
     bar.setStandardAppearance(&appearance);
