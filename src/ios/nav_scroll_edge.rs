@@ -192,8 +192,12 @@ fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
     let title = item
         .title()
         .or_else(|| label.and_then(|label| label.text()));
-    let Some(title) = title else { return };
+    let Some(title) = title else {
+        crate::ios::nslog::nslog("[NavGlass] title unavailable during install");
+        return;
+    };
     if !is_app_page_title(&title.to_string()) {
+        crate::ios::nslog::nslog(&format!("[NavGlass] unsupported title: {}", title));
         return;
     }
 
@@ -224,21 +228,22 @@ fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
     }
     configuration.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
     configuration.setContentInsets(NSDirectionalEdgeInsets {
-        top: 9.0,
-        leading: 32.0,
-        bottom: 9.0,
-        trailing: 32.0,
+        top: 14.0,
+        leading: 40.0,
+        bottom: 14.0,
+        trailing: 40.0,
     });
     let button = UIButton::buttonWithConfiguration_primaryAction(&configuration, Some(&action));
     button.setTag(DIARY_TITLE_BUTTON_TAG);
     let label_size = label
         .map(|label| label.frame().size)
         .unwrap_or_else(|| CGSize::new(title.to_string().chars().count() as f64 * 9.0, 20.0));
-    let height = label_size.height + 18.0;
+    let height = label_size.height + 28.0;
     button.setFrame(CGRect::new(
         CGPoint::ZERO,
-        CGSize::new(label_size.width + 64.0, height),
+        CGSize::new(label_size.width + 80.0, height),
     ));
+    crate::ios::nslog::nslog(&format!("[NavGlass] installed title glass: {}", title));
 
     if !supports_clear_glass {
         let effect = native_glass_effect(mtm);
