@@ -5,9 +5,9 @@ use objc2::{MainThreadMarker, MainThreadOnly, rc::Weak, runtime::Sel};
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_ui_kit::{
     NSDirectionalEdgeInsets, NSDirectionalRectEdge, UIAction, UIBlurEffect, UIBlurEffectStyle,
-    UIButton, UIButtonConfiguration, UIButtonConfigurationCornerStyle, UILabel, UINavigationBar,
-    UINavigationBarAppearance, UINavigationController, UIGlassEffect, UIGlassEffectStyle,
-    UIScrollView, UIView, UIViewController, UIVisualEffectView,
+    UIButton, UIButtonConfiguration, UIButtonConfigurationCornerStyle, UIGlassEffect,
+    UIGlassEffectStyle, UILabel, UINavigationBar, UINavigationBarAppearance,
+    UINavigationController, UIScrollView, UIView, UIViewController, UIVisualEffectView,
 };
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, Ordering};
@@ -111,7 +111,8 @@ fn apply_system_bar_appearance(bar: &UINavigationBar) {
         return;
     };
     let appearance = UINavigationBarAppearance::new(mtm);
-    appearance.configureWithDefaultBackground();
+    appearance.configureWithTransparentBackground();
+    appearance.setShadowColor(None);
     bar.setStandardAppearance(&appearance);
     bar.setCompactAppearance(Some(&appearance));
     bar.setScrollEdgeAppearance(None);
@@ -153,7 +154,14 @@ fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
     });
     let action = unsafe { UIAction::actionWithHandler(block2::RcBlock::as_ptr(&handler), mtm) };
 
-    let configuration = UIButtonConfiguration::plainButtonConfiguration(mtm);
+    let supports_clear_glass = objc2::class!(UIButtonConfiguration)
+        .class_method(objc2::sel!(clearGlassButtonConfiguration))
+        .is_some();
+    let configuration = if supports_clear_glass {
+        UIButtonConfiguration::clearGlassButtonConfiguration(mtm)
+    } else {
+        UIButtonConfiguration::plainButtonConfiguration(mtm)
+    };
     configuration.setTitle(Some(&title));
     configuration.setBaseForegroundColor(label.textColor().as_deref());
     configuration.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
@@ -172,20 +180,20 @@ fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
         CGSize::new(label_size.width + 44.0, height),
     ));
 
-    let effect = native_glass_effect(mtm);
-    let background =
-        UIVisualEffectView::initWithEffect(UIVisualEffectView::alloc(mtm), Some(&effect));
-    background.setFrame(button.bounds());
-    background.setUserInteractionEnabled(false);
-    background.layer().setCornerRadius((height / 2.0) as _);
-    background.layer().setMasksToBounds(true);
-    button.insertSubview_atIndex(&background, 0);
+    if !supports_clear_glass {
+        let effect = native_glass_effect(mtm);
+        let background =
+            UIVisualEffectView::initWithEffect(UIVisualEffectView::alloc(mtm), Some(&effect));
+        background.setFrame(button.bounds());
+        background.setUserInteractionEnabled(false);
+        background.layer().setCornerRadius((height / 2.0) as _);
+        background.layer().setMasksToBounds(true);
+        button.insertSubview_atIndex(&background, 0);
+    }
     item.setTitleView(Some(&button));
 }
 
-fn native_glass_effect(
-    mtm: MainThreadMarker,
-) -> objc2::rc::Retained<objc2_ui_kit::UIVisualEffect> {
+fn native_glass_effect(mtm: MainThreadMarker) -> objc2::rc::Retained<objc2_ui_kit::UIVisualEffect> {
     if objc2::runtime::AnyClass::get(c"UIGlassEffect").is_some() {
         let effect = UIGlassEffect::effectWithStyle(UIGlassEffectStyle::Regular, mtm);
         effect.setInteractive(true);

@@ -76,17 +76,14 @@ fn diary_scroll(state: AppState, refreshing: Signal<bool>, content: impl Piece) 
         use day_uikit::UiKitExt;
         scroll_view.uikit(crate::ios::nav_scroll_edge::bind_diary_scroll)
     };
-    pull_to_refresh(
-        refreshing,
-        scroll_view,
-    )
-    .on_refresh(move || {
-        haptics::tick();
-        if state.is_authenticated.get() {
-            crate::pages::diary::data::load_all(state);
-        }
-    })
-    .grow(Dimension::Both)
+    pull_to_refresh(refreshing, scroll_view)
+        .on_refresh(move || {
+            haptics::tick();
+            if state.is_authenticated.get() {
+                crate::pages::diary::data::load_all(state);
+            }
+        })
+        .grow(Dimension::Both)
 }
 
 #[path = "pager.rs"]
