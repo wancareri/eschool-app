@@ -166,7 +166,22 @@ unsafe fn retint_existing(
                 .and_then(|item| item.title())
                 .is_some_and(|title| title.to_string() == diary_title);
             bar.setTintColor(Some(color));
-            if !is_diary {
+            if is_diary {
+                bar.setTranslucent(true);
+                bar.setBackgroundColor(Some(&clear));
+
+                let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
+                let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
+                    objc2::msg_send![nav_appearance_class, new];
+                let _: () = objc2::msg_send![&*nav_app, configureWithTransparentBackground];
+                let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*clear];
+                let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
+                let _: () = objc2::msg_send![bar, setStandardAppearance: &*nav_app];
+                let _: () = objc2::msg_send![bar, setScrollEdgeAppearance: &*nav_app];
+                let _: () = objc2::msg_send![bar, setCompactAppearance: &*nav_app];
+                let _: () = objc2::msg_send![bar, setCompactScrollEdgeAppearance: &*nav_app];
+                crate::ios::nav_glass::apply(bar, mtm);
+            } else {
                 bar.setTranslucent(false);
                 let bar_background = objc2_ui_kit::UIColor::systemBackgroundColor();
                 bar.setBackgroundColor(Some(&bar_background));
@@ -183,15 +198,15 @@ unsafe fn retint_existing(
                 let _: () = objc2::msg_send![bar, setCompactScrollEdgeAppearance: &*nav_app];
             }
 
-            // Give only the Diary title a directly attached rounded blur surface. No
-            // border or extra shell separates the native title from its glass material.
+            // Copy Day's title label into the capsule instead of reparenting the
+            // toolkit-owned label, which otherwise disappears during reconciliation.
             if let Some(item) = bar.topItem()
                 && let Some(title) = item.titleView()
                 && let Some(label) = title.downcast_ref::<objc2_ui_kit::UILabel>()
                 && label.text().is_some_and(|text| text.to_string() == crate::res::str::diary_title().format())
             {
                 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-                use objc2_ui_kit::UIVisualEffectView;
+                use objc2_ui_kit::{UILabel, UIVisualEffectView};
                 use objc2::MainThreadOnly;
                 let label_size = label.frame().size;
                 let width = label_size.width + 24.0;
@@ -202,15 +217,21 @@ unsafe fn retint_existing(
                     UIVisualEffectView::alloc(mtm),
                     Some(&effect),
                 );
+                blur.setTag(8_417_264);
                 blur.setFrame(CGRect::new(CGPoint::ZERO, CGSize::new(width, height)));
                 blur.setClipsToBounds(true);
                 blur.layer().setCornerRadius((height / 2.0) as _);
                 let content = blur.contentView();
-                label.setFrame(CGRect::new(
+                let pill_label = UILabel::new(mtm);
+                pill_label.setText(label.text().as_deref());
+                pill_label.setFont(label.font().as_deref());
+                pill_label.setTextColor(label.textColor().as_deref());
+                pill_label.setNumberOfLines(1);
+                pill_label.setFrame(CGRect::new(
                     CGPoint::new(12.0, 5.0),
                     CGSize::new(label_size.width, label_size.height),
                 ));
-                content.addSubview(label);
+                content.addSubview(&pill_label);
                 item.setTitleView(Some(&blur));
             }
         };
