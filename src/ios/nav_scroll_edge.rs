@@ -1,14 +1,20 @@
 //! Connect the Diary's nested UIScrollView to UIKit's native navigation edge effect.
 
 use dispatch2::{DispatchQueue, MainThreadBound};
-use objc2::{MainThreadMarker, rc::Weak, runtime::Sel};
+use objc2::{MainThreadMarker, MainThreadOnly, rc::Weak, runtime::Sel};
+use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+use objc2_core_graphics::CGColor;
+use objc2_foundation::NSArray;
+use objc2_quartz_core::CAGradientLayer;
 use objc2_ui_kit::{
-    NSDirectionalRectEdge, UINavigationBar, UINavigationBarAppearance, UINavigationController,
-    UIScrollView, UIView, UIViewController,
+    NSDirectionalRectEdge, UIColor, UIBlurEffect, UIBlurEffectStyle, UINavigationBar,
+    UINavigationBarAppearance, UINavigationController, UIVisualEffectView, UIScrollView, UIView,
+    UIViewController, UIViewAutoresizing,
 };
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 const DIARY_BAR_STYLE_TAG: isize = 8_417_265;
+const UNDER_BAR_BLUR_TAG: isize = 8_417_267;
 static ORIGINAL_VIEW_DID_LAYOUT: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 
 /// Reapply the system appearance after Day configures its page controller's bar.
@@ -50,9 +56,11 @@ unsafe extern "C-unwind" fn diary_view_did_layout(controller: &UIViewController,
     };
     let bar = nav_controller.navigationBar();
     if bar.tag() == DIARY_BAR_STYLE_TAG {
+        apply_under_bar_blur(controller, &bar);
         return;
     }
     apply_system_bar_appearance(&bar);
+    apply_under_bar_blur(controller, &bar);
 }
 
 /// Register the Diary scroll view after Day has mounted it in its page controller.
@@ -92,6 +100,7 @@ fn configure(view: &UIView, scroll: &UIScrollView) {
             if let Some(nav_controller) = nav_controller {
                 let bar: objc2::rc::Retained<UINavigationBar> = nav_controller.navigationBar();
                 apply_system_bar_appearance(&bar);
+                apply_under_bar_blur(controller, &bar);
                 return;
             }
         }
@@ -111,4 +120,64 @@ fn apply_system_bar_appearance(bar: &UINavigationBar) {
     bar.setCompactScrollEdgeAppearance(None);
     bar.setTranslucent(true);
     bar.setTag(DIARY_BAR_STYLE_TAG);
+}
+
+/// Extend the native blur below the bar and fade it into the scrolling content.
+fn apply_under_bar_blur(controller: &UIViewController, bar: &UINavigationBar) {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let Some(root) = controller.viewIfLoaded() else {
+        return;
+    };
+    let bar_rect = bar.convertRect_toView(bar.bounds(), Some(&root));
+    let start_y = bar_rect.origin.y + bar_rect.size.height - 8.0;
+    let height = 72.0;
+
+    let blur = root
+        .subviews()
+        .iter()
+        .find(|view| view.tag() == UNDER_BAR_BLUR_TAG)
+        .and_then(|view| view.downcast::<UIVisualEffectView>().ok())
+        .unwrap_or_else(|| {
+            let effect = UIBlurEffect::effectWithStyle(UIBlurEffectStyle::SystemUltraThinMaterial, mtm);
+            let blur = UIVisualEffectView::initWithEffect(UIVisualEffectView::alloc(mtm), Some(&effect));
+            blur.setTag(UNDER_BAR_BLUR_TAG);
+            blur.setUserInteractionEnabled(false);
+            root.addSubview(&blur);
+
+            let mask = CAGradientLayer::layer();
+            let white = UIColor::whiteColor();
+            let clear = UIColor::clearColor();
+            let white_cg = unsafe { white.CGColor() };
+            let clear_cg = unsafe { clear.CGColor() };
+            // CAGradientLayer's `colors` NSArray stores Core Graphics objects as ObjC ids.
+            let white_obj = unsafe {
+                &*((&*white_cg as *const CGColor).cast::<objc2::runtime::AnyObject>())
+            };
+            let clear_obj = unsafe {
+                &*((&*clear_cg as *const CGColor).cast::<objc2::runtime::AnyObject>())
+            };
+            let colors = NSArray::from_slice(&[white_obj, white_obj, clear_obj]);
+            unsafe { mask.setColors(Some(&colors)) };
+            let locations = NSArray::from_retained_slice(&[
+                objc2_foundation::NSNumber::new_f64(0.0),
+                objc2_foundation::NSNumber::new_f64(0.34),
+                objc2_foundation::NSNumber::new_f64(1.0),
+            ]);
+            mask.setLocations(Some(&locations));
+            mask.setStartPoint(CGPoint::new(0.5, 0.0));
+            mask.setEndPoint(CGPoint::new(0.5, 1.0));
+            unsafe { blur.layer().setMask(Some(&mask)) };
+            blur
+        });
+
+    blur.setFrame(CGRect::new(
+        CGPoint::new(0.0, start_y),
+        CGSize::new(root.bounds().size.width, height),
+    ));
+    blur.setAutoresizingMask(UIViewAutoresizing::FlexibleWidth);
+    if let Some(mask) = blur.layer().mask() {
+        mask.setFrame(CGRect::new(CGPoint::ZERO, CGSize::new(root.bounds().size.width, height)));
+    }
 }

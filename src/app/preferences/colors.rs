@@ -189,8 +189,8 @@ unsafe fn retint_existing(
                 use objc2_ui_kit::{UILabel, UIVisualEffectView};
                 use objc2::MainThreadOnly;
                 let label_size = label.frame().size;
-                let width = label_size.width + 24.0;
-                let height = label_size.height + 10.0;
+                let width = label_size.width + 44.0;
+                let height = label_size.height + 18.0;
                 let mtm = objc2::MainThreadMarker::new().expect("main thread");
                 let effect = clear_glass_effect(mtm);
                 let blur = UIVisualEffectView::initWithEffect(
@@ -208,7 +208,7 @@ unsafe fn retint_existing(
                 pill_label.setTextColor(label.textColor().as_deref());
                 pill_label.setNumberOfLines(1);
                 pill_label.setFrame(CGRect::new(
-                    CGPoint::new(12.0, 5.0),
+                    CGPoint::new(22.0, 9.0),
                     CGSize::new(label_size.width, label_size.height),
                 ));
                 content.addSubview(&pill_label);
