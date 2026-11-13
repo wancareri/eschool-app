@@ -51,7 +51,7 @@ unsafe extern "C-unwind" fn nav_bar_layout(bar: &UINavigationBar, selector: Sel)
             let Some(controller) = nav_controller.topViewController() else {
                 return;
             };
-            if is_supported_controller(&controller) {
+            if is_supported_item(bar.topItem().as_deref()) {
                 apply_system_bar_appearance(bar);
                 install_title_button(&controller, bar);
                 schedule_title_button_retry(&controller);
@@ -182,16 +182,17 @@ fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
         return;
     };
     let Some(item) = bar.topItem() else { return };
-    let Some(title_view) = item.titleView() else {
-        return;
-    };
-    if title_view.tag() == DIARY_TITLE_BUTTON_TAG {
+    let title_view = item.titleView();
+    if title_view.as_ref().is_some_and(|view| view.tag() == DIARY_TITLE_BUTTON_TAG) {
         return;
     }
-    let Some(label) = title_view.downcast_ref::<UILabel>() else {
-        return;
-    };
-    let Some(title) = label.text() else { return };
+    let label = title_view
+        .as_ref()
+        .and_then(|view| view.downcast_ref::<UILabel>());
+    let title = item
+        .title()
+        .or_else(|| label.and_then(|label| label.text()));
+    let Some(title) = title else { return };
     if !is_app_page_title(&title.to_string()) {
         return;
     }
@@ -218,7 +219,9 @@ fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
         UIButtonConfiguration::plainButtonConfiguration(mtm)
     };
     configuration.setTitle(Some(&title));
-    configuration.setBaseForegroundColor(label.textColor().as_deref());
+    if let Some(label) = label {
+        configuration.setBaseForegroundColor(label.textColor().as_deref());
+    }
     configuration.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
     configuration.setContentInsets(NSDirectionalEdgeInsets {
         top: 9.0,
@@ -228,7 +231,9 @@ fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
     });
     let button = UIButton::buttonWithConfiguration_primaryAction(&configuration, Some(&action));
     button.setTag(DIARY_TITLE_BUTTON_TAG);
-    let label_size = label.frame().size;
+    let label_size = label
+        .map(|label| label.frame().size)
+        .unwrap_or_else(|| CGSize::new(title.to_string().chars().count() as f64 * 9.0, 20.0));
     let height = label_size.height + 18.0;
     button.setFrame(CGRect::new(
         CGPoint::ZERO,
@@ -256,7 +261,11 @@ fn is_app_page_title(title: &str) -> bool {
 }
 
 fn is_supported_controller(controller: &UIViewController) -> bool {
-    let item = controller.navigationItem();
+    is_supported_item(Some(&controller.navigationItem()))
+}
+
+fn is_supported_item(item: Option<&objc2_ui_kit::UINavigationItem>) -> bool {
+    let Some(item) = item else { return false };
     item.title()
         .is_some_and(|title| is_app_page_title(&title.to_string()))
         || item.titleView().is_some_and(|view| {
