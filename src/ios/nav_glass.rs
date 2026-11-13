@@ -2,7 +2,7 @@
 
 use objc2::runtime::AnyObject;
 use objc2::{MainThreadMarker, MainThreadOnly};
-use objc2_core_foundation::CGPoint;
+use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_core_graphics::CGColor;
 use objc2_foundation::NSArray;
 use objc2_quartz_core::{CAAutoresizingMask, CAGradientLayer};
@@ -30,12 +30,20 @@ pub fn apply(bar: &UINavigationBar, effect: &UIVisualEffect, mtm: MainThreadMark
             view
         });
 
-    let bounds = bar.bounds();
-    view.setFrame(bounds);
+    // Let the blur overlap the beginning of the page. The gradient reaches zero
+    // below the bar, so there is no rectangular material edge at the content seam.
+    let bar_bounds = bar.bounds();
+    let effect_height = bar_bounds.size.height + 100.0;
+    let effect_frame = CGRect::new(
+        CGPoint::ZERO,
+        CGSize::new(bar_bounds.size.width, effect_height),
+    );
+    bar.setClipsToBounds(false);
+    view.setFrame(effect_frame);
     bar.sendSubviewToBack(&view);
 
     let gradient = CAGradientLayer::new();
-    gradient.setFrame(bounds);
+    gradient.setFrame(view.bounds());
     gradient.setAutoresizingMask(
         CAAutoresizingMask::LayerWidthSizable | CAAutoresizingMask::LayerHeightSizable,
     );
@@ -43,7 +51,7 @@ pub fn apply(bar: &UINavigationBar, effect: &UIVisualEffect, mtm: MainThreadMark
     gradient.setEndPoint(CGPoint::new(0.5, 1.0));
 
     // CAGradientLayer consumes CGColor objects in NSArray form.
-    let top = unsafe { UIColor::colorWithWhite_alpha(1.0, 0.48).CGColor() };
+    let top = unsafe { UIColor::colorWithWhite_alpha(1.0, 0.34).CGColor() };
     let bottom = unsafe { UIColor::colorWithWhite_alpha(1.0, 0.0).CGColor() };
     let mut color_objects = [
         unsafe { NonNull::new_unchecked((&*top as *const CGColor).cast_mut().cast::<AnyObject>()) },
