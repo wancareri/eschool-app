@@ -45,7 +45,6 @@ pub fn apply_ios_tint(hex: u32) {
     let Some(mtm) = objc2::MainThreadMarker::new() else {
         return;
     };
-    let nav_glass = clear_glass_effect(mtm);
     let r = ((hex >> 16) & 0xFF) as f64 / 255.0;
     let g = ((hex >> 8) & 0xFF) as f64 / 255.0;
     let b = (hex & 0xFF) as f64 / 255.0;
@@ -77,22 +76,11 @@ pub fn apply_ios_tint(hex: u32) {
         let _: () = objc2::msg_send![&*tab_appearance, setStandardAppearance: &*tab_app];
         let _: () = objc2::msg_send![&*tab_appearance, setScrollEdgeAppearance: &*tab_app];
 
-        // Keep the standard appearance for all pages; the Diary's live bar receives its
-        // dedicated gradient glass backdrop below.
-        let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
-        let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
-            objc2::msg_send![nav_appearance_class, new];
-        let _: () = objc2::msg_send![&*nav_app, configureWithOpaqueBackground];
-        let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*objc2_ui_kit::UIColor::systemBackgroundColor()];
-
-        // UINavigationBar.appearance()
+        // Set only the tint globally. UIKit owns the navigation-bar background so
+        // its native Liquid Glass and scroll-edge treatment remain intact.
         let nav_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UINavigationBar), appearance];
         let _: () = objc2::msg_send![&*nav_appearance, setTintColor: &*color];
-        let _: () = objc2::msg_send![&*nav_appearance, setStandardAppearance: &*nav_app];
-        let _: () = objc2::msg_send![&*nav_appearance, setScrollEdgeAppearance: &*nav_app];
-        let _: () = objc2::msg_send![&*nav_appearance, setCompactAppearance: &*nav_app];
-        let _: () = objc2::msg_send![&*nav_appearance, setCompactScrollEdgeAppearance: &*nav_app];
 
         // UISwitch.appearance().onTintColor — switch accent color
         let switch_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
@@ -116,7 +104,7 @@ pub fn apply_ios_tint(hex: u32) {
                     for win in win_arr.iter() {
                         let _: () = objc2::msg_send![&*win, setTintColor: &*color];
                         if let Some(view) = win.downcast_ref::<objc2_ui_kit::UIView>() {
-                            retint_existing(view, &color, &nav_glass, mtm);
+                            retint_existing(view, &color, mtm);
                         }
                     }
                 }
@@ -129,13 +117,13 @@ pub fn apply_ios_tint(hex: u32) {
             for win in win_arr.iter() {
                 let _: () = objc2::msg_send![&*win, setTintColor: &*color];
                 if let Some(view) = win.downcast_ref::<objc2_ui_kit::UIView>() {
-                    retint_existing(view, &color, &nav_glass, mtm);
+                    retint_existing(view, &color, mtm);
                 }
             }
         }
         #[allow(deprecated)]
         if let Some(win) = objc2_ui_kit::UIApplication::sharedApplication(mtm).keyWindow() {
-            retint_existing(&win, &color, &nav_glass, mtm);
+            retint_existing(&win, &color, mtm);
         }
     }
 }
@@ -145,7 +133,6 @@ pub fn apply_ios_tint(hex: u32) {
 unsafe fn retint_existing(
     view: &objc2_ui_kit::UIView,
     color: &objc2_ui_kit::UIColor,
-    nav_glass: &objc2_ui_kit::UIVisualEffect,
     mtm: objc2::MainThreadMarker,
 ) {
     let clear = objc2_ui_kit::UIColor::clearColor();
@@ -179,34 +166,21 @@ unsafe fn retint_existing(
                 .and_then(|item| item.title())
                 .is_some_and(|title| title.to_string() == diary_title);
             bar.setTintColor(Some(color));
-            bar.setTranslucent(is_diary);
-            let bar_background = if is_diary {
-                clear.clone()
-            } else {
-                objc2_ui_kit::UIColor::systemBackgroundColor()
-            };
-            bar.setBackgroundColor(Some(&bar_background));
+            if !is_diary {
+                bar.setTranslucent(false);
+                let bar_background = objc2_ui_kit::UIColor::systemBackgroundColor();
+                bar.setBackgroundColor(Some(&bar_background));
 
-            let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
-            let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
-                objc2::msg_send![nav_appearance_class, new];
-            if is_diary {
-                let _: () = objc2::msg_send![&*nav_app, configureWithTransparentBackground];
-                let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*clear];
-                let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
-            } else {
+                let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
+                let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
+                    objc2::msg_send![nav_appearance_class, new];
                 let _: () = objc2::msg_send![&*nav_app, configureWithOpaqueBackground];
                 let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*bar_background];
-            }
 
-            let _: () = objc2::msg_send![bar, setStandardAppearance: &*nav_app];
-            let _: () = objc2::msg_send![bar, setScrollEdgeAppearance: &*nav_app];
-            let _: () = objc2::msg_send![bar, setCompactAppearance: &*nav_app];
-            let _: () = objc2::msg_send![bar, setCompactScrollEdgeAppearance: &*nav_app];
-            if is_diary {
-                let empty_shadow = objc2_ui_kit::UIImage::new();
-                bar.setShadowImage(Some(&empty_shadow));
-                crate::ios::nav_glass::apply(bar, nav_glass, mtm);
+                let _: () = objc2::msg_send![bar, setStandardAppearance: &*nav_app];
+                let _: () = objc2::msg_send![bar, setScrollEdgeAppearance: &*nav_app];
+                let _: () = objc2::msg_send![bar, setCompactAppearance: &*nav_app];
+                let _: () = objc2::msg_send![bar, setCompactScrollEdgeAppearance: &*nav_app];
             }
 
             // Give only the Diary title a directly attached rounded blur surface. No
@@ -263,7 +237,7 @@ unsafe fn retint_existing(
     }
 
     for sub in view.subviews().iter() {
-        unsafe { retint_existing(&sub, color, nav_glass, mtm) };
+        unsafe { retint_existing(&sub, color, mtm) };
     }
 }
 
