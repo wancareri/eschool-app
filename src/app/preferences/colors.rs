@@ -4,6 +4,26 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// Global accent color — updated atomically when user picks a new color.
 static ACCENT_HEX: AtomicU32 = AtomicU32::new(0x3B82F6);
 
+/// Prefer iOS 26's clear Liquid Glass. Older UIKit versions fall back to
+/// ultra-thin material because UIGlassEffect is not available there.
+#[cfg(feature = "uikit")]
+fn clear_glass_effect(mtm: objc2::MainThreadMarker) -> objc2::rc::Retained<objc2_ui_kit::UIVisualEffect> {
+    if let Some(class) = objc2::runtime::AnyClass::get(c"UIGlassEffect") {
+        let effect: objc2::rc::Retained<objc2::runtime::AnyObject> = unsafe {
+            objc2::msg_send![class, effectWithStyle: 1isize] // UIGlassEffectStyleClear
+        };
+        if let Ok(effect) = effect.downcast::<objc2_ui_kit::UIVisualEffect>() {
+            return effect;
+        }
+    }
+
+    objc2_ui_kit::UIBlurEffect::effectWithStyle(
+        objc2_ui_kit::UIBlurEffectStyle::SystemUltraThinMaterial,
+        mtm,
+    )
+    .into_super()
+}
+
 /// Initialize the global accent color from prefs (call once at startup).
 pub fn init_accent() {
     let hex = day::prefs::get("app.accent_color")
@@ -22,6 +42,10 @@ pub fn set_accent(hex: u32) {
 /// UITabBar, UIButton, UISwitch, etc. without needing to find windows.
 #[cfg(feature = "uikit")]
 pub fn apply_ios_tint(hex: u32) {
+    let Some(mtm) = objc2::MainThreadMarker::new() else {
+        return;
+    };
+    let nav_glass = clear_glass_effect(mtm);
     let r = ((hex >> 16) & 0xFF) as f64 / 255.0;
     let g = ((hex >> 8) & 0xFF) as f64 / 255.0;
     let b = (hex & 0xFF) as f64 / 255.0;
@@ -58,7 +82,7 @@ pub fn apply_ios_tint(hex: u32) {
         let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![nav_appearance_class, new];
         let _: () = objc2::msg_send![&*nav_app, configureWithTransparentBackground];
-        let _: () = objc2::msg_send![&*nav_app, setBackgroundEffect: Some(&*blur)];
+        let _: () = objc2::msg_send![&*nav_app, setBackgroundEffect: Some(&*nav_glass)];
         let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*clear];
         let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
 
@@ -112,11 +136,9 @@ pub fn apply_ios_tint(hex: u32) {
                 }
             }
         }
-        if let Some(mtm) = objc2::MainThreadMarker::new() {
-            #[allow(deprecated)]
-            if let Some(win) = objc2_ui_kit::UIApplication::sharedApplication(mtm).keyWindow() {
-                retint_existing(&win, &color);
-            }
+        #[allow(deprecated)]
+        if let Some(win) = objc2_ui_kit::UIApplication::sharedApplication(mtm).keyWindow() {
+            retint_existing(&win, &color);
         }
     }
 }
@@ -156,10 +178,10 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
             let nav_appearance_class = objc2::class!(UINavigationBarAppearance);
             let nav_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
                 objc2::msg_send![nav_appearance_class, new];
-            let blur_class = objc2::class!(UIBlurEffect);
-            let nav_blur: objc2::rc::Retained<objc2::runtime::AnyObject> =
-                objc2::msg_send![blur_class, effectWithStyle: 6isize]; // SystemUltraThinMaterial
             let _: () = objc2::msg_send![&*nav_app, configureWithTransparentBackground];
+            let nav_blur = clear_glass_effect(
+                objc2::MainThreadMarker::new().expect("UIKit appearance update on main thread"),
+            );
             let _: () = objc2::msg_send![&*nav_app, setBackgroundEffect: Some(&*nav_blur)];
             let _: () = objc2::msg_send![&*nav_app, setBackgroundColor: &*clear];
             let _: () = objc2::msg_send![&*nav_app, setShadowColor: &*clear];
@@ -179,16 +201,13 @@ unsafe fn retint_existing(view: &objc2_ui_kit::UIView, color: &objc2_ui_kit::UIC
                 && label.text().is_some_and(|text| text.to_string() == crate::res::str::diary_title().format())
             {
                 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-                use objc2_ui_kit::{UIBlurEffect, UIVisualEffectView};
+                use objc2_ui_kit::UIVisualEffectView;
                 use objc2::MainThreadOnly;
                 let label_size = label.frame().size;
                 let width = label_size.width + 24.0;
                 let height = label_size.height + 10.0;
                 let mtm = objc2::MainThreadMarker::new().expect("main thread");
-                let effect = UIBlurEffect::effectWithStyle(
-                    objc2_ui_kit::UIBlurEffectStyle::SystemUltraThinMaterial,
-                    mtm,
-                );
+                let effect = clear_glass_effect(mtm);
                 let blur = UIVisualEffectView::initWithEffect(
                     UIVisualEffectView::alloc(mtm),
                     Some(&effect),
