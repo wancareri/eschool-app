@@ -112,7 +112,9 @@ fn apply_system_bar_appearance(bar: &UINavigationBar) {
     };
     let appearance = UINavigationBarAppearance::new(mtm);
     appearance.configureWithTransparentBackground();
+    appearance.setBackgroundColor(Some(&objc2_ui_kit::UIColor::clearColor()));
     appearance.setShadowColor(None);
+    bar.setBackgroundColor(Some(&objc2_ui_kit::UIColor::clearColor()));
     bar.setStandardAppearance(&appearance);
     bar.setCompactAppearance(Some(&appearance));
     bar.setScrollEdgeAppearance(None);

@@ -68,12 +68,14 @@ pub fn apply_ios_tint(hex: u32) {
         // Apply tintColor and transparent bar styling to all active windows (scenes + legacy windows)
         let app: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UIApplication), sharedApplication];
-        let scenes: Option<objc2::rc::Retained<objc2_foundation::NSArray<objc2::runtime::AnyObject>>> =
-            objc2::msg_send![&*app, connectedScenes];
+        let scenes: Option<
+            objc2::rc::Retained<objc2_foundation::NSArray<objc2::runtime::AnyObject>>,
+        > = objc2::msg_send![&*app, connectedScenes];
         if let Some(scene_arr) = scenes {
             for sc in scene_arr.iter() {
-                let windows: Option<objc2::rc::Retained<objc2_foundation::NSArray<objc2::runtime::AnyObject>>> =
-                    objc2::msg_send![&*sc, windows];
+                let windows: Option<
+                    objc2::rc::Retained<objc2_foundation::NSArray<objc2::runtime::AnyObject>>,
+                > = objc2::msg_send![&*sc, windows];
                 if let Some(win_arr) = windows {
                     for win in win_arr.iter() {
                         let _: () = objc2::msg_send![&*win, setTintColor: &*color];
@@ -85,8 +87,9 @@ pub fn apply_ios_tint(hex: u32) {
             }
         }
         #[allow(deprecated)]
-        let windows: Option<objc2::rc::Retained<objc2_foundation::NSArray<objc2::runtime::AnyObject>>> =
-            objc2::msg_send![&*app, windows];
+        let windows: Option<
+            objc2::rc::Retained<objc2_foundation::NSArray<objc2::runtime::AnyObject>>,
+        > = objc2::msg_send![&*app, windows];
         if let Some(win_arr) = windows {
             for win in win_arr.iter() {
                 let _: () = objc2::msg_send![&*win, setTintColor: &*color];
@@ -135,10 +138,17 @@ unsafe fn retint_existing(
     } else if let Some(bar) = obj.downcast_ref::<objc2_ui_kit::UINavigationBar>() {
         unsafe {
             let diary_title = crate::res::str::diary_title().format();
-            let is_diary = bar
-                .topItem()
-                .and_then(|item| item.title())
-                .is_some_and(|title| title.to_string() == diary_title);
+            let is_diary = bar.topItem().is_some_and(|item| {
+                item.title()
+                    .is_some_and(|title| title.to_string() == diary_title)
+                    || item.titleView().is_some_and(|view| {
+                        view.tag() == 8_417_268
+                            || view
+                                .downcast_ref::<objc2_ui_kit::UILabel>()
+                                .and_then(|label| label.text())
+                                .is_some_and(|title| title.to_string() == diary_title)
+                    })
+            });
             // Leave the Diary navigation bar untouched: UIKit provides the
             // transparent Liquid Glass bar and its native scroll-edge treatment.
             if !is_diary {
@@ -157,7 +167,6 @@ unsafe fn retint_existing(
                 let _: () = objc2::msg_send![bar, setCompactAppearance: &*nav_app];
                 let _: () = objc2::msg_send![bar, setCompactScrollEdgeAppearance: &*nav_app];
             }
-
         };
     } else if let Some(sw) = obj.downcast_ref::<objc2_ui_kit::UISwitch>() {
         sw.setOnTintColor(Some(color));
@@ -176,7 +185,10 @@ unsafe fn retint_existing(
     }
     if !is_cover {
         let class_name = view.class().name().to_str().unwrap_or("");
-        if class_name == "DayNavPageView" || class_name == "DayHolderView" || class_name == "UINavigationTransitionView" {
+        if class_name == "DayNavPageView"
+            || class_name == "DayHolderView"
+            || class_name == "UINavigationTransitionView"
+        {
             view.setBackgroundColor(Some(&clear));
         }
     }
