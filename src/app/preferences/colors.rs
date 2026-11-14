@@ -135,6 +135,7 @@ unsafe fn retint_existing(
             let _: () = objc2::msg_send![bar, setStandardAppearance: &*tab_app];
             let _: () = objc2::msg_send![bar, setScrollEdgeAppearance: &*tab_app];
         };
+        crate::ios::nav_scroll_edge::install_tab_bar_glass(bar, mtm);
     } else if let Some(bar) = obj.downcast_ref::<objc2_ui_kit::UINavigationBar>() {
         unsafe {
             let diary_title = crate::res::str::diary_title().format();

@@ -7,15 +7,35 @@ use objc2_ui_kit::{
     NSDirectionalEdgeInsets, NSDirectionalRectEdge, UIAction, UIBlurEffect, UIBlurEffectStyle,
     UIButton, UIButtonConfiguration, UIButtonConfigurationCornerStyle, UIGlassEffect,
     UIGlassEffectStyle, UILabel, UINavigationBar, UINavigationBarAppearance,
-    UINavigationController, UIScrollView, UIView, UIViewController, UIVisualEffectView,
+    UINavigationController, UIScrollView, UITabBar, UIView, UIViewController, UIVisualEffectView,
 };
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 const DIARY_BAR_STYLE_TAG: isize = 8_417_265;
 const DIARY_TITLE_BUTTON_TAG: isize = 8_417_268;
+const TAB_BAR_GLASS_TAG: isize = 8_417_270;
 static ORIGINAL_VIEW_DID_LAYOUT: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 static ORIGINAL_NAV_BAR_LAYOUT: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
+
+#[cfg(feature = "uikit")]
+pub(crate) fn install_tab_bar_glass(bar: &UITabBar, mtm: MainThreadMarker) {
+    let frame = bar.bounds();
+    if let Some(existing) = bar
+        .subviews()
+        .iter()
+        .find(|view| view.tag() == TAB_BAR_GLASS_TAG)
+    {
+        existing.setFrame(frame);
+        return;
+    }
+    let effect = native_glass_effect(mtm);
+    let glass = UIVisualEffectView::initWithEffect(UIVisualEffectView::alloc(mtm), Some(&effect));
+    glass.setTag(TAB_BAR_GLASS_TAG);
+    glass.setFrame(frame);
+    glass.setUserInteractionEnabled(false);
+    bar.insertSubview_atIndex(&glass, 0);
+}
 
 /// Reapply the system appearance after Day configures its page controller's bar.
 pub fn install_diary_navigation_hook() {
