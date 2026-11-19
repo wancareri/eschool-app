@@ -39,8 +39,6 @@ fn password_eye_crossfades_in_place_and_reverses_on_a_second_tap() {
     let pending: Rc<RefCell<VecDeque<day_spec::FrameCallback>>> = Rc::default();
     let queue = pending.clone();
     day_core::launch_with(mock, day_spec::WindowOptions::default(), move || {
-        // Install before constructing the page: initial field focus can
-        // already arm the shared display clock for its leading-icon tint.
         day::frame::install_frame_requester(move |_, callback| {
             queue.borrow_mut().push_back(callback);
             Box::new(|| {})
@@ -239,7 +237,6 @@ fn focus_tint_interpolates_and_reverses_without_a_color_jump() {
         middle,
         "blur must reverse from the displayed color"
     );
-    // Deliver the stale cancelled request, then the new flight's start/end.
     frame(1.11);
     frame(1.12);
     frame(1.4);

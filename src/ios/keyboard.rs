@@ -113,8 +113,6 @@ pub fn sync_follower_for_responder(field: &objc2_ui_kit::UIView) {
     ios::sync_follower_for_responder(field);
 }
 
-/// The page is laid out inside the bottom safe area; subtract it once so a
-/// dock with an 8pt inset ends 8pt above the keyboard, including tall layouts.
 #[cfg(any(feature = "uikit", test))]
 fn keyboard_lift(visible_height: f64, safe_bottom: f64) -> f64 {
     (visible_height - safe_bottom).max(0.0)
@@ -148,8 +146,6 @@ mod ios {
 
     thread_local! {
         static OBSERVER: Cell<Option<Retained<KeyboardObserver>>> = const { Cell::new(None) };
-        // Both pages stay mounted during an interactive pop. Keep each page's
-        // followers synchronized, without retaining popped pages indefinitely.
         static FOLLOWERS: RefCell<Vec<Weak<UIView>>> = const { RefCell::new(Vec::new()) };
         static CURRENT_LIFT: Cell<CGFloat> = const { Cell::new(0.0) };
         static PENDING_FRAME: Cell<Option<KeyboardFrame>> = const { Cell::new(None) };
@@ -161,8 +157,6 @@ mod ios {
     }
 
     pub fn register_follower_view(view: &Retained<UIView>) {
-        // The cached height belongs to the outgoing page until the new page
-        // actually owns the responder. A mounted destination is not active yet.
         let lift = page_for_view(view).filter(|page| contains_first_responder(page))
             .map_or(0.0, |_| CURRENT_LIFT.with(Cell::get));
         unsafe {
@@ -190,8 +184,6 @@ mod ios {
         view.isFirstResponder() || view.subviews().iter().any(|v| contains_first_responder(&v))
     }
 
-    /// A visible-keyboard handoff need not emit another keyboard frame event.
-    /// Activate just the destination's dock once it owns the responder.
     pub(super) fn sync_follower_for_responder(field: &UIView) {
         if !field.isFirstResponder() { return; }
         let Some(page) = page_for_view(field) else { return; };
@@ -240,9 +232,6 @@ mod ios {
         None
     }
 
-    /// UIKit can announce the destination keyboard frame at the START of an
-    /// interactive pop while the keyboard itself is still stationary. Leave the
-    /// forms at their current lift until UIKit commits or cancels the transition.
     fn defer_interactive_frame(frame: KeyboardFrame) -> bool {
         let Some(coordinator) = interactive_coordinator() else {
             return false;
@@ -261,8 +250,6 @@ mod ios {
                     let pending = PENDING_FRAME.with(Cell::take);
                     if !cancelled {
                         if let Some(mut frame) = pending {
-                            // Read UIKit's settled geometry: another field on the
-                            // revealed page may have kept the keyboard on screen.
                             frame.visible_height =
                                 settled_keyboard_height().unwrap_or(frame.visible_height);
                             frame.duration = 0.0;
@@ -303,13 +290,10 @@ mod ios {
             super::keyboard_lift(frame.visible_height, super::get_safe_area_bottom()) as CGFloat;
         CURRENT_LIFT.with(|current| current.set(lift));
         let views = visible_followers();
-        // Create the layout guide on the first notification, so it is already
-        // tracking UIKit's keyboard geometry when a later navigation completes.
         if let Some(window) = views.iter().find_map(|view| view.window()) {
             let _ = window.keyboardLayoutGuide();
         }
         if frame.duration > 0.0 {
-            // MainThreadBound owns the native objects for the animation block.
             let views = dispatch2::MainThreadBound::new(views, mtm);
             let animations = block2::RcBlock::new(move || {
                 let mtm = MainThreadMarker::new().expect("UIKit animations run on main");
@@ -340,8 +324,6 @@ mod ios {
         );
     }
 
-    // Disable Day's root-frame resizing. Only our dedicated observer processes
-    // the notification; handling it here too would start every animation twice.
     unsafe extern "C-unwind" fn suppress_day_keyboard_resize(
         _this: *mut AnyObject,
         _cmd: Sel,
@@ -393,8 +375,6 @@ mod ios {
             0.0
         };
 
-        // Ignore overlay sheets / password manager windows that cover most of the screen (> 420pt).
-        // The button dock should ONLY follow the actual on-screen keyboard.
         if visible_h > 420.0 {
             return;
         }
@@ -429,12 +409,6 @@ mod ios {
             return;
         }
 
-        // Swizzle DayAppDelegate's keyboardWillChange: method.
-        // In day-uikit, DayAppDelegate::keyboard_will_change shrinks root_view.frame
-        // to clamp to the keyboard top, which forces the UITabBarController's tab bar
-        // to float up above the keyboard.
-        // Suppress its resize handler; the dedicated observer below owns keyboard
-        // geometry and animations. Processing both callbacks would animate twice.
         let cls = AnyClass::get(c"DayAppDelegate");
         if let Some(cls) = cls {
             let sel = objc2::sel!(keyboardWillChange:);
@@ -456,9 +430,6 @@ mod ios {
             crate::ios::nslog::nslog("[Keyboard] WARNING: DayAppDelegate class not found");
         }
 
-        // Register single dedicated observer for UIKeyboardWillChangeFrameNotification.
-        // This is the canonical master notification that covers show, hide, orientation,
-        // and accessory/QuickType bar transitions with full animation duration and curve.
         if let Some(mtm) = MainThreadMarker::new() {
             let obs: Retained<KeyboardObserver> =
                 unsafe { objc2::msg_send![KeyboardObserver::alloc(mtm), init] };
@@ -477,7 +448,6 @@ mod ios {
             );
         }
 
-        // Swizzle UITextField setBorderStyle: to force UITextBorderStyleNone (0) so text fields have no native border/outline
         let tf_cls = AnyClass::get(c"UITextField");
         if let Some(cls) = tf_cls {
             let sel = objc2::sel!(setBorderStyle:);
@@ -503,7 +473,6 @@ mod ios {
         cmd: Sel,
         _style: isize,
     ) {
-        // Force borderStyle to UITextBorderStyleNone (0) so text fields have no native outline/border
         let orig_ptr = ORIG_SET_BORDER_STYLE.load(std::sync::atomic::Ordering::Acquire);
         if !orig_ptr.is_null() {
             let orig: unsafe extern "C-unwind" fn(*mut AnyObject, Sel, isize) =

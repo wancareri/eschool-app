@@ -77,7 +77,6 @@ fn build_card(state: AppState, target: LessonNoteTarget) -> impl Piece {
     let time_str = crate::app::format::strip_seconds(&target.start_time);
 
     column((
-        // Header
         row((
             vector(res::vectors::kind_note)
                 .frame(22.0, 22.0)
@@ -112,7 +111,6 @@ fn build_card(state: AppState, target: LessonNoteTarget) -> impl Piece {
             trailing: 20.0,
         }),
 
-        // Topic if present
         when(
             move || s_top.is_some() && !s_top.as_ref().unwrap().is_empty(),
             move || {
@@ -129,7 +127,6 @@ fn build_card(state: AppState, target: LessonNoteTarget) -> impl Piece {
             },
         ),
 
-        // Text input field
         text_field(note_text.clone())
             .placeholder("Заметка к уроку (видна только в приложении)...")
             .on_submit(move || {
@@ -142,7 +139,6 @@ fn build_card(state: AppState, target: LessonNoteTarget) -> impl Piece {
                 trailing: 20.0,
             }),
 
-        // Action buttons
         row((
             when(
                 move || has_existing,

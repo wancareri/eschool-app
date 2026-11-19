@@ -1,8 +1,6 @@
-//! Day drag adapter with iOS horizontal gesture arbitration.
 
 use day::prelude::*;
 
-/// Attach a Day drag and apply native horizontal-axis arbitration on UIKit.
 pub(crate) fn horizontal_pager(
     content: impl Piece,
     handler: impl Fn(Drag) + 'static,

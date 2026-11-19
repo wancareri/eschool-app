@@ -44,3 +44,6 @@ gh_artifacts*/
 *.zip
 ios-ipa*
 .omo/
+
+# Local agent instructions
+AGENTS.md

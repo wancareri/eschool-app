@@ -1,12 +1,9 @@
-//! System locale detection — maps the device language to our locale codes.
 
 #[cfg(not(feature = "uikit"))]
 thread_local! {
     static STARTUP_LOCALE: std::cell::OnceCell<String> = const { std::cell::OnceCell::new() };
 }
 
-/// Capture the framework's launch locale before restoring the app's manual preference.
-/// iOS continues to ask NSLocale for the current device language.
 pub fn remember_startup_locale() {
     #[cfg(not(feature = "uikit"))]
     STARTUP_LOCALE.with(|locale| { locale.get_or_init(|| day::locale().get_untracked()); });
@@ -97,7 +94,6 @@ mod tests {
                 day::prelude::set_locale(startup);
                 super::remember_startup_locale();
                 day::prelude::set_locale("en");
-                // A second window/startup call must not capture the manual override.
                 super::remember_startup_locale();
                 assert_eq!(super::system_locale(), startup);
                 day::prelude::set_locale(&super::system_locale());

@@ -1,4 +1,3 @@
-//! Layout positioning diagnostics and swizzling.
 
 use day::prelude::*;
 
@@ -179,7 +178,6 @@ mod ios {
             return;
         }
 
-        // Swizzle UIView setFrame:
         if let Some(cls) = AnyClass::get(c"UIView") {
             let sel = objc2::sel!(setFrame:);
             if let Some(method) = cls.instance_method(sel) {
@@ -193,7 +191,6 @@ mod ios {
             }
         }
 
-        // Swizzle UIScrollView setContentOffset:
         if let Some(cls) = AnyClass::get(c"UIScrollView") {
             let sel = objc2::sel!(setContentOffset:);
             if let Some(method) = cls.instance_method(sel) {

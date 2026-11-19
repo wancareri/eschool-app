@@ -1,4 +1,3 @@
-//! A compact wrapping row that centers each line, including the final short line.
 use day::prelude::*;
 use day_core::{Boundary, BuildCx, Flex, Layout, LayoutOps, PieceSeq, RNode};
 use day_spec::Proposal;

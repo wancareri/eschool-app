@@ -1,10 +1,8 @@
 use day::prelude::Color;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-/// Global accent color — updated atomically when user picks a new color.
 static ACCENT_HEX: AtomicU32 = AtomicU32::new(0x3B82F6);
 
-/// Initialize the global accent color from prefs (call once at startup).
 pub fn init_accent() {
     let hex = day::prefs::get("app.accent_color")
         .and_then(|v| v.parse::<u32>().ok())
@@ -12,14 +10,10 @@ pub fn init_accent() {
     ACCENT_HEX.store(hex, Ordering::Relaxed);
 }
 
-/// Set the global accent color (call from settings when user picks a new color).
 pub fn set_accent(hex: u32) {
     ACCENT_HEX.store(hex, Ordering::Relaxed);
 }
 
-/// Apply tint color to ALL iOS native UIKit elements via UIAppearance proxies.
-/// This is the standard way to set global tint in UIKit — affects UINavigationBar,
-/// UITabBar, UIButton, UISwitch, etc. without needing to find windows.
 #[cfg(feature = "uikit")]
 pub fn apply_ios_tint(hex: u32) {
     let Some(mtm) = objc2::MainThreadMarker::new() else {
@@ -40,7 +34,6 @@ pub fn apply_ios_tint(hex: u32) {
         let blur: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![blur_class, effectWithStyle: 6isize]; // SystemUltraThinMaterial
 
-        // UITabBarAppearance — liquid glass with transparent ground (no solid color underneath)
         let tab_appearance_class = objc2::class!(UITabBarAppearance);
         let tab_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![tab_appearance_class, new];
@@ -49,23 +42,19 @@ pub fn apply_ios_tint(hex: u32) {
         let _: () = objc2::msg_send![&*tab_app, setBackgroundColor: &*clear];
         let _: () = objc2::msg_send![&*tab_app, setShadowColor: &*clear];
 
-        // UITabBar.appearance()
         let tab_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UITabBar), appearance];
         let _: () = objc2::msg_send![&*tab_appearance, setTintColor: &*color];
         let _: () = objc2::msg_send![&*tab_appearance, setStandardAppearance: &*tab_app];
         let _: () = objc2::msg_send![&*tab_appearance, setScrollEdgeAppearance: &*tab_app];
 
-        // UISwitch.appearance().onTintColor — switch accent color
         let switch_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UISwitch), appearance];
         let _: () = objc2::msg_send![&*switch_appearance, setOnTintColor: &*color];
-        // UIBarButtonItem.appearance().tintColor — bar button items
         let bar_btn_appearance: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UIBarButtonItem), appearance];
         let _: () = objc2::msg_send![&*bar_btn_appearance, setTintColor: &*color];
 
-        // Apply tintColor and transparent bar styling to all active windows (scenes + legacy windows)
         let app: objc2::rc::Retained<objc2::runtime::AnyObject> =
             objc2::msg_send![objc2::class!(UIApplication), sharedApplication];
         let scenes: Option<
@@ -105,7 +94,6 @@ pub fn apply_ios_tint(hex: u32) {
     }
 }
 
-/// Recursively retint live UIKit controls while preserving native bar effects.
 #[cfg(feature = "uikit")]
 unsafe fn retint_existing(
     view: &objc2_ui_kit::UIView,
@@ -150,8 +138,6 @@ unsafe fn retint_existing(
                                 .is_some_and(|title| title.to_string() == diary_title)
                     })
             });
-            // Leave the Diary navigation bar untouched: UIKit provides the
-            // transparent Liquid Glass bar and its native scroll-edge treatment.
             if !is_diary {
                 bar.setTranslucent(false);
                 let bar_background = objc2_ui_kit::UIColor::systemBackgroundColor();
@@ -173,8 +159,6 @@ unsafe fn retint_existing(
         sw.setOnTintColor(Some(color));
     }
 
-    // Preserve modal cover backgrounds during appearance changes; page
-    // containers still stay transparent beneath the tab and status bars.
     let mut cur: Option<objc2::rc::Retained<objc2_ui_kit::UIResponder>> = view.nextResponder();
     let mut is_cover = false;
     while let Some(responder) = cur {
@@ -202,40 +186,33 @@ unsafe fn retint_existing(
 #[cfg(not(feature = "uikit"))]
 pub fn apply_ios_tint(_hex: u32) {}
 
-/// Get current accent hex.
 pub fn accent_hex() -> u32 {
     ACCENT_HEX.load(Ordering::Relaxed)
 }
 
-/// Get current accent color as Day Color.
 pub fn primary() -> Color {
     Color::hex(ACCENT_HEX.load(Ordering::Relaxed))
 }
 
-/// Default accent hex value.
 pub const DEFAULT_ACCENT: u32 = 0x3B82F6;
 
-// ── Named accent colors ────────────────────────────────────────────────
 pub const BLUE: u32 = 0x3B82F6;
 pub const GREEN: u32 = 0x10B981;
 pub const PURPLE: u32 = 0x8B5CF6;
 pub const ORANGE: u32 = 0xF97316;
 pub const RED: u32 = 0xEF4444;
 
-// ── Static colors ──────────────────────────────────────────────────────
 pub const SECONDARY: Color = Color::hex(0x6B7280);
 pub const ACCENT: Color = Color::hex(0xF59E0B);
 pub const BG: Color = Color::hex(0xF8FAFC);
 pub const CARD: Color = Color::hex(0xFFFFFF);
 pub const BORDER: Color = Color::hex(0xE2E8F0);
 
-// ── Status ─────────────────────────────────────────────────────────────
 pub const SUCCESS: Color = Color::hex(0x10B981);
 pub const ERROR: Color = Color::hex(0xEF4444);
 pub const WARNING: Color = Color::hex(0xF59E0B);
 pub const INFO: Color = Color::hex(0x3B82F6);
 
-// ── Gray ───────────────────────────────────────────────────────────────
 pub const GRAY_100: Color = Color::hex(0xF1F5F9);
 pub const GRAY_200: Color = Color::hex(0xE2E8F0);
 pub const GRAY_300: Color = Color::hex(0xCBd5E1);
@@ -247,18 +224,15 @@ pub const GRAY_800: Color = Color::hex(0x1E293B);
 pub const GRAY_900: Color = Color::hex(0x0F172A);
 pub const WHITE: Color = Color::hex(0xFFFFFF);
 
-// ── Grades ─────────────────────────────────────────────────────────────
 pub const GRADE_EXCELLENT: Color = Color::hex(0x10B981);
 pub const GRADE_GOOD: Color = Color::hex(0x3B82F6);
 pub const GRADE_SATISFACTORY: Color = Color::hex(0xF59E0B);
 pub const GRADE_POOR: Color = Color::hex(0xF97316);
 pub const GRADE_FAILING: Color = Color::hex(0xEF4444);
 
-// ── Navigation ─────────────────────────────────────────────────────────
 pub const NAV_DIARY: Color = Color::hex(0x3B82F6);
 pub const NAV_SCHEDULE: Color = Color::hex(0x10B981);
 pub const NAV_TEACHERS: Color = Color::hex(0xF59E0B);
 pub const NAV_SETTINGS: Color = Color::hex(0x6B7280);
 
-// Backward compat
 pub const PRIMARY: Color = Color::hex(0x3B82F6);

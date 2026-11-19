@@ -27,8 +27,6 @@ fn deliver() {
 
 #[test]
 fn switching_identity_and_logout_reject_queued_replies_and_clear_state() {
-    // Run in a subprocess so prefs use a temporary directory without changing
-    // the environment of the multithreaded Rust test harness.
     if std::env::var_os("ESCHOOL_ISOLATED_TEST").is_none() {
         let prefs =
             std::env::temp_dir().join(format!("eschool-session-tests-{}", std::process::id()));
@@ -107,7 +105,6 @@ fn switching_identity_and_logout_reject_queued_replies_and_clear_state() {
     secure::save("auth.account_id", "another-account");
     assert!(cache::load("user_full_name").is_none());
 
-    // A dismissed error can be shown again when the same action fails twice.
     state.error_msg.set("Connection failed".into());
     deliver();
     assert!(state.error_msg.get().is_empty());
@@ -119,7 +116,6 @@ fn switching_identity_and_logout_reject_queued_replies_and_clear_state() {
     deliver();
     assert_eq!(state.notice_route.get().as_deref(), Some("notice"));
     assert_eq!(state.notice.get().unwrap().message, "Connection failed");
-    // An old queued presentation must not reopen after logout.
     dayapp::components::notice::presenter(state).show(
         dayapp::components::notice::Notice::error("Old account", "Queued message"),
     );

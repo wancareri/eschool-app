@@ -166,10 +166,6 @@ fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
 }
 
 fn quarter_summary_header() -> impl Piece {
-    // frame(w, 0.0) forced the cell node's height to zero (FrameLayout reports
-    // Some(0.0) as-is) and a stretched label sits flush-left on UIKit; the
-    // zstack keeps hug height while width() pins the column and OverlayLayout
-    // centers the text.
     row((
         label("Предмет")
             .font(Font::Caption)

@@ -30,7 +30,6 @@ pub fn render() -> impl Piece {
 
     let pin_enabled = Signal::new(crate::pages::pin::security::is_enabled());
 
-    // When toggle turns ON -> activate pin setup at window level (hiding bottom bar)
     {
         day::reactive::watch(
             move || pin_enabled.get(),
@@ -41,7 +40,6 @@ pub fn render() -> impl Piece {
             },
         );
     }
-    // When toggle turns OFF -> delete PIN and disable biometric
     day::reactive::watch(
         move || pin_enabled.get(),
         move |on, old| {
@@ -52,7 +50,6 @@ pub fn render() -> impl Piece {
             }
         },
     );
-    // When setup closes, sync toggle state with whether PIN was actually set
     {
         let pe = pin_enabled;
         day::reactive::watch(
@@ -177,9 +174,6 @@ fn appearance_section(state: AppState) -> impl Piece {
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
-/// Push an accent through every live consumer — the signal plus the UIKit tint
-/// cascade. Nothing remounts: nav glyphs are template icons that follow the
-/// window tint, and every other accent consumer is a reactive closure.
 fn accent_apply(state: AppState, hex: u32) {
     colors::set_accent(hex);
     state.accent_color.set(hex);
@@ -187,16 +181,12 @@ fn accent_apply(state: AppState, hex: u32) {
     colors::apply_ios_tint(hex);
 }
 
-/// Land an accent: persist it and push it through every live consumer. The UI
-/// recolors in place — no nav reload, no page remount, the settings pager
-/// stays exactly where the user put it.
 fn accent_commit(state: AppState, hex: u32) {
     day::prefs::set("app.accent_color", &hex.to_string());
     accent_apply(state, hex);
     haptics::tick();
 }
 
-/// The tactile layer's master switch — default ON, persisted as `app.haptics`.
 fn haptics_section(_state: AppState) -> impl Piece {
     let haptics_on = Signal::new(haptics::is_enabled());
     day::reactive::watch(
@@ -227,7 +217,6 @@ fn haptics_section(_state: AppState) -> impl Piece {
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
-/// Keep the existing preference keys so upgrading preserves the user's choices.
 pub fn apply_startup() {
     if day::env("DAY_THEME").is_none() {
         let appearance = match day::prefs::get(crate::THEME_KEY).as_deref() {
@@ -329,7 +318,6 @@ fn biometric_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
     let biometric_on = Signal::new(biometric::is_enabled());
     let notices = crate::components::notice::presenter(state);
 
-    // When PIN is disabled, automatically turn biometric off
     day::reactive::watch(
         move || pin_enabled.get(),
         move |on, old| {
@@ -340,7 +328,6 @@ fn biometric_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
         },
     );
 
-    // Persist toggle changes only when PIN is enabled
     day::reactive::watch(
         move || biometric_on.get(),
         move |val, old| {
@@ -348,7 +335,6 @@ fn biometric_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
                 if pin::is_enabled() {
                     biometric::set_enabled(*val);
                 } else if *val {
-                    // PIN not enabled — revert and show alert
                     biometric_on.set(false);
                     notices.show(crate::components::notice::Notice {
                         title: res::str::notice_pin_title().format(),
@@ -553,8 +539,6 @@ mod pager_tests {
         assert!(probe.widget(picker).enabled, "picker must become usable again after settling");
         probe.emit(picker_node, Event::SelectionChanged(3));
         assert_eq!(state.settings_tab.get(), 3, "the next segment selection must be accepted");
-        // The picker change advances the presentation epoch; an obsolete native completion
-        // must not take the selection back to the previously settled page.
         probe.emit(pager_node, Event::Custom { tag: "", num: 0.0, text: format!("settle 1 {landed}") });
         assert_eq!(state.settings_tab.get(), 3);
         day_core::uninstall_tree();

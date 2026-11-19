@@ -1,4 +1,3 @@
-//! Async HTTP helpers for the e-schools.by API.
 
 use crate::client::blocking::{validate_and_build_url, BASE_URL};
 

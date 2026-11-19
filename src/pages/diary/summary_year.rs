@@ -117,9 +117,6 @@ fn year_final_cell(state: AppState, subject: String) -> impl Piece {
     let sj1 = subject.clone();
     let sj2 = subject;
     zstack((label(move || {
-        // Strictly the official year mark («Годовая», /final/whole) — a
-        // calculated average is not a teacher's decision, so an unset mark
-        // renders as a dash.
         final_mark_text(final_mark(s1, &sj1, "YEAR"))
     })
     .font(Font::Headline)

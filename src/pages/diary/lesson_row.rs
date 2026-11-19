@@ -55,7 +55,6 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
 
     column((
         row((
-            // Lesson number & start time
             column((
                 label(move || s_num.with(|s| s.number.to_string()))
                     .font(Font::Title3)
@@ -70,16 +69,13 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
             .spacing(3.0)
             .align(HAlign::Center),
 
-            // Subject, Topic, Homework, Note hint
             column((
                 row((
                     label(move || s_title.with(|s| s.subject_title.clone()))
                         .font(Font::Body)
                         .weight(FontWeight::Semibold)
                         .grow(Dimension::Both),
-                    // Accent badges (attachments, substitution, note)
                     row((
-                        // Attachment badge
                         when(
                             move || s_attach.with(|s| {
                                 s.has_attachments()
@@ -91,7 +87,6 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
                                     .tint(move || Color::hex(state.accent_color.get()))
                             },
                         ),
-                        // Substitution badge
                         when(
                             move || s_subst.with(|s| s.substitution.is_some()),
                             move || {
@@ -100,7 +95,6 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
                                     .tint(move || Color::hex(state.accent_color.get()))
                             },
                         ),
-                        // Note badge
                         when(
                             move || {
                                 let key = s_has_note.with(|s| lesson_key(s));
@@ -200,7 +194,6 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
             .align(HAlign::Leading)
             .grow(Dimension::Both),
 
-            // Grade
             label(move || {
                 s_mark.with(|s| mark_of(s).map(|m| m.to_string()).unwrap_or_else(|| "—".into()))
             })
@@ -219,7 +212,6 @@ pub fn render(slot: ItemSlot<LessonSlot, u32>, date_str: String) -> impl Piece {
         .spacing(RAIL_GAP)
         .align(VAlign::Center)
         .grow(Dimension::Both)
-        // Tap to open lesson detail modal
         .on_tap({
             let d_str = d_lp;
             let slot = s_lp;

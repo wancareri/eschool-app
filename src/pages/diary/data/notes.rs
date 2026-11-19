@@ -1,4 +1,3 @@
-//! Persistence and state updates for per-lesson notes.
 
 use crate::app::AppState;
 use std::collections::HashMap;

@@ -1,4 +1,3 @@
-//! Authentication. Credential changes are committed only for the current session.
 use crate::app::AppState;
 use crate::ios::nslog;
 use crate::app::data::credentials as secure;
@@ -17,7 +16,6 @@ const USERNAME_KEY: &str = "auth.username";
 const PASSWORD_KEY: &str = "auth.password";
 const REMEMBER_KEY: &str = "auth.remember_me";
 const ACCOUNT_KEY: &str = "auth.account_id";
-// Never hold the storage lock during a network call or UI callback.
 static TOKEN_STORE: Mutex<()> = Mutex::new(());
 static REFRESH_LOCK: Mutex<()> = Mutex::new(());
 
@@ -56,8 +54,6 @@ fn finish_login(state: AppState, token: Token, username: &str, remember: bool) {
     state.setup_new_password_active.set(false);
     state.setup_temp_password_data.set(None);
     state.loading.set(false);
-    // Leave filled native inputs intact until the auth hierarchy is removed:
-    // that removal is UIKit's signal that the credential submission succeeded.
     crate::ios::keyboard::dismiss();
     state.current_section.set(crate::Section::Diary);
     state.is_authenticated.set(true);
@@ -67,7 +63,6 @@ pub fn login(state: AppState, username: &str, password: &str, remember: bool) {
     session::invalidate();
     let ticket = session::ticket();
     crate::pages::diary::data::clear_data(state);
-    // A password login starts a new account context; no old student IDs survive.
     logout_keys();
     state.loading.set(true);
     let username = username.to_string();
@@ -157,8 +152,6 @@ pub fn complete_parent_new_password(
                 ticket.publish(move |state| match result {
                     Ok(token) => finish_login(state, token, &username, remember),
                     Err(e) => {
-                        // The old temporary password is no longer valid. Return to
-                        // login instead of inviting the user to submit it again.
                         logout(state);
                         state
                             .error_msg
@@ -232,7 +225,6 @@ pub fn change_logged_in_parent_password(
 
 pub fn logout(state: AppState) {
     session::invalidate();
-    // Clear the namespace before deleting the keys identifying it.
     crate::app::data::cache::clear();
     logout_keys();
     day::reactive::batch(|| {
@@ -296,7 +288,6 @@ pub fn save_token(state: AppState, access: &str, refresh: &str) {
     }
 }
 
-/// Serialize refresh requests and refuse to resurrect logged-out credentials.
 pub fn try_refresh_token() -> Option<String> {
     let _refresh = REFRESH_LOCK.lock().unwrap();
     let (old_refresh, account) = {
@@ -356,8 +347,6 @@ pub fn store_ids(
 static BG_REFRESH_STARTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// The process-wide worker survives logout and temporary network failures.
-/// It reads the current credentials each time, so a later login needs no restart.
 pub fn start_background_refresh() {
     use std::sync::atomic::Ordering;
     if BG_REFRESH_STARTED.swap(true, Ordering::AcqRel) {
@@ -380,7 +369,6 @@ mod tests {
 
     #[test]
     fn successful_login_opens_diary_from_another_section() {
-        // Keep the real token/prefs side effects out of the developer's storage.
         if std::env::var_os("ESCHOOL_LOGIN_ISOLATED_TEST").is_none() {
             let prefs = std::env::temp_dir()
                 .join(format!("eschool-login-test-{}", std::process::id()));

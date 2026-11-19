@@ -1,5 +1,3 @@
-//! Device logging via NSLog bridge → idevicesyslog.
-//! Also buffers logs for in-app dev viewer.
 
 use std::sync::Mutex;
 
@@ -53,7 +51,6 @@ pub fn clear_logs() {
     }
 }
 
-/// Export only the dedicated trait diagnostics, excluding general app/API logs.
 pub fn autofill_diagnostics() -> String {
     filter_autofill_diagnostics(&get_logs())
 }

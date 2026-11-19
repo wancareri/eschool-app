@@ -5,8 +5,6 @@ pub mod ios_impl {
     use objc2_foundation::{NSArray, NSString};
     use objc2_ui_kit::{UIImage, UIView, UIViewController};
 
-    /// Day currently discards icons on Submenu nodes. Supply them at native
-    /// menu creation, before UIKit owns the menu. No bar items are injected.
     pub fn install_auth_menu_icons() {
         use std::sync::{Once, atomic::Ordering};
         static INSTALL: Once = Once::new();
@@ -33,7 +31,6 @@ pub mod ios_impl {
     ) -> *mut objc2_ui_kit::UIMenu {
         use objc2_ui_kit::{UIMenu, UIMenuOptions};
         let label = title.to_string();
-        // Check both title and contents so unrelated menus pass through.
         let language = matches!(label.as_str(), "Language" | "Язык" | "Мова")
             && children
                 .firstObject()
@@ -71,9 +68,6 @@ pub mod ios_impl {
         unsafe { original(class, selector, title, children) }
     }
 
-    /// Retitle the existing authentication page when the locale changes. The
-    /// navigation stack and its text fields stay mounted, including the page
-    /// behind the current one (its title supplies the native Back label).
     pub fn bind_auth_page_title(view: &UIView, title: fn() -> String) {
         let weak = objc2::rc::Weak::new(view);
         day::reactive::watch(

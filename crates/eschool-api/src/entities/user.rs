@@ -12,7 +12,6 @@ where
     }
 }
 
-/// Child/Student entry associated with a parent account.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StudentForParent {
     pub profile_id: String,
@@ -53,26 +52,22 @@ pub struct UserInfo {
 }
 
 impl UserInfo {
-    /// Returns true if the user logged in as a parent.
     pub fn is_parent(&self) -> bool {
         self.person_kind.eq_ignore_ascii_case("PARENT")
             || self.roles.iter().any(|r| r.eq_ignore_ascii_case("PARENT"))
     }
 
-    /// Returns true if the user logged in as a student/pupil.
     pub fn is_student(&self) -> bool {
         self.person_kind.eq_ignore_ascii_case("PUPIL")
             || self.person_kind.eq_ignore_ascii_case("STUDENT")
             || self.roles.iter().any(|r| r.eq_ignore_ascii_case("PUPIL") || r.eq_ignore_ascii_case("STUDENT"))
     }
 
-    /// List of children attached to this parent account (empty if not a parent).
     pub fn children(&self) -> &[StudentForParent] {
         self.students_for_parent.as_deref().unwrap_or_default()
     }
 }
 
-/// Detailed parent information from `/api/v1/admin/schools/parents/{parent_uuid}`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParentInfo {
     pub uuid: String,
@@ -90,7 +85,6 @@ pub struct ParentInfo {
     pub email_address: Option<String>,
 }
 
-/// Child representative profile from `/api/v1/institution/child_representatives/{parent_uuid}`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChildRepresentative {
     pub uuid: String,

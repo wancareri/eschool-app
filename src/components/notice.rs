@@ -1,4 +1,3 @@
-//! App messages share the existing modal_window shell with network and lesson details.
 use crate::app::AppState;
 use crate::res;
 use day::prelude::*;
@@ -27,7 +26,6 @@ impl Notice {
     }
 }
 
-/// Setters can also be captured by asynchronous completion callbacks.
 #[derive(Clone, Copy)]
 pub struct Presenter {
     notice: Setter<Option<Notice>>,
@@ -55,8 +53,6 @@ impl Presenter {
     }
 }
 
-/// Consume each message once. Clearing its source permits a failed retry to
-/// show the same message again, including after a swipe-to-dismiss.
 pub fn bind_error(
     state: AppState,
     source: Signal<String>,
@@ -78,8 +74,6 @@ pub fn bind_error(
 
 pub fn modal(state: AppState) -> impl Piece {
     super::modal::modal_window(state.notice_route, 0.0, move |_| {
-        // Keep the outgoing content readable until the cover finishes hiding,
-        // even when logout clears the live payload at the same time.
         let initial = state.notice.get_untracked();
         let fallback_kind = initial.as_ref().map(|n| n.kind).unwrap_or(NoticeKind::Info);
         let fallback_title = initial

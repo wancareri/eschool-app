@@ -38,7 +38,6 @@ fn start_week_swipe(
     let total = state.all_weeks.get().len() as i32;
     let new_idx = base + dir;
     if new_idx < 0 || new_idx >= total {
-        // Out of range: never touch a committed flight — only spring a resting drag.
         if pending < 0 {
             with_animation(AnimSpec::ease_out(180), || {
                 drag_x.set(0.0);
@@ -63,7 +62,6 @@ fn spawn_week_slide(set_drag: day::reactive::Setter<f64>, dur_ms: u32, new_idx: 
         std::thread::sleep(std::time::Duration::from_millis(dur_ms as u64));
         day::reactive::on_main(move || {
             if SWIPE_GEN.load(Ordering::Relaxed) != my_gen {
-                // Superseded by a newer swipe: it owns drag/index now.
                 return;
             }
             day::reactive::batch(|| {
@@ -113,8 +111,6 @@ pub(in crate::pages::diary) fn pager_drag(
             DragPhase::Ended => {
                 let mut was_horiz = axis.get() == Some(true);
                 let mut actual_dx = drag_x.get();
-                // A fast fling can arrive as Began→Ended with no Changed large
-                // enough to resolve the axis; honor it from the raw delta.
                 if !was_horiz
                     && axis.get().is_none()
                     && dx.abs() >= SWIPE_THRESHOLD

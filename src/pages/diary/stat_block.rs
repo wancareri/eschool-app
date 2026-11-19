@@ -4,11 +4,6 @@ use day::prelude::*;
 pub fn render(state: AppState, title: &'static str, value_fn: impl Fn() -> String + 'static) -> impl Piece {
     let s = state;
     column((
-        // grow_w must sit on the zstack, not the label: GrowLayout stretches its
-        // direct child to the flex share, and a stretched UILabel renders its text
-        // flush-left on UIKit (TextAlign is a no-op there). The zstack keeps hug
-        // content and OverlayLayout's default Center alignment centers it in the
-        // grown frame — the column then centers the whole row.
         zstack((
             label(move || value_fn())
                 .font(Font::Title2)

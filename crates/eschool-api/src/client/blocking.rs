@@ -1,4 +1,3 @@
-//! Blocking HTTP helpers for the e-schools.by API.
 
 pub const BASE_URL: &str = "https://diary.e-schools.by";
 

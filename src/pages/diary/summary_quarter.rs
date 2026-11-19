@@ -46,7 +46,6 @@ pub(super) fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
             let base = column((
                 row((
                     label(subj_name).font(Font::Body).grow(Dimension::Both),
-                    // 1. Расчётный средний балл по оценкам четверти (реактивно!)
                     zstack((label(move || {
                         let cur_q =
                             (st1.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
@@ -82,8 +81,6 @@ pub(super) fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
                     })
                     .align(TextAlign::Center),))
                     .width(72.0),
-                    // 2. Итоговая оценка четверти, выставленная учителем
-                    // (/final/whole); без неё — прочерк, среднее не подставляется.
                     zstack((label(move || {
                         let cur_q =
                             (st3.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
@@ -118,10 +115,6 @@ pub(super) fn quarter_summary_at(state: AppState, offset: i32) -> impl Piece {
                 }),
             ))
             .spacing(0.0);
-            // Tap or long-press pops the grade peek right under this row — the
-            // row's own view gives the window-space Y. The second event (a
-            // long-press release also fires the tap) is absorbed by the peek's
-            // idempotent open.
             peek_row(base, sj5, st5, offset)
         },
     )

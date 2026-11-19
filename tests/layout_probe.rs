@@ -1,9 +1,3 @@
-//! Layout regression for the Итоги card (mock toolkit, 8pt/char × 16pt metrics).
-//!
-//! The UIKit backend never applies `TextAlign` — a label that fills its parent
-//! renders its text leading. Centering therefore has to come from the layout:
-//! hug labels inside a column that fills the space under its padding (the
-//! column's default `CrossAlign::Center` then has slack to center within).
 
 #![cfg(feature = "mock")]
 
@@ -29,8 +23,6 @@ fn boot(root: impl FnOnce() -> AnyPiece + 'static) -> MockProbe {
     probe
 }
 
-/// Parent links from children lists; roots = widgets nobody lists as a child.
-/// The mock pump never registers windows, so `probe.windows()` stays empty.
 fn parents(probe: &MockProbe) -> HashMap<u64, u64> {
     let state = probe.state.borrow();
     let mut parent: HashMap<u64, u64> = HashMap::new();
@@ -54,13 +46,10 @@ fn handles_with_text(probe: &MockProbe, text: &str) -> Vec<u64> {
     hs
 }
 
-/// The label must sit centered inside its parent column, with slack to prove
-/// the centering is the layout's and not a coincidence of hug widths.
 fn assert_centered(probe: &MockProbe, parent: &HashMap<u64, u64>, h: u64) {
     let state = probe.state.borrow();
     let w = state.widgets.get(&h).expect("label");
     let p = state.widgets.get(&parent[&h]).expect("parent");
-    // Child frames are parent-relative: centered means label center = parent center.
     let lc = w.frame.origin.x + w.frame.size.width / 2.0;
     let pc = p.frame.size.width / 2.0;
     let (lw, cw) = (w.frame.size.width, p.frame.size.width);
@@ -76,7 +65,6 @@ fn assert_centered(probe: &MockProbe, parent: &HashMap<u64, u64>, h: u64) {
     );
 }
 
-/// Mark chips: hug labels centered in a column that fills under the padding.
 #[test]
 fn mark_chips_center_text() {
     let probe = boot(|| {
@@ -100,9 +88,6 @@ fn mark_chips_center_text() {
             assert_centered(&probe, &parent, h);
         }
     }
-    // The wrap grid is uniform: every chip's rounded shell has the same width.
-    // Radius and background sit on separate nodes (ops compose outward), so the
-    // shell is found by its corner_radius alone.
     let state = probe.state.borrow();
     let mut shells: Vec<f64> = state
         .widgets
@@ -115,7 +100,6 @@ fn mark_chips_center_text() {
     assert_eq!(shells.len(), 1, "chips are not one uniform width: {shells:?}");
 }
 
-/// The «Цель» bar spans the card's full width with its label centered.
 #[test]
 fn goal_bar_full_width_centered() {
     let probe = boot(|| {
@@ -142,7 +126,6 @@ fn goal_bar_full_width_centered() {
     );
 }
 
-/// The goal stepper's value digits center inside their fixed-width box.
 #[test]
 fn goal_value_box_centered() {
     let probe = boot(|| {
@@ -173,8 +156,6 @@ fn goal_value_box_centered() {
     }
 }
 
-/// A mark chip: hug labels, column fills under the padding, shell on top —
-/// the chain grade_peek uses for every cell of the strip.
 fn chip(date: &'static str, mark: &'static str) -> AnyPiece {
     column((
         label(date).font(Font::Caption2).color(Color::rgba(0.5, 0.5, 0.5, 1.0)),
@@ -195,7 +176,6 @@ fn chip(date: &'static str, mark: &'static str) -> AnyPiece {
     .any()
 }
 
-/// The «Цель» row: hug label, column fills under the padding, tinted shell.
 fn goal_bar() -> AnyPiece {
     column((
         label("Цель")
@@ -215,8 +195,6 @@ fn goal_bar() -> AnyPiece {
     .any()
 }
 
-/// The «+» button: a chip-shaped scaffold (the same two space lines) with the
-/// glyph overlaid dead centre — equal cell height, centered glyph.
 fn plus_chip() -> AnyPiece {
     column((
         zstack((
@@ -243,7 +221,6 @@ fn plus_chip() -> AnyPiece {
     .any()
 }
 
-/// The «+» cell measures exactly as tall as the mark chips it sits among.
 #[test]
 fn plus_chip_matches_chip_height() {
     let probe = boot(|| {
@@ -273,8 +250,6 @@ fn plus_chip_matches_chip_height() {
     assert_eq!(heights.len(), 1, "cell heights differ: {heights:?}");
 }
 
-/// The strip's mark cards pack LEADING — a short line hugs the left edge, the
-/// laid-out grid stays text-like (WrapCentered is the centering arm).
 #[test]
 fn short_grid_line_stays_leading() {
     let probe = boot(|| {
@@ -311,8 +286,6 @@ fn short_grid_line_stays_leading() {
     assert!(line_w < row_w - 1.0, "line should not fill: {line_w}");
 }
 
-/// Every line of the digit keypad (the row «+» opens) centers in the modal width —
-/// the short last line included.
 #[test]
 fn keypad_lines_center() {
     let probe = boot(|| {
@@ -358,7 +331,6 @@ fn keypad_lines_center() {
     }
 }
 
-/// One keypad key — the digit chip's shape (single line, 5/9 padding, radius 14).
 fn digit_key() -> AnyPiece {
     column((label("8").font(Font::Subheadline),))
         .padding(Insets {
@@ -372,7 +344,6 @@ fn digit_key() -> AnyPiece {
         .any()
 }
 
-/// Widget origin accumulated up the parent chain — mock frames are parent-relative.
 fn abs_origin(state: &day_mock::MockState, parent: &HashMap<u64, u64>, mut h: u64) -> (f64, f64) {
     let (mut x, mut y) = (0.0, 0.0);
     loop {
@@ -387,7 +358,6 @@ fn abs_origin(state: &day_mock::MockState, parent: &HashMap<u64, u64>, mut h: u6
     (x, y)
 }
 
-/// The «+» glyph sits dead centre of its cell, both axes.
 #[test]
 fn plus_glyph_is_centered() {
     let probe = boot(|| column((plus_chip(),)).padding(14.0).any());

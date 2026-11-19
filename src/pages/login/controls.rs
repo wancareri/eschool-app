@@ -39,7 +39,6 @@ pub(super) fn auth_action_button<M>(
         .action(action)
         .animation(AnimSpec::ease_out(200));
 
-    // Configure the UIButton leaf, before layout-only decorators hide its handle.
     #[cfg(feature = "uikit")]
     let piece = piece.tweak(native_auth_action_button);
 
@@ -71,8 +70,6 @@ pub(super) fn native_auth_action_button(node: day::RNode) {
     };
     use std::ptr::NonNull;
 
-    // One transformer per main thread, retained for its lifetime rather than
-    // recreated for each button or configuration update.
     thread_local! {
         static TITLE_ATTRIBUTES: block2::RcBlock<dyn Fn(
             NonNull<NSDictionary<NSString, AnyObject>>,
@@ -121,8 +118,6 @@ pub(super) fn native_auth_action_button(node: day::RNode) {
         config.setTitle(Some(&title));
         apply_style(button, &config);
 
-        // Reapply after every native update, including Day's title/state patches.
-        // Guard synchronous reentry from setConfiguration without retaining UIButton.
         let updating = std::cell::Cell::new(false);
         let update = block2::RcBlock::new(move |button: NonNull<UIButton>| {
             if updating.replace(true) {
@@ -162,8 +157,6 @@ pub(super) fn native_auth_action_button(node: day::RNode) {
     });
 }
 
-/// One window-level menu shared by every authentication page. Native UIMenu
-/// supplies its own anchor; no action sheet coordinates or per-page duplicates.
 pub fn auth_toolbar() -> Vec<ToolbarEntry> {
     let locale = day::locale().get().to_lowercase();
     let _ = get_auth_state().settings_revision.get();
@@ -311,19 +304,14 @@ pub(super) fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
     piece
 }
 
-// Native field configuration and flexible sizing must share this boundary.
 #[cfg(any(feature = "uikit", test))]
 pub(super) fn native_auth_input(
     field: impl Decorate,
     configure: impl FnOnce(day::RNode) + 'static,
 ) -> impl Piece {
-    // Layout decorators can return nodes without native handles. Configure
-    // the leaf before wrapping it, otherwise with_native silently returns None.
     field.tweak(configure).grow(Dimension::Width)
 }
 
-/// Only the action follows the keyboard. The compact sticker and input card
-/// retain their top positions throughout keyboard presentation and dismissal.
 pub(super) fn auth_keyboard_dock(action: impl Piece) -> impl Piece {
     let dock = column((action,)).spacing(0.0);
     #[cfg(feature = "uikit")]
@@ -334,8 +322,6 @@ pub(super) fn auth_keyboard_dock(action: impl Piece) -> impl Piece {
     dock.grow(Dimension::Width)
 }
 
-/// Day 0.7's UIKit image tint patch ignores implicit animation intent.
-/// Interpolate the color itself, leaving the field and form layout untouched.
 pub(super) fn animated_focus_tint(
     focused: Signal<bool>,
     accent: Signal<u32>,
@@ -353,13 +339,10 @@ pub(super) fn animated_focus_tint(
         animated.animate_to(*color, AnimSpec::ease_out(200));
     });
     let cleanup = tint.clone();
-    // Day disposes child scopes before freeing this scope's signals. A cleanup
-    // on the current scope would read an already-disposed tween during login.
     Scope::child().on_cleanup(move || cleanup.set(cleanup.get_untracked()));
     tint
 }
 
-/// Both eye images stay mounted; interrupted toggles reverse from the current opacity.
 pub(super) fn animated_visibility(visible: Signal<bool>) -> day::tween::Tweened<f64> {
     let opacity = day::tween::Tweened::new(if visible.get() { 1.0 } else { 0.0 });
     let animated = opacity.clone();
@@ -370,7 +353,6 @@ pub(super) fn animated_visibility(visible: Signal<bool>) -> day::tween::Tweened<
         },
     );
     let cleanup = opacity.clone();
-    // Cancel while the owning scope's tween signal is still alive.
     Scope::child().on_cleanup(move || cleanup.set(cleanup.get_untracked()));
     opacity
 }

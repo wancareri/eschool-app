@@ -146,7 +146,6 @@ pub fn render_unlock(state: AppState) -> impl Piece {
         .spacing(4.0)
         .align(HAlign::Center),
 
-        // PIN dots — the row rides the wrong-code shake
         {
             let s = state;
             let clk = success_clock;
@@ -163,7 +162,6 @@ pub fn render_unlock(state: AppState) -> impl Piece {
             .log_pos("PinUnlock:DotsRow")
         },
 
-        // Numpad
         numpad(state, shake, success_clock).log_pos("PinUnlock:Numpad"),
 
         spacer().grow(Dimension::Both),
@@ -247,7 +245,6 @@ pub fn render_setup(state: AppState) -> impl Piece {
             .align(HAlign::Center)
             .log_pos("PinSetup:Title"),
 
-            // PIN dots
             {
                 let inp = input;
                 let err = error_msg;
@@ -266,11 +263,9 @@ pub fn render_setup(state: AppState) -> impl Piece {
                 .log_pos("PinSetup:DotsRow")
             },
 
-            // Setup Numpad
             setup_numpad(state, step, input, first_pin, error_msg, shake, success_clock)
                 .log_pos("PinSetup:Numpad"),
 
-            // Cancel button
             button("Отмена")
                 .action(move || {
                     crate::app::preferences::haptics::tick();
@@ -646,16 +641,13 @@ fn setup_numpad_key(
 
                 if v.len() == PIN_LENGTH {
                     if step.get() == 0 {
-                        // First entry complete, advance to confirmation
                         crate::app::preferences::haptics::pop();
                         first_pin.set(v);
                         step.set(1);
                         input.set(String::new());
                     } else {
-                        // Confirm entry
                         let expected = first_pin.get();
                         if v == expected {
-                            // Match! Save pin and finish
                             crate::app::preferences::haptics::pop();
                             run_success_pulse(clock, &SETUP_SUCCESS_GEN);
                             pin::save_pin(&v);
@@ -667,7 +659,6 @@ fn setup_numpad_key(
                                 setup_route.set(None);
                             });
                         } else {
-                            // Mismatch! Shake and reset to step 0
                             nslog::nslog("[PIN] Mismatch in confirmation");
                             error_msg.set("PIN-коды не совпадают".into());
                             run_shake(shake, &SETUP_SHAKE_GEN);

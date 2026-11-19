@@ -2,8 +2,6 @@ use crate::app::AppState;
 use eschool_api::entities::*;
 use day::prelude::*;
 
-/// A пропуск is the «н» mark in the Е-школа journal (some payloads tag the
-/// record via `kind` instead of spelling the mark).
 fn is_absence(s: &LessonSlot) -> bool {
     let Some(lm) = s.lesson_mark.as_ref() else {
         return false;

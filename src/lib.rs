@@ -1,4 +1,3 @@
-//! Eschool App — a Day framework cross-platform school diary.
 
 pub mod app;
 pub mod pages;

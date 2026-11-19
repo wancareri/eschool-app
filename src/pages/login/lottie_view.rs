@@ -1,4 +1,3 @@
-//! Authentication stickers rendered by Day’s native Lottie piece on iOS/Android.
 use day::prelude::*;
 use day_piece_lottie::lottie;
 

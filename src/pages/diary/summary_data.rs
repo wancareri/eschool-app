@@ -64,7 +64,6 @@ pub(super) fn get_quarter_marks_map(
         .with(|c| crate::pages::diary::data::extract_marks_for_quarter(c, &state.week_quarters.get(), q))
 }
 
-/// Period key inside `/final/whole` for a quarter column (4 = the year tab).
 pub(super) fn quarter_period(q: usize) -> &'static str {
     match q {
         0 => "FIRST_QUARTER",
@@ -75,8 +74,6 @@ pub(super) fn quarter_period(q: usize) -> &'static str {
     }
 }
 
-/// The teacher-set final mark for a subject in a period («Выставл.» / «Год»),
-/// straight from `/final/whole`. An unset final is a dash — never an average.
 pub(super) fn final_mark(state: AppState, subject: &str, period: &str) -> Option<String> {
     state.final_marks.with(|marks| {
         marks
@@ -86,8 +83,6 @@ pub(super) fn final_mark(state: AppState, subject: &str, period: &str) -> Option
     })
 }
 
-/// Renders a final mark: a number as an integer grade, anything else as-is,
-/// and an unset final as a dash.
 pub(super) fn final_mark_text(mark: Option<String>) -> String {
     match mark {
         Some(v) => match v.parse::<f64>() {

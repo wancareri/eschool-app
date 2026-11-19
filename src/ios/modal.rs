@@ -1,5 +1,3 @@
-//! App-owned transitions for the shared bottom-sheet shell on Day 0.7.1.
-//! Configure only this shell's DayCoverVC; PIN setup keeps its normal cover.
 
 use block2::{Block, RcBlock};
 use objc2::rc::Retained;
@@ -53,8 +51,6 @@ fn configure_presentation(vc: &UIViewController) {
 }
 
 pub(crate) fn install_presentation_hook() {
-    // Installed on the main thread, once. UIKit chooses the animator inside
-    // presentViewController:, before viewWillAppear: can restore the delegate.
     ORIGINAL_PRESENT.get_or_init(|| {
         let class = UIViewController::class();
         let selector = objc2::sel!(presentViewController:animated:completion:);
@@ -72,8 +68,6 @@ pub(crate) fn install_presentation_hook() {
 }
 
 thread_local! {
-    // UIViewController.transitioningDelegate is weak. This stateless delegate
-    // lives for the main thread; animators retain only one transition's views.
     static DELEGATE: Retained<ModalTransitionDelegate> = {
         let mtm = MainThreadMarker::new().expect("UIKit main thread");
         unsafe { msg_send![ModalTransitionDelegate::alloc(mtm), init] }
@@ -84,7 +78,6 @@ pub(crate) fn configure_cover(view: &UIView, _mtm: MainThreadMarker) {
     let mut next = view.nextResponder();
     while let Some(responder) = next {
         if let Some(vc) = responder.downcast_ref::<UIViewController>() {
-            // A mismatched hierarchy must never reconfigure a page/navigation VC.
             if vc.class().name().to_bytes() != b"DayCoverVC" {
                 break;
             }
@@ -182,9 +175,6 @@ fn motion_views(root: &UIView, out: &mut Vec<Retained<UIView>>) {
 }
 
 fn settle_initial_layout(view: &UIView) {
-    // Day applies the card's implicit resize animation even to its first
-    // zero-to-real frame assignment. Its model geometry is already final;
-    // discard only those preparation animations while the root is invisible.
     view.layer().removeAllAnimations();
     for child in view.subviews() {
         settle_initial_layout(&child);

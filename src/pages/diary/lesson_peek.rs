@@ -64,7 +64,6 @@ fn attachment_row(state: AppState, att: crate::pages::diary::attachments::Lesson
     let att_id = if !att.id.is_empty() { att.id.clone() } else { att.url.clone() };
 
     row((
-        // Left icon
         if is_link {
             label("🔗")
                 .font(Font::Headline)
@@ -76,7 +75,6 @@ fn attachment_row(state: AppState, att: crate::pages::diary::attachments::Lesson
                 .any()
         },
 
-        // Title and size column
         column((
             label(title_str)
                 .font(Font::Subheadline)
@@ -99,7 +97,6 @@ fn attachment_row(state: AppState, att: crate::pages::diary::attachments::Lesson
         .spacing(1.0)
         .grow(Dimension::Both),
 
-        // Action buttons (vertical column of clean icons with iOS-style tap feedback)
         if is_link {
             let link_pressed = Signal::new(false);
             let link_setter = link_pressed.setter();
@@ -168,7 +165,6 @@ fn attachment_row(state: AppState, att: crate::pages::diary::attachments::Lesson
             let sp_tint = share_pressed;
 
             column((
-                // QuickLook / View icon button
                 zstack((
                     when(
                         move || state.downloading_files.with(|s| s.contains(&id_check)),
@@ -199,7 +195,6 @@ fn attachment_row(state: AppState, att: crate::pages::diary::attachments::Lesson
                 .corner_radius(6.0)
                 .on_tap(open_fn_action),
 
-                // Share / Save to Files / Download icon button
                 vector(crate::res::vectors::download)
                     .frame(18.0, 18.0)
                     .tint(move || {
@@ -321,7 +316,6 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
     let k_lbl = key.clone();
     let k_del_btn_chk = key.clone();
 
-    // Attachments fetching
     let uuid_for_att = if !target.lesson_uuid.is_empty() {
         target.lesson_uuid.clone()
     } else {
@@ -337,9 +331,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
     let u_list = uuid_for_att.clone();
 
     column((
-        // ── 1. ШАПКА: Предмет, Учитель, Отметка, Дата, Время ────────
         column((
-            // Верхняя строка: Предмет + Учитель слева, Отметка справа
             row((
                 column((
                     if is_substitution {
@@ -407,7 +399,6 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
             ))
             .align(VAlign::Top),
 
-            // Единая строка деталей: Дата • Номер урока (время)
             row((
                 if let Some(ref d_str) = date_display {
                     row((
@@ -433,9 +424,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
 
         divider().padding(Insets { top: 12.0, leading: 0.0, bottom: 12.0, trailing: 0.0 }),
 
-        // ── 2. ПОСЕРЕДИНЕ: Тема урока + Домашнее задание ────────────
         column((
-            // Тема
             column((
                 label("ТЕМА УРОКА")
                     .font(Font::Caption)
@@ -456,7 +445,6 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
             .spacing(3.0)
             .align(HAlign::Leading),
 
-            // Домашнее задание
             column((
                 label("ДОМАШНЕЕ ЗАДАНИЕ")
                     .font(Font::Caption)
@@ -483,9 +471,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
 
         divider().padding(Insets { top: 12.0, leading: 0.0, bottom: 12.0, trailing: 0.0 }),
 
-        // ── 3. СНИЗУ: Файлы (Материалы) + Заметки ────────────────────
         column((
-            // Материалы к уроку (файлы)
             if has_attachments || !target.lesson_uuid.is_empty() {
                 column((
                     row((
@@ -541,8 +527,6 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                 spacer().height(0.0).any()
             },
 
-        // ── 7. ЗАМЕТКА К УРОКУ (NOTE) ────────────────────────────────
-        // 1. Inline editing mode
         when(
             move || is_editing.get(),
             move || {
@@ -597,7 +581,6 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
             },
         ),
 
-        // 2. Note exists, not editing
         when(
             move || !is_editing.get() && state.lesson_notes.with(|m| m.get(&k_chk1).map(|s| !s.trim().is_empty()).unwrap_or(false)),
             move || {
@@ -639,7 +622,6 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
             },
         ),
 
-        // 3. No note exists, not editing
         when(
             move || !is_editing.get() && !state.lesson_notes.with(|m| m.get(&k_chk2).map(|s| !s.trim().is_empty()).unwrap_or(false)),
             move || {

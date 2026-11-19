@@ -31,7 +31,6 @@ pub fn install_lifecycle_observers() {
                 state.pin_error.set(false);
                 state.is_authenticated.set(false);
                 state.pin_lock_active.set(pin);
-                // The pin_lock_active watcher handles the PIN+Face ID case.
                 if biometric && !pin { biometric::authenticate_async(state); }
             }
         }

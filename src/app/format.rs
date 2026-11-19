@@ -1,10 +1,8 @@
-//! Date formatting, grade colors, and other utility functions.
 
 use day::prelude::Color;
 
 use crate::app::preferences::colors;
 
-/// Short weekday label from a 1-based day index (1 = Monday).
 pub fn weekday_short(dow: u32) -> &'static str {
     match dow {
         1 => "Пн",
@@ -17,7 +15,6 @@ pub fn weekday_short(dow: u32) -> &'static str {
     }
 }
 
-/// Weekday name from a 1-based day index (1 = Monday).
 pub fn weekday_name(dow: u32) -> &'static str {
     match dow {
         1 => "Понедельник",
@@ -30,17 +27,12 @@ pub fn weekday_name(dow: u32) -> &'static str {
     }
 }
 
-/// Render a timestamp (epoch millis) as "D.MM".
 pub fn format_date_short(ts: u64) -> String {
-    // e-schools API timestamps represent midnight in Europe/Minsk (UTC+3, offset +10800s).
-    // In UTC, this is 21:00 of the preceding day. Adding 12 hours (43_200_000 ms) lands squarely
-    // in midday of the intended calendar day regardless of local timezone/UTC offset.
     let epoch_days = ((ts + 12 * 3600 * 1000) / 86_400_000) as i64;
     let d = day::datetime::DayDate::from_epoch_days(epoch_days);
     format!("{}.{:02}", d.day, d.month)
 }
 
-/// Full header: "Понедельник, 07.09".
 pub fn format_date_header(dow: u32, ts: u64) -> String {
     let epoch_days = ((ts + 12 * 3600 * 1000) / 86_400_000) as i64;
     let calc_dow = ((epoch_days + 3) % 7 + 1) as u32;
@@ -52,7 +44,6 @@ pub fn format_date_header(dow: u32, ts: u64) -> String {
     format!("{}, {}", dow_name, format_date_short(ts))
 }
 
-/// Full date with month name in Russian: "Понедельник, 19 октября".
 pub fn format_date_full(dow: u32, ts: u64) -> String {
     let epoch_days = ((ts + 12 * 3600 * 1000) / 86_400_000) as i64;
     let calc_dow = ((epoch_days + 3) % 7 + 1) as u32;
@@ -79,8 +70,6 @@ pub fn format_date_full(dow: u32, ts: u64) -> String {
     format!("{}, {} {}", dow_name, d.day, month_name)
 }
 
-/// Current weekday as a 1-based index (1 = Monday), computed from the system clock
-/// using the same Europe/Minsk day-rollover convention as the timestamp formatters.
 pub fn today_dow() -> u32 {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -134,7 +123,6 @@ pub fn parse_marks(mark_str: &str) -> Vec<f64> {
     result
 }
 
-/// `08:30:00` → `08:30` — the API's bell times carry seconds, the UI never shows them.
 pub fn strip_seconds(t: &str) -> String {
     t.get(..5).unwrap_or(t).to_string()
 }
@@ -145,7 +133,6 @@ mod tests {
 
     #[test]
     fn minsk_weekday_changes_at_local_midnight() {
-        // 2026-11-09 is Monday; UTC midnight is 03:00 in Minsk.
         let monday = 20_766 * 86_400;
         assert_eq!(weekday_at(monday + 12 * 3600), 1); // 15:00 Monday
         assert_eq!(weekday_at(monday + 21 * 3600 - 1), 1);

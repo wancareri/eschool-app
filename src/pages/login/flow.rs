@@ -37,7 +37,6 @@ pub(super) fn get_auth_state() -> AuthState {
     })
 }
 
-/// Clear every auth draft before showing the welcome page again.
 pub fn reset_auth_flow() {
     #[cfg(feature = "uikit")]
     crate::ios::autofill::ios::reset();
@@ -201,8 +200,6 @@ pub(super) fn auth_form(state: AppState, _show_logs: Signal<bool>) -> impl Piece
                 password_focused.set(false);
                 crate::ios::keyboard::dismiss();
             } else if old.is_some_and(|old| old.len() > p.len()) {
-                // Day reports only completed native pops. A cancelled swipe
-                // never changes the path and must not dismiss/refocus fields.
                 if p.last() == Some(&AuthRoute::Login) {
                     password_focused.set(false);
                     focus_auth_route(AuthRoute::Login);

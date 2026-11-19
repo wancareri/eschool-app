@@ -1,11 +1,9 @@
-//! Long-press access to the same detail action exposed by a tap.
 use day::prelude::*;
 
 pub fn attach(piece: impl Piece, action: impl Fn() + 'static) -> AnyPiece {
     #[cfg(feature = "uikit")]
     {
         use day_uikit::UiKitExt;
-        // Create an explicit native hit-test container before attaching the recognizer.
         piece
             .background(Color::rgba(0.0, 0.0, 0.0, 0.0))
             .uikit(move |view, _, mtm| native::install(view, mtm, action))

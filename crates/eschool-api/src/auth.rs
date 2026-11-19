@@ -1,4 +1,3 @@
-//! Authentication — OAuth 7-step login flow and token refresh.
 
 use serde::{Deserialize, Serialize};
 
@@ -13,12 +12,9 @@ pub struct Token {
     pub refresh_token: String,
 }
 
-/// Result of parent login indicating if initial password setup is required.
 #[derive(Debug, Clone)]
 pub enum ParentLoginResult {
-    /// Standard successful login
     Success(Token),
-    /// Account logged in with temporary password / invitation code and needs permanent password
     RequiresNewPassword {
         token: Token,
         parent_uuid: String,
@@ -41,7 +37,6 @@ impl Auth {
         Self
     }
 
-    /// Login with username and password as a student (OAuth 7-step redirect flow).
     pub fn login_student_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
         let client = reqwest::blocking::Client::builder()
             .cookie_store(true)
@@ -51,7 +46,6 @@ impl Auth {
             .build()
             .map_err(|e| format!("Client build: {e}"))?;
 
-        // Step 1: GET diary login/student → 302 to OAuth
         let resp1 = client
             .get(format!("{}/{}", blocking::BASE_URL, endpoints::LOGIN_STUDENT.trim_start_matches('/')))
             .send()
@@ -63,7 +57,6 @@ impl Auth {
             .ok_or("Шаг 1: сервер не вернул редирект (Location)")?
             .to_string();
 
-        // Step 2: GET OAuth login page → extract CSRF + ReturnUrl
         let login_page_url = if oauth_login_url.starts_with("http") {
             oauth_login_url
         } else {
@@ -79,7 +72,6 @@ impl Auth {
         let return_url =
             extract_return_url(&login_html).ok_or_else(|| "ReturnUrl не найден".to_string())?;
 
-        // Step 3: POST credentials → 302 to callback
         let oauth_origin = extract_origin(&login_page_url);
         let params = [
             ("Input.ReturnUrl", return_url.as_str()),
@@ -109,7 +101,6 @@ impl Auth {
         };
         let callback_url = decode_entities(&callback_raw);
 
-        // Step 4: GET callback → 302 to diary callback
         let resp4_url = if callback_url.starts_with("http") {
             callback_url
         } else {
@@ -134,7 +125,6 @@ impl Auth {
             };
         let diary_callback_url = decode_entities(&diary_callback_raw);
 
-        // Step 5: GET diary callback → 302 to preauthorized?data=UUID
         let resp5_url = if diary_callback_url.starts_with("http") {
             diary_callback_url
         } else {
@@ -160,7 +150,6 @@ impl Auth {
         let uuid = extract_uuid(&preauth_redirect)
             .ok_or_else(|| "Шаг 5: UUID не найден в ответе preauthorized".to_string())?;
 
-        // Step 6: GET data_for_login/{UUID}
         let data_url = format!("{}/{}", blocking::BASE_URL, endpoints::data_for_login(&uuid).trim_start_matches('/'));
         let resp6 = client
             .get(&data_url)
@@ -192,7 +181,6 @@ impl Auth {
             .unwrap_or("student")
             .to_lowercase();
 
-        // Step 7: GET auth/login?token={base64}
         use base64::Engine;
         let token_payload = format!("{}:{}:{}", profile_id, school_id, kind);
         let token_b64 =
@@ -218,7 +206,6 @@ impl Auth {
         })
     }
 
-    /// Login as parent: direct POST to `/api/v1/auth/login/parent` with JSON `{"login": "...", "password": "..."}`.
     pub fn login_parent_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(15))
@@ -271,7 +258,6 @@ impl Auth {
         })
     }
 
-    /// Login as parent and inspect if the account requires temporary password setup (registration).
     pub fn login_parent_with_status_blocking(
         &self,
         username: &str,
@@ -293,16 +279,12 @@ impl Auth {
         Ok(ParentLoginResult::Success(token))
     }
 
-    /// Automatically attempts login based on username format.
-    /// If the username consists only of digits (typical for parent IDs), tries parent login first.
-    /// If that fails or if the username has letters, tries student login, then falls back.
     pub fn login_auto_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
         let is_all_digits = !username.is_empty() && username.chars().all(|c| c.is_ascii_digit());
         if is_all_digits {
             match self.login_parent_blocking(username, password) {
                 Ok(token) => return Ok(token),
                 Err(err) => {
-                    // Try student login in case it's a student with numeric username
                     if let Ok(token) = self.login_student_blocking(username, password) {
                         return Ok(token);
                     }
@@ -311,11 +293,9 @@ impl Auth {
             }
         }
 
-        // Otherwise try student login first
         match self.login_student_blocking(username, password) {
             Ok(token) => Ok(token),
             Err(student_err) => {
-                // Try parent login as fallback
                 match self.login_parent_blocking(username, password) {
                     Ok(token) => Ok(token),
                     Err(_) => Err(student_err),
@@ -324,20 +304,11 @@ impl Auth {
         }
     }
 
-    /// Login with username and password (auto-detects student or parent account).
     pub fn login_blocking(&self, username: &str, password: &str) -> Result<Token, String> {
         self.login_auto_blocking(username, password)
     }
 }
 
-/// Refresh an expired access token using the stored refresh token.
-///
-/// Uses the diary API's own refresh endpoint (not IdentityServer's /connect/token):
-/// ```text
-/// PUT /api/v1/auth/refresh
-/// Content-Type: text/plain
-/// Body: <refresh_token>
-/// ```
 pub fn refresh_access_token(refresh_token: &str) -> Result<(String, String), String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
@@ -365,13 +336,11 @@ pub fn refresh_access_token(refresh_token: &str) -> Result<(String, String), Str
     Ok((data.auth_token, data.refresh_token))
 }
 
-/// Full re-login: tries refresh first, falls back to username/password.
 pub fn relogin(
     username: &str,
     password: &str,
     refresh_token: Option<&str>,
 ) -> Result<Token, String> {
-    // Try refresh first (works on most IPs)
     if let Some(rt) = refresh_token {
         if !rt.is_empty() {
             match refresh_access_token(rt) {
@@ -388,7 +357,6 @@ pub fn relogin(
         }
     }
 
-    // Fallback: full 7-step OAuth login
     Auth::new().login_blocking(username, password)
 }
 
@@ -410,7 +378,6 @@ fn format_reqwest_error(step: &str, e: &reqwest::Error) -> String {
     format!("{step}: {}", parts.join(" — "))
 }
 
-// ── HTML parsing helpers ───────────────────────────────────────────────
 
 fn extract_csrf(html: &str) -> Option<String> {
     let re = regex::Regex::new(r#"name="__RequestVerificationToken"[^>]*value="([^"]+)""#).ok()?;
@@ -489,7 +456,6 @@ fn extract_login_error(html: &str) -> Option<String> {
     }
 }
 
-/// Extracts the `usi` (user/parent UUID) claim from a JWT access token.
 pub fn extract_token_usi(token: &str) -> Option<String> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() < 2 {
@@ -507,13 +473,6 @@ pub fn extract_token_usi(token: &str) -> Option<String> {
 
 const SPECIAL_PASSWORD_CHARS: &str = "!@#$%^*()-_=+[]{};:,.?/";
 
-/// Validates parent password against e-schools rules:
-/// - 12 to 15 chars
-/// - at least 1 lowercase letter (a-z)
-/// - at least 1 uppercase letter (A-Z)
-/// - at least 1 digit (0-9)
-/// - at least 1 special character (!@#$%^*()-_=+[]{};:,.?/)
-/// - no spaces, quotes, backslashes, angle brackets, cyrillic, etc.
 pub fn validate_parent_password(password: &str) -> Result<(), String> {
     let mut missing = Vec::new();
     if !password.chars().any(|c| c.is_ascii_lowercase()) {
@@ -584,7 +543,6 @@ mod tests {
 
     #[test]
     fn test_extract_token_usi() {
-        // Token payload with usi="d3a55788-19b4-47e4-abe6-bf5141b2ed50"
         let token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJqdGkiOiI5ZmMwZjNhZC1hNzg1LTQ4MjMtOTFjNi00OGY1Mjc1N2M1NDIiLCJzdWIiOiJBVVRIIiwiaWF0IjoxNzkyNDQ1NDk3LCJleHAiOjE3OTI0NTI2OTcsInVzaSI6ImQzYTU1Nzg4LTE5YjQtNDdlNC1hYmU2LWJmNTE0MWIyZWQ1MCJ9.JXVjMwy7MjdHpruXIC9Ltur26EE2ChgfqP1lOCpzMlo";
         let usi = extract_token_usi(token);
         assert_eq!(usi, Some("d3a55788-19b4-47e4-abe6-bf5141b2ed50".to_string()));
@@ -592,28 +550,20 @@ mod tests {
 
     #[test]
     fn test_validate_parent_password() {
-        // Valid password: 12-15 chars, uppercase, lowercase, digit, special char
         assert!(validate_parent_password("*tQ6gjZUz9yP").is_ok());
 
-        // Too short (< 12)
         assert!(validate_parent_password("Short1!").is_err());
 
-        // Too long (> 15)
         assert!(validate_parent_password("VeryLongPassword123!@#").is_err());
 
-        // Missing digit
         assert!(validate_parent_password("PasswordSpecial!").is_err());
 
-        // Missing uppercase
         assert!(validate_parent_password("password12345!").is_err());
 
-        // Missing lowercase
         assert!(validate_parent_password("PASSWORD12345!").is_err());
 
-        // Missing special char
         assert!(validate_parent_password("Password123456").is_err());
 
-        // Prohibited char (cyrillic)
         assert!(validate_parent_password("*tQ6gjZUz9yП").is_err());
     }
 }

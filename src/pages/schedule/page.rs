@@ -10,8 +10,6 @@ const DAY_SWIPE_THRESHOLD: f64 = 36.0;
 const DAY_AXIS_LOCK: f64 = 8.0;
 const DAY_EDGE_DAMP: f64 = 0.3;
 
-// Generation/pending scheme like the diary week pager: taps and swipes chain
-// off the target still in flight, and a stale landing never stomps drag_x.
 static DAY_SWIPE_GEN: AtomicU64 = AtomicU64::new(0);
 static DAY_PENDING: AtomicI32 = AtomicI32::new(-1);
 
@@ -132,7 +130,6 @@ fn day_title(state: AppState) -> String {
 
 fn day_header(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>) -> impl Piece {
     column((
-        // Row of 6 day-of-week pills
         row((
             day_pill(state, page_width, drag_x, 1, "Пн"),
             day_pill(state, page_width, drag_x, 2, "Вт"),
@@ -144,7 +141,6 @@ fn day_header(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>) -> 
         .spacing(6.0)
         .padding(Insets { top: 0.0, leading: 16.0, bottom: 8.0, trailing: 16.0 }),
 
-        // Summary day title
         label(move || day_title(state))
             .font(Font::Headline)
             .bold()
@@ -431,7 +427,6 @@ fn day_lesson_rows(state: AppState, dow: u32) -> Vec<LessonRow> {
 fn lesson_table_row(state: AppState, slot: ItemSlot<LessonRow, String>) -> impl Piece {
     let s_col = state;
     row((
-        // Number
         label(move || slot.with(|r| r.num.to_string()))
             .font(Font::Title2)
             .bold()
@@ -440,7 +435,6 @@ fn lesson_table_row(state: AppState, slot: ItemSlot<LessonRow, String>) -> impl 
             .width(28.0)
             .align(TextAlign::Center),
 
-        // Subject & Time column
         column((
             label(move || slot.with(|r| r.subject.clone()))
                 .font(Font::Headline)

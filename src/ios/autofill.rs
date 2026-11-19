@@ -1,5 +1,3 @@
-//! Authentication UIKit supplements and diagnostics. Day owns credential roles,
-//! Return labels and same-field secure masking through its declarative InputTraits.
 
 #[cfg(any(feature = "uikit", test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,8 +28,6 @@ fn reconcile_credential_traits(
         CredentialTrait::SmartInsertDelete,
         CredentialTrait::GrammarChecking,
     ] {
-        // None means the OS does not support this trait. Never send a setter
-        // for an unsupported or unchanged trait: preserve the AutoFill session.
         if matches(kind) == Some(false) {
             restore(kind);
             repaired += 1;
@@ -40,8 +36,6 @@ fn reconcile_credential_traits(
     repaired
 }
 
-/// Keep a visible keyboard session during a push; interactive transitions must
-/// still report commit/cancel before any responder handoff.
 #[cfg(any(feature = "uikit", test))]
 fn coordinate_navigation_focus(
     keyboard_visible: bool,
@@ -56,7 +50,6 @@ fn coordinate_navigation_focus(
     }
 }
 
-/// Deliver the navigation focus request after UIKit's completion callback.
 #[cfg(any(feature = "uikit", test))]
 fn complete_navigation_focus(
     cancelled: bool,
@@ -106,10 +99,6 @@ pub mod ios {
         static OBSERVER: RefCell<Option<Retained<InputModeObserver>>> = const { RefCell::new(None) };
     }
 
-    // iOS 27 public UITextInputTraits API, absent from objc2-ui-kit 0.3.2.
-    // UITextGrammarCheckingTypeNo = 1 (NSInteger); verified against the native
-    // binding: https://learn.microsoft.com/dotnet/api/uikit.uitextgrammarcheckingtype
-    // Guard BOTH selectors so deployment on iOS 16 remains supported.
     const GRAMMAR_CHECKING_NO: isize = 1;
 
     fn grammar_checking(field: &UITextField) -> Option<isize> {
@@ -137,7 +126,6 @@ pub mod ios {
                 SmartInsertDelete => Some(field.smartInsertDeleteType() == UITextSmartInsertDeleteType::No),
                 GrammarChecking => grammar_checking(field).map(|value| value == GRAMMAR_CHECKING_NO),
                 InlinePrediction => {
-                    // Both selectors are required, including on the iOS 16 target.
                     (field.respondsToSelector(objc2::sel!(inlinePredictionType))
                         && field.respondsToSelector(objc2::sel!(setInlinePredictionType:)))
                         .then(|| field.inlinePredictionType() == UITextInlinePredictionType::No)
@@ -159,13 +147,9 @@ pub mod ios {
     }
 
     fn supplemental_traits(field: &UITextField, role: Role) {
-        // Day applies InputPurpose at mount and caches it. Its equality guard
-        // cannot repair a later native change while the purpose stays the same.
         credential_traits(field, role);
         if let Role::NewPassword = role {
             if let Some(mtm) = MainThreadMarker::new() {
-                // The parent API accepts 12–15 characters and requires a letter
-                // in each case, a digit and a permitted special character.
                 let descriptor = NSString::from_str(
                     "minlength: 12; maxlength: 15; required: lower; required: upper; required: digit; required: [!]; allowed: lower, upper, digit, [!];",
                 );
@@ -226,9 +210,6 @@ pub mod ios {
     pub fn capture_password(view: &UIView, value: Signal<String>) {
         configure(view, Role::Password);
         bind_value(view, value);
-        // Keep default accessibility and full-size geometry available to
-        // credential providers. Clear drawing plus the 1pt clipping wrapper
-        // conceals secure bullets without hiding or scaling the native field.
         view.setUserInteractionEnabled(false);
         view.setClipsToBounds(true);
         view.layer().setMasksToBounds(true);
@@ -241,8 +222,6 @@ pub mod ios {
         }
     }
 
-    /// Read before replacing the username page: credential providers may set
-    /// native text without sending Day's editingChanged control event.
     pub fn sync_values() {
         let updates = VALUES.with(|values| {
             let mut values = values.borrow_mut();
@@ -271,7 +250,6 @@ pub mod ios {
         reconcile_active_traits("app-language");
     }
 
-    /// Register the same field that Day configures and masks declaratively.
     pub fn password(view: &UIView, value: Signal<String>) {
         configure(view, Role::Password);
         bind_value(view, value);
@@ -281,8 +259,6 @@ pub mod ios {
         install_return_delegate(&field);
     }
 
-    /// A hidden keyboard waits for positioning; an already visible keyboard
-    /// hands off during a noninteractive push without starting a new session.
     pub fn focus_after_navigation(role: Role, allowed: impl Fn() -> bool + 'static) {
         use std::rc::Rc;
         fn enqueue(role: Role, allowed: Rc<dyn Fn() -> bool>, retry: bool) {
@@ -310,7 +286,6 @@ pub mod ios {
                 }
                 let field = weak.as_ref().and_then(Weak::load);
                 let Some(field) = field.filter(|f| f.window().is_some()) else {
-                    // Day may still be applying this turn's navigation patch.
                     if retry {
                         enqueue(role, allowed.clone(), false);
                     }
@@ -329,8 +304,6 @@ pub mod ios {
                     {
                         return;
                     }
-                    // A completed or interrupted pop can precede Day's path
-                    // update. Never focus the outgoing native controller.
                     let mut responder = field.nextResponder();
                     while let Some(current) = responder {
                         if let Some(vc) = current.downcast_ref::<objc2_ui_kit::UIViewController>() {
@@ -351,8 +324,6 @@ pub mod ios {
                     let focus = block2::RcBlock::new(|| {
                         field.becomeFirstResponder();
                     });
-                    // Keep an already visible keyboard in place when changing
-                    // from username to secure input; allow the initial rise.
                     if crate::ios::keyboard::get_keyboard_height()
                         > crate::ios::keyboard::get_safe_area_bottom()
                     {
@@ -372,8 +343,6 @@ pub mod ios {
                     ));
                     let finish = finish.clone();
                     super::complete_navigation_focus(cancelled, keyboard_visible, move |focus| {
-                        // Exit the transition callback before opening a new keyboard
-                        // session. Keep native objects confined to the main thread.
                         let bound = dispatch2::MainThreadBound::new(focus, mtm);
                         dispatch2::DispatchQueue::main().exec_async(move || {
                             if let Some(mtm) = MainThreadMarker::new() {
@@ -426,8 +395,6 @@ pub mod ios {
     }
 
     pub fn reset() {
-        // Drop native bindings before clearing signals so old credentials cannot
-        // be read back by a queued input-mode notification after logout.
         VALUES.with(|values| values.borrow_mut().clear());
         FIELDS.with(|fields| fields.borrow_mut().clear());
     }
@@ -446,8 +413,6 @@ pub mod ios {
         unsafe impl UITextFieldDelegate for ReturnKeyDelegate {
             #[unsafe(method(textFieldShouldReturn:))]
             fn should_return(&self, field: &UITextField) -> bool {
-                // Emit exactly one submit without UIKit's resign/reopen cycle.
-                // Day's target/action still dispatches the existing on_submit.
                 field.sendActionsForControlEvents(UIControlEvents::EditingDidEndOnExit);
                 false
             }
@@ -466,8 +431,6 @@ pub mod ios {
             fn forwarding_target(&self, selector: Sel)
                 -> Option<Retained<ProtocolObject<dyn UITextFieldDelegate>>>
             {
-                // Preserve DayTarget's read-only edit policy and every other
-                // optional delegate method, including future toolkit additions.
                 self.ivars().original.as_ref()
                     .filter(|original| original.respondsToSelector(selector))
                     .cloned()
@@ -475,8 +438,6 @@ pub mod ios {
         }
     );
 
-    // The field owns its proxy via this association; its UIKit delegate is weak.
-    // The proxy retains only the original delegate, never the field itself.
     static RETURN_PROXY_KEY: u8 = 0;
 
     fn install_return_delegate(field: &UITextField) {
@@ -504,7 +465,6 @@ pub mod ios {
     }
 
     fn trace_traits(field: &UITextField, role: Role, event: &str) {
-        // Deliberately never read field.text(), selection, or credential lengths.
         let language = field
             .textInputMode()
             .and_then(|mode| mode.primaryLanguage())
@@ -558,9 +518,6 @@ pub mod ios {
         let repaired = credential_traits(&field, role);
         trace_traits(&field, role, &format!("{event}:reconciled repaired={repaired}"));
 
-        // UIKit can finish the mode transition after notifying observers. Check
-        // the SAME weak field once more after returning to the main queue. A
-        // navigation/logout must not redirect this event to another input.
         let bound = dispatch2::MainThreadBound::new(Weak::new(&*field), mtm);
         let event = event.to_owned();
         dispatch2::DispatchQueue::main().exec_async(move || {
@@ -612,10 +569,6 @@ pub mod ios {
 
             #[unsafe(method(inputModeChanged:))]
             fn input_mode_changed(&self, notification: &NSNotification) {
-                // Restore only actual drift, immediately and after the mode
-                // transition settles. The notification does not document trait resets.
-                // reloadInputViews refreshes custom views, not an AutoFill session;
-                // preserve the responder and keyboard type chosen by InputPurpose.
                 let event = notification.name().to_string();
                 reconcile_active_traits(&event);
             }
@@ -658,7 +611,6 @@ pub mod ios {
     }
 }
 
-/// Used by the new-password and confirmation inputs on both platforms.
 pub fn new_password(node: day::RNode) {
     #[cfg(feature = "uikit")]
     let _ = day_uikit::with_native(node, |view, _, _| {
@@ -714,7 +666,6 @@ mod credential_trait_tests {
 
     #[test]
     fn unchanged_credential_traits_never_invoke_native_setters() {
-        // Reassigning even an unchanged content type can disturb AutoFill.
         for _ in 0..4 {
             assert_eq!(reconcile_credential_traits(
                 |_| Some(true),
@@ -726,7 +677,6 @@ mod credential_trait_tests {
     #[test]
     fn repairs_only_drifted_traits_and_is_idle_on_the_next_input_mode_event() {
         use CredentialTrait::*;
-        // Username content type is still correct; correction settings drifted.
         let state = RefCell::new([Some(true), Some(false), Some(false), Some(false), Some(true), Some(true), Some(true), Some(true)]);
         let writes = RefCell::new(Vec::new());
         let reconcile = || reconcile_credential_traits(

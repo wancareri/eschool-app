@@ -2,25 +2,16 @@ use crate::app::{AppState, ConnStatus};
 use crate::res;
 use day::prelude::*;
 
-/// Close is just the signal flip: the cover piece runs the native dismissal
-/// itself and keeps its content mounted until the backend reports it hidden.
 fn close_sheet(state: AppState, reason: &str) {
     crate::ios::nslog::nslog(&format!("[cover] close_sheet: {reason}"));
     state.show_network_modal.set(None);
 }
 
-/// The network status modal: the reusable [`modal_window`] shell with this app's
-/// card content in it — status glyph, headline, body and the two actions. The
-/// window owns the dim, the drag, the handle and the animation (both directions
-/// are the same motion mirrored in time); everything inside the card lives here.
 pub fn network_error_sheet(state: AppState) -> impl Piece {
     let s_retry = state;
     let s_ok = state;
 
     crate::components::modal::modal_window(state.show_network_modal, 0.0, move |_| {
-        // The status glyph — the same lucide vectors the island carries
-        // (wifi-off / alert-circle / check), the accent spinner while connecting.
-        // One shared 22pt slot that swaps on every status change.
         let status_icon = when(
             move || matches!(state.conn_status.get(), ConnStatus::Offline | ConnStatus::Error),
             move || {
@@ -76,14 +67,10 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
             trailing: 10.0,
         });
 
-        // The window's section lays its children out with 10pt gaps; this column
-        // stands in the card body, so it keeps the same spacing to match what the
-        // section used to space out directly (icon row, body, actions).
         column((
             icon_and_title,
             body,
 
-            // Action buttons
             column((
                 when(
                     move || matches!(

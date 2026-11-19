@@ -79,7 +79,6 @@ pub struct FinalMarks {
     pub diary_signature: serde_json::Value,
 }
 
-/// School institution record from `/api/v1/institution/schools`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InstitutionSchool {
     pub uuid: String,

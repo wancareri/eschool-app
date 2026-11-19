@@ -66,7 +66,6 @@ pub(super) fn child_switcher(state: AppState) -> impl Piece {
     )
 }
 
-// ── Quarter / Year tabs ────────────────────────────────────────────────
 
 fn choose_quarter(state: AppState, show_summary: Signal<bool>, revision: Signal<u64>, q: usize) {
     haptics::tick();
@@ -144,8 +143,6 @@ pub(super) fn selected_quarter_has_current_week(state: AppState) -> bool {
     index >= 0
         && (index as usize) < state.all_weeks.get().len()
         && state.week_quarters.with(|quarters|
-            // Some schools provide weeks without enough period metadata to
-            // infer quarters. Keep those real lessons and arrows accessible.
             quarters.get(index as usize).copied().flatten()
                 .is_none_or(|quarter| quarter == state.current_quarter.get()))
 }
@@ -155,7 +152,6 @@ fn select_week_in_quarter(state: AppState, q: usize) {
     let current = state.current_week_index.get();
     if current < 0 || !range.contains(&(current as usize)) {
         if let Some(&first) = range.first().filter(|&&i| i < state.all_weeks.get().len()) {
-            // A header choice supersedes an in-flight horizontal swipe.
             SWIPE_GEN.fetch_add(1, Ordering::AcqRel);
             SWIPE_PENDING.store(-1, Ordering::Release);
             crate::pages::diary::data::load_week(state, first as i32);
@@ -168,7 +164,6 @@ pub(super) fn select_quarter(state: AppState, q: usize) {
         crate::pages::diary::data::load_year(state);
         return;
     }
-    // Show existing per-quarter data immediately
     let q_all = state.quarter_all_marks.get();
     if let Some(marks) = q_all.get(q) {
         if !marks.is_empty() {
@@ -205,7 +200,6 @@ pub(super) fn sub_tabs(
             if q < 4 {
                 select_week_in_quarter(s2, q);
             } else {
-                // Return from year totals to the current week's actual quarter.
                 crate::pages::diary::data::load_week(s2, s2.current_week_index.get());
             }
         })
@@ -236,5 +230,3 @@ pub(super) fn sub_tabs(
         trailing: 16.0,
     })
 }
-
-// ── Week view ──────────────────────────────────────────────────────────

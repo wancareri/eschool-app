@@ -1,4 +1,3 @@
-//! Connect the Diary's nested UIScrollView to UIKit's native navigation edge effect.
 
 use dispatch2::{DispatchQueue, MainThreadBound};
 use objc2::{MainThreadMarker, MainThreadOnly, rc::Weak, runtime::Sel};
@@ -37,7 +36,6 @@ pub(crate) fn install_tab_bar_glass(bar: &UITabBar, mtm: MainThreadMarker) {
     bar.insertSubview_atIndex(&glass, 0);
 }
 
-/// Reapply the system appearance after Day configures its page controller's bar.
 pub fn install_diary_navigation_hook() {
     static INSTALL: std::sync::Once = std::sync::Once::new();
     INSTALL.call_once(|| {
@@ -134,15 +132,12 @@ fn schedule_title_button_retry_with_remaining(controller: &UIViewController, rem
     });
 }
 
-/// Register the Diary scroll view after Day has mounted it in its page controller.
 pub fn bind_diary_scroll(view: &objc2::rc::Retained<UIView>, _class: &str, mtm: MainThreadMarker) {
     let Some(scroll) = view.downcast_ref::<UIScrollView>() else {
         return;
     };
     configure(view, scroll);
 
-    // Day may invoke the tweak before the page view is attached to its controller.
-    // Recheck once on the next main-queue turn, scoped to this mounted scroll view.
     let weak = MainThreadBound::new(Weak::new(&**view), mtm);
     DispatchQueue::main().exec_async(move || {
         let Some(mtm) = MainThreadMarker::new() else {
@@ -196,7 +191,6 @@ fn apply_system_bar_appearance(bar: &UINavigationBar) {
     bar.setTag(DIARY_BAR_STYLE_TAG);
 }
 
-/// Replace Day's non-interactive title label with a native glass button.
 fn install_title_button(controller: &UIViewController, bar: &UINavigationBar) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;

@@ -66,9 +66,6 @@ pub(super) fn username_step_view(
     })
     .glass_radius(16.0);
 
-    // The user explicitly requested keeping two steps with a capture input.
-    // Mount only while this step is active so it never competes with the real
-    // password field on the destination page. It cannot receive touches.
     #[cfg(feature = "uikit")]
     let credential_capture = {
         when(
@@ -86,8 +83,6 @@ pub(super) fn username_step_view(
                     },
                 )
                 .height(1.0)
-                // A zero-radius surface supplies a native clipping wrapper around
-                // the 1pt layout frame, as well as the field's own native clipping.
                 .corner_radius(0.0)
                 .any()
             },
@@ -109,7 +104,6 @@ pub(super) fn username_step_view(
             })
             .grow(Dimension::Width),
         credential_capture,
-        // Minimalist native session remember toggle
         row((
             label(res::str::auth_remember())
                 .font(Font::Subheadline)

@@ -1,4 +1,3 @@
-//! Diary capability facade. Focused modules own calendar, loading, and marks.
 use crate::app::{AppState, ConnStatus, FinalMarks};
 use crate::pages::login::auth;
 use crate::app::data::cache;
@@ -93,8 +92,6 @@ fn select_week(state: AppState, idx: usize) {
     }
 }
 
-/// Clear every student-specific value, including modals and pending indicators.
-/// The caller invalidates session tickets before invoking this.
 pub fn clear_data(state: AppState) {
     state.full_name.set(String::new());
     state.school_name.set(String::new());
@@ -179,8 +176,6 @@ pub fn load_all(state: AppState) {
             state.teachers_loading.set(false);
             match result {
                 Ok(data) => {
-                    // Keep a user's selection during a refresh, but return to
-                    // today after a new profile has been selected.
                     let selected_uuid = state.all_weeks.with(|w| {
                         w.get(state.current_week_index.get() as usize)
                             .map(|w| w.uuid.clone())
@@ -215,7 +210,6 @@ pub fn load_all(state: AppState) {
                         .set(data.class.graduating.unwrap_or(false));
                     cache::save("user_full_name", &data.name);
                     cache::save("user_school_name", &data.school_name);
-                    // Index keys are valid only for this exact ordered list.
                     let old_weeks = state.all_weeks.get();
                     let remapped: WeekCache = state.week_cache.with(|c| {
                         data.weeks
@@ -286,8 +280,6 @@ pub fn load_all(state: AppState) {
                         connected(state);
                     }
                     if let Some(idx) = idx {
-                        // Refresh the viewed week even when it was cached; load_all
-                        // fetched today's week, which may be a different one.
                         if fetched_idx != Some(idx) {
                             request_week(state, idx as i32, true);
                         }
@@ -458,7 +450,6 @@ fn fetch_week(
 }
 
 fn connected(state: AppState) {
-    // Do not hide a failed sibling request with a successful neighbor prefetch.
     if matches!(
         state.conn_status.get(),
         ConnStatus::Error | ConnStatus::Offline
@@ -541,7 +532,6 @@ fn request_week(state: AppState, idx: i32, visible: bool) {
             &week.uuid,
         );
         ticket.publish(move |state| {
-            // A refreshed list may have changed the week at this index.
             if !state
                 .all_weeks
                 .with(|w| w.get(idx as usize).is_some_and(|w| w.uuid == week.uuid))
@@ -796,8 +786,6 @@ pub fn switch_child(state: AppState, child_idx: usize) {
     session::invalidate();
     clear_data(state);
     state.active_child_index.set(child_idx);
-    // Select the new namespace BEFORE restoring any cache. Never reuse the
-    // previous child's class ID as a fallback.
     auth::store_ids(
         &child.school_id,
         "",
@@ -901,7 +889,6 @@ mod tests {
             extract_marks_for_quarter(&cache, &[Some(0)], 0)["Математика"],
             vec![8.0, 10.0]
         );
-        // The same refresh is idempotent; a corrected/deleted grade replaces it.
         cache.insert(0, marked_days("8/10"));
         assert_eq!(
             extract_marks_for_quarter(&cache, &[Some(0)], 0)["Математика"],

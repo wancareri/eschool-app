@@ -1,11 +1,8 @@
-//! Connection status lives in the native navbar, using the same toolbar on every page.
 use crate::app::{AppState, ConnStatus};
 use crate::res;
 use day::prelude::*;
 
 
-// Connected/Idle and Offline/Error share their artwork; changing only the
-// explanatory text must not replay the glyph transition.
 #[cfg(feature = "uikit")]
 pub(crate) fn icon_group(status: ConnStatus) -> u8 {
     match status {

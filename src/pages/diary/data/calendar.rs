@@ -7,8 +7,6 @@ pub(super) fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// Keep school-year boundaries supplied by the API; calendar years differ
-/// from academic years between January and August.
 pub(super) fn academic_year(year: u32, month: u32) -> (u32, u32) {
     let start = if month < 9 {
         year.saturating_sub(1)
@@ -18,7 +16,6 @@ pub(super) fn academic_year(year: u32, month: u32) -> (u32, u32) {
     (start, start + 1)
 }
 
-/// Assign weeks using actual period IDs/dates, never an assumed nine-week term.
 pub(super) fn week_quarters(
     weeks: &[WeekActivity],
     periods: &[TimeActivity],
@@ -75,8 +72,6 @@ pub(super) fn week_quarters(
             })
             .collect();
     }
-    // Some API versions expose only the period ID on each week. Four distinct
-    // parents ordered by their first week also describe the academic quarters.
     let mut parents: Vec<(String, u64)> = Vec::new();
     for w in weeks {
         if w.time_activity_id.is_empty() {
@@ -101,8 +96,6 @@ pub(super) fn week_quarters(
         .collect()
 }
 
-/// School API timestamps may arrive as seconds or milliseconds — everything
-/// compares in ms, so anything below ~2001-09 in magnitude is seconds.
 pub(super) fn normalize_ts(ts: u64) -> u64 {
     if ts < 1_000_000_000_000 {
         ts * 1000
@@ -111,9 +104,6 @@ pub(super) fn normalize_ts(ts: u64) -> u64 {
     }
 }
 
-/// The week the app opens on: the one containing `now_ms`; when none does
-/// (a gap between school years, a stale cache), the most recent week that has
-/// already started — never a silent fall back to week 0.
 pub(super) fn find_current_week(weeks: &[WeekActivity], now_ms: u64) -> Option<usize> {
     weeks
         .iter()

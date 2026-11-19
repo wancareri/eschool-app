@@ -1,5 +1,3 @@
-//! Crossfade the native bar's changed pixels before Day replaces its items.
-//! Keep UIKit's own buttons, glass, accessibility and action target intact.
 use crate::app::ConnStatus;
 use objc2::MainThreadMarker;
 use objc2_foundation::NSString;
@@ -31,9 +29,6 @@ fn transition_bars(view: &UIView, status: ConnStatus, mtm: MainThreadMarker) {
                 .find(|s| crate::components::connection_status::title(*s) == label)
             });
         if old_status.is_some_and(|old| crate::components::connection_status::icon_group(old) != crate::components::connection_status::icon_group(status)) {
-            // The navbar stays in place: only the glyph's pixels change. A
-            // transition on this stable layer survives Day rebuilding all its
-            // UIBarButtonItems, unlike an animation on the outgoing item view.
             let fade = CATransition::new();
             fade.setDuration(0.22);
             unsafe {

@@ -1,4 +1,3 @@
-//! Detect changed marks only after a successful server response for that week.
 use crate::app::data::cache;
 use eschool_api::entities::DaySchedule;
 use std::collections::HashMap;
@@ -30,7 +29,6 @@ fn snapshot(days: &[DaySchedule]) -> Snapshot {
 }
 
 fn changed_count(previous: Option<&Snapshot>, current: &Snapshot) -> usize {
-    // First observation is a baseline, including a previously unseen old week.
     previous
         .map(|old| {
             current
@@ -41,7 +39,6 @@ fn changed_count(previous: Option<&Snapshot>, current: &Snapshot) -> usize {
         .unwrap_or(0)
 }
 
-/// Must run in the session-checked UI callback, with the selected cache namespace.
 pub fn observe_week(uuid: &str, days: &[DaySchedule]) {
     let mut history: History = cache::load_json(HISTORY_KEY).unwrap_or_default();
     let current = snapshot(days);
@@ -87,8 +84,6 @@ fn request_notification_access() {
 
 static CHECKER_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Refresh while the process is running. iOS may suspend this thread in the
-/// background; this is not an OS background-fetch entitlement or remote push.
 pub fn start_grade_checker() {
     use std::sync::atomic::Ordering;
     if CHECKER_STARTED.swap(true, Ordering::AcqRel) {

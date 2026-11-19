@@ -55,7 +55,6 @@ fn window_shell(primary: bool) -> impl Piece {
         #[cfg(feature = "uikit")]
         crate::ios::pin::install_lifecycle_observers();
 
-        // Reactive: trigger load_all when is_authenticated transitions to true
         day::reactive::watch(
             move || state.is_authenticated.get(),
             move |&auth, old| {
@@ -68,14 +67,12 @@ fn window_shell(primary: bool) -> impl Piece {
             },
         );
 
-        // `watch` skips its initial value; load an unlocked stored session once.
         if state.is_authenticated.get() {
             crate::pages::login::auth::start_background_refresh();
             crate::pages::diary::grade_checker::start_grade_checker();
             crate::pages::diary::data::load_all(state);
         }
 
-        // Watch biometric signal — set by Setter from Face ID reply block
         day::reactive::watch(
             move || state.biometric_ok.get(),
             move |&ok, old| {
@@ -87,8 +84,6 @@ fn window_shell(primary: bool) -> impl Piece {
             },
         );
 
-        // Haptics: a settings page change (strip tap OR pager swipe — the strip
-        // tick alone missed swipes).
         day::reactive::watch(
             move || state.settings_tab.get(),
             move |&t, old| {
@@ -98,8 +93,6 @@ fn window_shell(primary: bool) -> impl Piece {
             },
         );
 
-        // Face ID when the lock drops (auto-lock): cold start prompts in the
-        // block below; the PIN screen itself no longer carries a button.
         day::reactive::watch(
             move || state.pin_lock_active.get(),
             move |&locked, old| {
@@ -113,7 +106,6 @@ fn window_shell(primary: bool) -> impl Piece {
             },
         );
 
-        // Haptics: a tab-bar page change, an appearance flip, a language switch.
         {
             use crate::app::preferences::haptics;
             day::reactive::watch(
@@ -146,8 +138,6 @@ fn window_shell(primary: bool) -> impl Piece {
             );
         }
 
-        // Biometric lock: if token exists + biometric enabled, prompt Face ID on startup
-        // Works for both pure biometric lock and PIN+biometric combo
         if !state.is_authenticated.get()
             && crate::app::data::credentials::load("auth.token").is_some()
             && crate::pages::pin::biometric::is_available()
@@ -157,7 +147,6 @@ fn window_shell(primary: bool) -> impl Piece {
             crate::pages::pin::biometric::authenticate_async(state);
         }
 
-        // Keep pin_setup_active and pin_setup_route in sync
         day::reactive::watch(
             move || state.pin_setup_active.get(),
             move |&active, old| {
@@ -204,12 +193,6 @@ fn build_nav(primary: bool) -> impl Piece {
 
     crate::components::error_handler::bind(state);
 
-    // The status sheet is a cover: day never attaches a cover's view to this
-    // page (it lives in its own modal VC, its node measures 0×0), so the
-    // subview walk to the tab host still passes through a single-child chain
-    // and the page keeps its full-bleed frame — the tab bar never moves. The
-    // cover presents OverFullScreen (wancareri/day fork), so the page stays
-    // visible beneath its translucent dim.
     zstack((
         nav_body(state, primary),
         crate::pages::pin::modal(state),
@@ -227,8 +210,6 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
     #[derive(Clone, PartialEq)]
     enum Screen { Unlock, Tabs, Login }
 
-    // Dispose the complete outgoing screen before building its replacement.
-    // Credential animation cleanup must run before its signals are freed.
     switch(
         move || {
             if state.pin_lock_active.get() { Screen::Unlock }
@@ -311,8 +292,6 @@ mod tests {
             }).any()
         });
         let state = AppState::get_main().unwrap();
-        // Reproduce the real submission path, including the scoped icon/eye
-        // tweens on the credential pages. The welcome page has no such cleanup.
         let press = |title: String| {
             let (_, button) = probe.find_by_kind(day_spec::kinds::BUTTON).into_iter()
                 .find(|(_, widget)| widget.text == title).expect("authentication action");

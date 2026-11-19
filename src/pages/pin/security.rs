@@ -1,4 +1,3 @@
-//! PIN code lock — SHA-256 hashing, save/load/verify via Keychain.
 
 use crate::ios::nslog;
 use crate::app::data::credentials as secure;
@@ -12,14 +11,12 @@ const PIN_LOCKOUT_KEY: &str = "auth.pin_lockout_until";
 const LAST_BG_KEY: &str = "app.last_background";
 const LOCK_TIMEOUT_SECS: u64 = 300; // 5 minutes
 
-/// Check if PIN lock is enabled.
 pub fn is_enabled() -> bool {
     secure::load(PIN_ENABLED_KEY)
         .map(|v| v == "true")
         .unwrap_or(false)
 }
 
-/// Check remaining lockout seconds if brute-force protection is triggered.
 pub fn remaining_lockout_secs() -> Option<u64> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -31,7 +28,6 @@ pub fn remaining_lockout_secs() -> Option<u64> {
     if until > now { Some(until - now) } else { None }
 }
 
-/// Save a 4-digit PIN (hashes with random salt and key stretching).
 pub fn save_pin(pin: &str) {
     let salt = random_salt();
     let hash = hash_pin(pin, &salt);
@@ -43,7 +39,6 @@ pub fn save_pin(pin: &str) {
     nslog::nslog("[PIN] Saved");
 }
 
-/// Delete PIN from secure storage.
 pub fn delete_pin() {
     secure::delete(PIN_HASH_KEY);
     secure::delete(PIN_SALT_KEY);
@@ -53,7 +48,6 @@ pub fn delete_pin() {
     nslog::nslog("[PIN] Deleted");
 }
 
-/// Verify a PIN input against the stored hash.
 pub fn verify(pin: &str) -> bool {
     if remaining_lockout_secs().is_some() {
         return false;
@@ -93,9 +87,7 @@ pub fn verify(pin: &str) -> bool {
     ok
 }
 
-// ── Auto-lock ───────────────────────────────────────────────────────────
 
-/// Save current timestamp as "last active" (call when app enters background).
 pub fn save_last_background() {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -105,7 +97,6 @@ pub fn save_last_background() {
     nslog::nslog(&format!("[PIN] Background saved: {now}"));
 }
 
-/// Check if auto-lock should trigger (>5 min since last background).
 pub fn should_auto_lock() -> bool {
     let last = day::prefs::get(LAST_BG_KEY)
         .and_then(|v| v.parse::<u64>().ok())
@@ -124,9 +115,7 @@ pub fn should_auto_lock() -> bool {
     should_lock
 }
 
-// ── Hashing ─────────────────────────────────────────────────────────────
 
-/// Generate a random 16-byte hex salt.
 fn random_salt() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
@@ -134,7 +123,6 @@ fn random_salt() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// SHA-256 with key stretching (10,000 iterations) + salt → hex string.
 fn hash_pin(pin: &str, salt: &str) -> String {
     let mut current = Sha256::digest(format!("{salt}:{pin}").as_bytes()).to_vec();
     for _ in 0..10_000 {

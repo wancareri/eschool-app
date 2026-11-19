@@ -1,6 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// Deserialize null JSON values or numbers as String.
 fn null_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
@@ -13,7 +12,6 @@ where
     }
 }
 
-/// Flexible boolean deserializer supporting bool, numeric 0/1, string "1"/"true", arrays, objects.
 fn flexible_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where
     D: Deserializer<'de>,

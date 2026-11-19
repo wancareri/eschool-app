@@ -13,15 +13,12 @@ use eschool_api::entities::{DaySchedule, LessonSlot};
 use std::sync::atomic::Ordering;
 
 pub(super) fn week_view(state: AppState, period_revision: Signal<u64>) -> impl Piece {
-    // Pager state lives inside the view so a size-class rebuild re-captures the
-    // screen width — the captured one is the previous orientation's after a rotation.
     Scope::current().on_cleanup(|| {
         SWIPE_GEN.fetch_add(1, Ordering::AcqRel);
         SWIPE_PENDING.store(-1, Ordering::Release);
     });
     let page_width = Signal::new(crate::ios::viewport::get_screen_width());
     let drag_x = Signal::new(0.0);
-    // Header choices and data refreshes can replace the week during a slide.
     day::reactive::watch(
         move || {
             (
@@ -49,14 +46,12 @@ pub(super) fn week_view(state: AppState, period_revision: Signal<u64>) -> impl P
             move || {
                 crate::ios::drag::horizontal_pager(
                     zstack((
-                        // Previous week page (at drag_x - w)
                         when(
                             move || s_prev.current_week_index.get() > 0,
                             move || {
                                 week_page(s_prev, -1, w).translation(move || drag_x.get() - w, 0.0)
                             },
                         ),
-                        // Next week page (at drag_x + w)
                         when(
                             move || {
                                 s_next.current_week_index.get() + 1
@@ -66,7 +61,6 @@ pub(super) fn week_view(state: AppState, period_revision: Signal<u64>) -> impl P
                                 week_page(s_next, 1, w).translation(move || drag_x.get() + w, 0.0)
                             },
                         ),
-                        // Current week page (at drag_x)
                         week_page(s_cur, 0, w).translation(move || drag_x.get(), 0.0),
                     ))
                     .align(Alignment::TopLeading),
@@ -188,7 +182,6 @@ fn week_header(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>) ->
     })
 }
 
-/// Strip leading zeros from week summary (e.g. "01 сентября" → "1 сентября")
 fn strip_week_summary(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let chars: Vec<char> = s.chars().collect();
@@ -196,7 +189,6 @@ fn strip_week_summary(s: &str) -> String {
     let mut i = 0;
     while i < len {
         if chars[i].is_ascii_digit() {
-            // Skip leading zeros in this number
             let mut started = false;
             while i < len && chars[i].is_ascii_digit() {
                 if chars[i] != '0' || started {
@@ -206,7 +198,6 @@ fn strip_week_summary(s: &str) -> String {
                 i += 1;
             }
             if !started {
-                // All zeros or single zero — keep one zero
                 result.push('0');
             }
         } else {
@@ -281,5 +272,3 @@ fn day_card_with(state: AppState, day_slot: ItemSlot<DaySchedule, u64>) -> impl 
         trailing: 0.0,
     })
 }
-
-// ── Summary view ───────────────────────────────────────────────────────

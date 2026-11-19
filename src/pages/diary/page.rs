@@ -12,22 +12,9 @@ const SWIPE_THRESHOLD: f64 = 36.0;
 const SWIPE_AXIS_LOCK: f64 = 8.0;
 const SWIPE_EDGE_DAMP: f64 = 0.3;
 
-// Every swipe bumps SWIPE_GEN and records its landing target in SWIPE_PENDING.
-// The landing of a flight whose generation is stale returns without touching
-// drag/index (its prefetch already warmed the cache), so a gesture during a
-// flight can never be stomped by the old flight's load; basing the next swipe
-// on PENDING (not the still-unchanged index) makes N rapid swipes land N pages.
 static SWIPE_GEN: AtomicU64 = AtomicU64::new(0);
 static SWIPE_PENDING: AtomicI32 = AtomicI32::new(-1);
 
-/// Rebuild `build` whenever the window crosses a size-class breakpoint
-/// (rotation on iOS: portrait width < 600pt, landscape ≥ 600pt).
-///
-/// The pagers pin the screen width they capture at build time, and day's piece
-/// builds are one-shot — a plain build-time `size_class()` read is not tracked.
-/// A keyed `each` whose key IS the class is the structural rebuild: its source
-/// reads the class inside the reaction (docs/size-classes.md), and a changed
-/// key remounts the one row, re-capturing the width.
 pub fn rebuild_on_class_change<P: Piece + 'static>(build: impl Fn() -> P + 'static) -> impl Piece {
     each(
         items(
@@ -99,7 +86,6 @@ use pager::{pager_drag, summary_drag};
 use period::{child_switcher, quarter_tabs, sub_tabs};
 use summary::summary_view;
 
-// ── Structs ────────────────────────────────────────────────────────────
 
 #[cfg(all(test, feature = "mock"))]
 mod header_tests {
@@ -215,7 +201,6 @@ mod header_tests {
                 .values()
                 .any(|w| w.text == "Нет данных за этот период")
         );
-        // Missing calendar metadata must not make otherwise loaded weeks inaccessible.
         state.week_quarters.set(vec![None; 3]);
         day::reactive::flush_sync();
         assert!(

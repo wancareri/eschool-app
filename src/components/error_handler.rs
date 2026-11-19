@@ -1,4 +1,3 @@
-//! Window-level binding from app errors to the shared notice presentation.
 
 use crate::app::AppState;
 use crate::res;

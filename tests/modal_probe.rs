@@ -17,8 +17,6 @@ fn boot() -> (MockProbe, Signal<Option<String>>) {
     (probe, open)
 }
 
-// A native recognizer must be on a card ancestor, excluding the dim and the
-// fullscreen overlay. Injecting events alone would hide that regression.
 fn card_drag(probe: &MockProbe) -> NodeId {
     let state = probe.state.borrow();
     let handle = state

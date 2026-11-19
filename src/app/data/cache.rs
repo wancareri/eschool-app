@@ -1,5 +1,3 @@
-//! JSON file cache for API data — shows stale data on startup while refreshing.
-//! Uses day::prefs (NSUserDefaults on iOS) for persistence.
 
 use crate::ios::nslog;
 
@@ -54,9 +52,6 @@ pub fn has(key: &str) -> bool {
     load(key).is_some()
 }
 
-/// Preserve local notes from the pre-namespace format for the last stored
-/// profile only. API responses are re-fetched instead of importing ambiguous
-/// shared diary data. Keep the original notes blob as a recovery copy.
 pub fn migrate_legacy_notes() {
     const MIGRATED: &str = "cache.v2.legacy_notes_migrated";
     if day::prefs::get(MIGRATED).as_deref() == Some("true") {
@@ -67,7 +62,6 @@ pub fn migrate_legacy_notes() {
             save("lesson_notes_map", &notes);
         }
     }
-    // Never assign a former account's shared notes to a future login.
     day::prefs::set(MIGRATED, "true");
 }
 

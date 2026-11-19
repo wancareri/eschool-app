@@ -106,7 +106,6 @@ fn sanitize_filename(name: &str) -> String {
     } else {
         trimmed.replace("..", "_")
     };
-    // Filesystems limit bytes, not Unicode scalar values.
     let mut end = sanitized.len().min(180);
     while !sanitized.is_char_boundary(end) {
         end -= 1;
@@ -307,14 +306,11 @@ pub fn download_to_path(token: &str, file_url: &str, dest_path: &Path) -> Result
         return Err(format!("Download returned HTTP {}", resp.status()));
     }
 
-    // Limit download size to max 100 MB to prevent disk exhaustion
     use std::io::Read;
     let limit = 100 * 1024 * 1024;
     if resp.content_length().is_some_and(|size| size > limit) {
         return Err("Attachment exceeds 100 MB".into());
     }
-    // Publish only complete files. Failed/interrupted downloads must never
-    // pass the existing-file check on the next open.
     let temp_path = dest_path.with_extension(format!("{}.part", rand::random::<u64>()));
     let result: Result<u64, String> = (|| {
         let mut file =

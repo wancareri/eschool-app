@@ -1,14 +1,3 @@
-//! Итоги sheet — a tap or long-press on a subject row opens the bottom-sheet
-//! modal (the reusable `modal_window` shell): the quarter's marks wrapped into
-//! lines (date over mark), the average at the end of the strip, a «+» that
-//! opens the predict keypad (marks tapped straight into the strip, each one
-//! highlighted among the real marks), and an always-visible «Цель» bar — a
-//! target-grade plan that answers with ONE whole mark to keep reaching, rounded up.
-//!
-//! Signals live here (thread-local), not in `AppState`: the sheet is one
-//! screen concern and the row handler reaches it through [`open`]. The window
-//! owns the open/close animation and the dim; this module owns only what sits
-//! inside the card.
 
 use crate::app::AppState;
 use crate::app::preferences::colors;
@@ -16,25 +5,17 @@ use crate::app::preferences::haptics;
 use crate::app::format;
 use day::prelude::*;
 
-/// Bounds for pickable/target marks. The school reports on the ten-point scale
-/// (see `format::avg_grade_color`'s bands); allowing the full 1..10 range keeps
-/// the peek correct even if a subject is graded differently.
 const PEEK_MIN: f64 = 1.0;
 const PEEK_MAX: f64 = 10.0;
-/// The floor a "suffices" scenario counts on — двойка, not единичка.
 const PEEK_FLOOR: f64 = 2.0;
 
 #[derive(Clone, Copy)]
 struct Peek {
     subject: Signal<Option<String>>,
     quarter: Signal<usize>,
-    /// Predicted marks appended after the real ones (tap a chip to remove).
     preds: Signal<Vec<f64>>,
-    /// 0 = closed, 1 = predict controls, 2 = goal controls.
     panel: Signal<u8>,
-    /// Target quarter average for the goal mode — always a whole mark.
     target: Signal<f64>,
-    /// How many marks are still to come (future lessons aren't in the cache).
     k: Signal<usize>,
 }
 
@@ -52,8 +33,6 @@ impl Peek {
 
     fn open(&self, subject: String, quarter: usize) {
         crate::ios::nslog::nslog(&format!("[GradePeek] open: subject='{subject}', quarter={quarter}"));
-        // Quarter first: the binding flip below is what re-runs the window's
-        // build closure, so it has to observe the fresh quarter.
         self.quarter.set(quarter);
         self.preds.set(Vec::new());
         self.panel.set(0);
@@ -62,8 +41,6 @@ impl Peek {
         self.subject.set(Some(subject));
     }
 
-    /// Closing is the binding flip: the window runs the native dismissal itself
-    /// and keeps its content mounted until the backend reports it hidden.
     fn close(&self) {
         crate::ios::nslog::nslog("[GradePeek] close: setting subject=None");
         self.subject.set(None);
@@ -85,9 +62,6 @@ fn peek() -> Peek {
     })
 }
 
-/// Summon the sheet — called from the Итоги row's tap / long-press. The rows
-/// sit behind the window's dim, so two opens can never race: a close always
-/// lands between them.
 pub fn open(subject: String, quarter: usize) {
     haptics::pop();
     peek().open(subject, quarter);
@@ -108,7 +82,6 @@ fn avg_of(v: &[f64]) -> Option<f64> {
     }
 }
 
-/// The accent at a given alpha — one place for the hex → rgba dance.
 fn accent_tint(hex: u32, alpha: f64) -> Color {
     Color::rgba(
         ((hex >> 16) & 0xff) as f64 / 255.0,
@@ -118,19 +91,12 @@ fn accent_tint(hex: u32, alpha: f64) -> Color {
     )
 }
 
-/// The goal-mode verdict, split for the layout: a big whole number and the
-/// line under it.
 struct GoalReport {
     big: String,
     hint: String,
     color: Color,
 }
 
-/// The verdict math: how the k remaining marks have to be graded. The school's
-/// FINAL quarter mark is the raw average rounded to a whole number by the
-/// teacher, so the plan works off the threshold `target - 0.5` — any average at
-/// or above it rounds up onto the target. What the student has to HOLD is still
-/// reported as a whole mark (rounded up, because any lower could fall short).
 fn goal_report(state: AppState, pk: Peek) -> GoalReport {
     let q = pk.quarter.get();
     let subj = pk.subject.get().unwrap_or_default();
@@ -138,7 +104,6 @@ fn goal_report(state: AppState, pk: Peek) -> GoalReport {
     let n = marks.len() as f64;
     let sum: f64 = marks.iter().sum();
     let target = pk.target.get();
-    // Rounding the final average to a whole mark: avg ≥ thr ⟺ round(avg) ≥ target.
     let thr = target - 0.5;
     let k = pk.k.get() as f64;
 
@@ -172,7 +137,6 @@ fn goal_report(state: AppState, pk: Peek) -> GoalReport {
         };
     }
 
-    // The average each of the k remaining marks has to deliver.
     let per = (thr * (n + k) - sum) / k;
     if per <= PEEK_FLOOR + 1e-9 {
         let with_floor = (sum + PEEK_FLOOR * k) / (n + k);
@@ -216,16 +180,8 @@ fn goal_report(state: AppState, pk: Peek) -> GoalReport {
     }
 }
 
-/// The Итоги sheet: this module's card content inside the reusable
-/// [`crate::components::modal::modal_window`] shell — the dim, the drag, the
-/// handle and the entrance/dismissal animation all belong to the window; the
-/// binding is the peek's own subject signal, so the row's [`open`], the dim
-/// tap, the drag release and the header's ✕ all flip the same slot.
 pub fn modal(state: AppState) -> impl Piece {
     let pk = peek();
-    // The window's floor: half the screen keeps the sheet visibly taller than
-    // the content alone asks for, and content that grows past the floor grows
-    // the card — the shell animates that resize, the top edge slides up.
     let min_h = crate::ios::viewport::get_screen_height() * 0.5;
     crate::components::modal::modal_window(pk.subject, min_h, move |subj| {
         crate::ios::nslog::nslog(&format!("[GradePeek] build_card invoked, subj='{subj}'"));
@@ -233,11 +189,6 @@ pub fn modal(state: AppState) -> impl Piece {
     })
 }
 
-/// One digit of the predict keypad: accent-tinted chip, tap appends that mark
-/// to the prediction strip. Built once per panel open as a direct child of the
-/// wrap row — exactly how the settings keyboard lays out its letter keys, the
-/// pattern whose taps are known to land. Ten predictions cap the keypad: the
-/// strip renders ten slots, and a fuller one would grow past the panel.
 fn digit_chip(state: AppState, pk: Peek, v: u8) -> AnyPiece {
     column((
         label(format!("{v}"))
@@ -263,11 +214,6 @@ fn digit_chip(state: AppState, pk: Peek, v: u8) -> AnyPiece {
     .any()
 }
 
-/// One predicted chip's slot: a stable child that shows while there are at
-/// least `idx + 1` predictions and hides past that. The label reads
-/// `preds[idx]` reactively, so removing a chip slides every later chip's
-/// value up a slot by itself — no keyed diffing between the finger and the
-/// strip (the pattern whose taps were known to land: plain children).
 fn pred_slot(state: AppState, pk: Peek, idx: usize) -> AnyPiece {
     when(
         move || pk.preds.get().len() > idx,
@@ -316,7 +262,6 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     let st_avg_col = state;
     let st_sum = state;
 
-    // Header: the subject on the left, a compact ✕ on the right.
     let header = row((
         label(move || pk.subject.get().unwrap_or_default())
             .font(Font::Title3)
@@ -335,10 +280,6 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     .spacing(8.0)
     .align(VAlign::Center);
 
-    // Real marks: one chip per lesson slot (date over the mark as spelled),
-    // built as plain children when the panel mounts — the panel unmounts
-    // between opens, so the list is fixed for its lifetime, and a finger has
-    // no keyed diff to miss (the settings-keyboard pattern).
     let real_chips: Vec<AnyPiece> = {
         let q = pk.quarter.get();
         let subj = pk.subject.get().unwrap_or_default();
@@ -373,12 +314,8 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
             .collect()
     };
 
-    // Predicted chips: accent-tinted, prefixed with «~», tap removes — they sit
-    // IN the strip among the real marks, highlighted. Ten stable slots, each
-    // alive only while its index has a prediction behind it.
     let pred_slots: Vec<AnyPiece> = (0..10).map(|i| pred_slot(state, pk, i)).collect();
 
-    // The average chip — the strip's last cell, projecting the predictions in.
     let avg_chip = column((
         label("средний")
             .font(Font::Caption2)
@@ -421,13 +358,7 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
     .corner_radius(8.0)
     .grow(Dimension::Width);
 
-    // «+» — the always-visible predict button: tap opens the keypad (a tapped
-    // mark lands in the strip and moves the average), tap again closes.
     let plus_chip = column((
-        // A chip-shaped scaffold — the same Caption2/Subheadline line pair, both
-        // spaces — with the glyph overlaid dead centre: the cell matches the grade
-        // cards' height and the «+» sits mid-cell (TextAlign is a no-op on UIKit,
-        // so the overlay does the centering).
         zstack((
             column((
                 label(" ")
@@ -464,10 +395,6 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         pk.panel.set(if pk.panel.get() == 1 { 0 } else { 1 });
     });
 
-    // Wrapped into lines at the card's full width — every chip on screen at
-    // once, nothing to swipe: no scroll view, so no bounce that could expose
-    // the dim behind the card. One PieceVec of plain children — real marks,
-    // prediction slots, the average, the «+» — the settings-keyboard layout.
     let mut cells = real_chips;
     cells.extend(pred_slots);
     cells.push(avg_chip.any());
@@ -476,7 +403,6 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         .spacing(6.0)
         .fit(RowFit::WrapColumns { run_spacing: 6.0 });
 
-    // «Сейчас X → с предиктами Y» — only once something is predicted.
     let summary = when(
         move || !pk.preds.get().is_empty(),
         move || {
@@ -500,8 +426,6 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         },
     );
 
-    // «Цель» — its own always-visible row: tap opens the goal panel (seeded
-    // from the current average), tap again closes — no «Отмена» button.
     let goal_btn = column((
         label("Цель")
             .font(Font::Subheadline)
@@ -533,7 +457,6 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         if pk.panel.get() == 2 {
             pk.panel.set(0);
         } else {
-            // Seed the goal from the current average, as a whole mark.
             let q = pk.quarter.get();
             let subj = pk.subject.get().unwrap_or_default();
             if let Some(a) = avg_of(&subject_marks(state, &subj, q)) {
@@ -543,10 +466,6 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         }
     });
 
-    // Predict controls: tap any digit to append that predicted mark — no add
-    // button, taps stack up, every append lands highlighted in the strip. The
-    // digits sit DIRECTLY in the wrap row (PieceVec, the settings-keyboard
-    // pattern) — no `each` anchor between the finger and the chip's tap.
     let predict_ui = when(
         move || pk.panel.get() == 1,
         move || {
@@ -556,7 +475,6 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         },
     );
 
-    // Goal controls: whole-mark target + remaining-count steppers.
     let goal_ui = when(
         move || pk.panel.get() == 2,
         move || {
@@ -607,7 +525,6 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         },
     );
 
-    // The verdict: the whole mark needed, big and centered, then the math line.
     let verdict = when(
         move || pk.panel.get() == 2,
         move || {
@@ -627,9 +544,6 @@ fn build_card(state: AppState, pk: Peek) -> impl Piece {
         },
     );
 
-    // The card body: the window's own section wraps these, spaced the way the
-    // peek's card spaced them (10pt) and widened to the sheet, so the strip
-    // wraps at the sheet's width instead of the old popup's.
     column((
         header,
         strip,

@@ -1,29 +1,18 @@
-//! Application state — the central signal hub.
 
 use day::prelude::*;
 use eschool_api::entities::*;
 use crate::ios::nslog;
 use crate::app::data::credentials as secure;
 
-/// Connection status for the Telegram-style indicator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnStatus {
-    /// No activity — hide indicator
     Idle,
-    /// Connecting / loading data
     Connecting,
-    /// Successfully connected (show briefly, then fade)
     Connected,
-    /// Working offline from cache
     Offline,
-    /// Error occurred
     Error,
 }
 
-/// Teacher-set final marks from `/final/whole`: subject title → period
-/// (`FIRST_QUARTER`…`FOURTH_QUARTER`, `YEAR`) → mark as the API spelled it.
-/// This is the ONLY source for the «Выставл.» column — the lessons feed cannot
-/// tell a quarter mark from an ordinary lesson grade.
 pub type FinalMarks = std::collections::HashMap<String, std::collections::HashMap<String, String>>;
 
 const TOKEN_KEY: &str = "auth.token";
@@ -32,21 +21,18 @@ const SCHOOL_NAME_KEY: &str = "auth.school_name";
 
 #[derive(Clone, Copy)]
 pub struct AppState {
-    // ── auth ─────────────────────────────────────────────────────────────
     pub is_authenticated: Signal<bool>,
     pub loading: Signal<bool>,
     pub error_msg: Signal<String>,
     pub remember_me: Signal<bool>,
     pub biometric_ok: Signal<bool>,
 
-    // ── PIN lock ────────────────────────────────────────────────────────
     pub pin_lock_active: Signal<bool>,
     pub pin_setup_active: Signal<bool>,
     pub pin_setup_route: Signal<Option<String>>,
     pub pin_input: Signal<String>,
     pub pin_error: Signal<bool>,
 
-    // ── user ─────────────────────────────────────────────────────────────
     pub full_name: Signal<String>,
     pub school_name: Signal<String>,
     pub class_label: Signal<String>,
@@ -57,12 +43,10 @@ pub struct AppState {
     pub setup_new_password_active: Signal<bool>,
     pub setup_temp_password_data: Signal<Option<(String, String, String)>>,
 
-    // ── theme ────────────────────────────────────────────────────────────
     pub accent_color: Signal<u32>,
     pub current_section: Signal<crate::Section>,
     pub settings_tab: Signal<usize>,
 
-    // ── diary ────────────────────────────────────────────────────────────
     pub lessons: Signal<Vec<DaySchedule>>,
     pub lessons_loading: Signal<bool>,
     pub current_week: Signal<String>,
@@ -75,36 +59,27 @@ pub struct AppState {
     pub loaded_mark_weeks: Signal<std::collections::HashSet<String>>,
     pub current_quarter: Signal<usize>,
     pub quarter_marks: Signal<std::collections::HashMap<String, Vec<f64>>>,
-    /// `/final/whole` — teacher-set quarter/final marks (see [`FinalMarks`]).
     pub final_marks: Signal<FinalMarks>,
     pub marks_loading: Signal<bool>,
     pub year_quarter_data: Signal<Vec<(String, std::collections::HashMap<String, Vec<f64>>)>>,
 
-    // ── per-quarter storage (index 0..3) ─────────────────────────────────
     pub quarter_all_marks: Signal<Vec<std::collections::HashMap<String, Vec<f64>>>>,
 
-    // ── schedule ─────────────────────────────────────────────────────────
     pub bell_times: Signal<Vec<BellTime>>,
     pub timetable_days: Signal<Vec<TimetableDay>>,
     pub schedule_loading: Signal<bool>,
     pub schedule_day: Signal<u32>,
 
-    // ── dev ────────────────────────────────────────────────────────────────
     pub log_version: Signal<u64>,
 
-    // ── teachers ─────────────────────────────────────────────────────────
     pub subjects_teachers: Signal<Vec<SubjectWithTeacher>>,
     pub teachers_loading: Signal<bool>,
 
-    // ── connection status ──────────────────────────────────────────────────
     pub conn_status: Signal<ConnStatus>,
-    /// `Some` presents the network-status sheet as a fullscreen cover (the
-    /// value is the cover's route key; the cover is unrouted).
     pub show_network_modal: Signal<Option<String>>,
     pub notice: Signal<Option<crate::components::notice::Notice>>,
     pub notice_route: Signal<Option<String>>,
 
-    // ── lesson notes & peek ────────────────────────────────────────────────
     pub lesson_notes: Signal<std::collections::HashMap<String, String>>,
     pub lesson_attachments: Signal<std::collections::HashMap<String, Vec<crate::pages::diary::attachments::LessonAttachment>>>,
     pub attachments_loading: Signal<std::collections::HashSet<String>>,
@@ -112,7 +87,6 @@ pub struct AppState {
     pub active_note: Signal<Option<crate::pages::diary::lesson_note::LessonNoteTarget>>,
     pub active_lesson_peek: Signal<Option<crate::pages::diary::lesson_peek::LessonDetailTarget>>,
 
-    // ── keyboard ───────────────────────────────────────────────────────────
     pub keyboard_height: Signal<f64>,
 }
 
@@ -139,7 +113,6 @@ impl Ambient for AppState {
         let lock_active = biometric_lock || pin_lock;
 
         let state = Self {
-            // Lock active → start unauthenticated (Face ID / PIN will unlock)
             is_authenticated: Signal::new(has_token && !lock_active),
             loading: Signal::new(false),
             error_msg: Signal::new(String::new()),

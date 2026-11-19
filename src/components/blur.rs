@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MPL-2.0
-//! App-owned glass surfaces; Day 0.7 uses semantic cards instead of glass decorators.
 use day::prelude::*;
 
 pub trait ApplyGlassBlur: Decorate + Sized + 'static {
@@ -11,7 +9,6 @@ pub trait ApplyGlassBlur: Decorate + Sized + 'static {
         #[cfg(feature = "uikit")]
         {
             use day_uikit::UiKitExt;
-            // The background creates the native container the tweak owns.
             self.background(Color::rgba(0.0, 0.0, 0.0, 0.0))
                 .uikit(move |view, _, mtm| {
                     use objc2::rc::Retained;

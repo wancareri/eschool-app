@@ -1,4 +1,3 @@
-//! Shared native page chrome. One window toolbar owns all trailing commands.
 use crate::app::{AppState, Section};
 use crate::res;
 use day::prelude::*;

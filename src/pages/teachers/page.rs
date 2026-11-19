@@ -89,7 +89,6 @@ fn teachers_list(state: AppState) -> impl Piece {
             move || !items_sig().is_empty(),
             move || {
                 column((
-                    // Count indicator
                     label(move || {
                         let count = items_sig().len();
                         format!("Всего предметов: {}", count)
@@ -125,7 +124,6 @@ fn teacher_card(state: AppState, key: String) -> impl Piece {
     let k5 = key.clone();
     let k5b = key;
     column((
-        // Subject title
         label(move || {
             state.subjects_teachers.get()
                 .iter()
@@ -136,7 +134,6 @@ fn teacher_card(state: AppState, key: String) -> impl Piece {
         .font(Font::Headline)
         .bold(),
 
-        // Teacher full name
         label(move || {
             state.subjects_teachers.get()
                 .iter()
@@ -147,7 +144,6 @@ fn teacher_card(state: AppState, key: String) -> impl Piece {
         .font(Font::Subheadline)
         .secondary(),
 
-        // Tags for study level and group
         row((
             when(move || {
                 state.subjects_teachers.get()
