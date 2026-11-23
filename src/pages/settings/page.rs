@@ -154,12 +154,12 @@ fn profile_section(state: AppState) -> impl Piece {
                     .font(Font::Body).secondary().align(TextAlign::Center),
                 when(
                     move || !state.class_label.get().is_empty(),
-                    move || label(move || format!("Класс: {}", state.class_label.get()))
+                    move || label(move || format!("{}: {}", res::str::settings_class().format(), state.class_label.get()))
                         .font(Font::Body).secondary().align(TextAlign::Center),
                 ),
                 crate::components::child_context::child_switcher(state),
             )
-        ).title("Профиль"),
+        ).title(res::str::settings_profile()),
     ))
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
@@ -169,14 +169,14 @@ fn appearance_section(state: AppState) -> impl Piece {
         form((
             section(
                 (
-                    label("Акцентный цвет").font(Font::Headline),
-                    accent_option(state, "Синий", colors::BLUE),
-                    accent_option(state, "Зелёный", colors::GREEN),
-                    accent_option(state, "Фиолетовый", colors::PURPLE),
-                    accent_option(state, "Оранжевый", colors::ORANGE),
-                    accent_option(state, "Красный", colors::RED),
+                    label(res::str::settings_accent_color()).font(Font::Headline),
+                    accent_option(state, move || res::str::settings_color_blue().format(), colors::BLUE),
+                    accent_option(state, move || res::str::settings_color_green().format(), colors::GREEN),
+                    accent_option(state, move || res::str::settings_color_purple().format(), colors::PURPLE),
+                    accent_option(state, move || res::str::settings_color_orange().format(), colors::ORANGE),
+                    accent_option(state, move || res::str::settings_color_red().format(), colors::RED),
                 )
-            ).title("Цвета"),
+            ).title(res::str::settings_colors()),
         )),
     ))
     .spacing(0.0)
@@ -211,17 +211,17 @@ fn haptics_section(_state: AppState) -> impl Piece {
         section(
             (
                 row((
-                    label("Вибрация при действиях")
+                    label(res::str::settings_haptics())
                         .font(Font::Body)
                         .grow(Dimension::Both),
                     toggle(haptics_on),
                 ))
                 .spacing(8.0),
-                label("Тактильный отклик при перелистывании недель и смене разделов")
+                label(res::str::settings_haptics_hint())
                     .font(Font::Caption)
                     .secondary(),
             )
-        ).title("Ощущения"),
+        ).title(res::str::settings_feedback()),
     ))
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
@@ -279,9 +279,10 @@ fn system_settings() -> impl Piece {
     ))
 }
 
-fn accent_option(state: AppState, lbl: &'static str, hex: u32) -> impl Piece {
+fn accent_option(state: AppState, lbl: impl Fn() -> String + Clone + Send + 'static, hex: u32) -> impl Piece {
     let s = state;
     button(move || {
+        let lbl = lbl();
         if s.accent_color.get() == hex { format!("\u{2713} \u{25CF} {lbl}") } else { format!("\u{25CF} {lbl}") }
     })
     .id(day::id!(accent, hex))
@@ -294,7 +295,7 @@ fn pin_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
             section(
                 (
                     row((
-                        label("PIN-код при входе")
+                        label(res::str::settings_pin_login())
                             .font(Font::Body)
                             .grow(Dimension::Both),
                         toggle(pin_enabled),
@@ -304,11 +305,11 @@ fn pin_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
                     when(
                         move || crate::pages::pin::security::is_enabled(),
                         move || row((
-                            label("PIN-код активен")
+                            label(res::str::settings_pin_active())
                                 .font(Font::Caption)
                                 .secondary()
                                 .grow(Dimension::Both),
-                            button("Сменить")
+                            button(res::str::settings_change())
                                 .action(move || {
                                     crate::app::preferences::haptics::tick();
                                     crate::pages::pin::open_setup(state);
@@ -316,7 +317,7 @@ fn pin_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
                         )),
                     ),
                 )
-            ).title("Блокировка"),
+            ).title(res::str::settings_lock()),
         )),
     ))
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
@@ -362,7 +363,7 @@ fn biometric_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
                     move || available,
                     move || {
                         row((
-                            label("Вход по Face ID / Touch ID")
+                            label(res::str::settings_biometric_login())
                                 .font(Font::Body)
                                 .grow(Dimension::Both),
                             toggle(biometric_on),
@@ -372,13 +373,13 @@ fn biometric_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
                 ),
                 when(
                     move || !available && pin::is_enabled(),
-                    || label("Биометрия не поддерживается")
+                    || label(res::str::settings_biometric_unavailable())
                         .font(Font::Body)
                         .secondary(),
                 ),
                 when(
                     move || !pin::is_enabled() && available,
-                    || label("Сначала включите PIN-код")
+                    || label(res::str::settings_enable_pin_first())
                         .font(Font::Caption)
                         .secondary()
                         .color(colors::WARNING),
@@ -386,7 +387,7 @@ fn biometric_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
 
 
             )
-        ).title("Безопасность"),
+        ).title(res::str::settings_security()),
     ))
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
@@ -394,9 +395,9 @@ fn biometric_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
 fn logout_section(state: AppState) -> impl Piece {
     form((
         section(
-            (button("Выйти из аккаунта")
+            (button(res::str::settings_logout())
                 .action(move || crate::pages::login::auth::logout(state)),)
-        ).title("Аккаунт"),
+        ).title(res::str::settings_account()),
     ))
     .padding(Insets { top: 16.0, leading: 0.0, bottom: 20.0, trailing: 0.0 })
 }
@@ -413,10 +414,10 @@ fn dev_settings(state: AppState) -> impl Piece {
     form((
         section(
             (
-                label("Инструменты разработчика").font(Font::Headline).color(colors::WARNING),
+                label(res::str::settings_dev_tools()).font(Font::Headline).color(colors::WARNING),
 
-                label("Версия: v0.1.0 (debug)"),
-                button("Обновить токен")
+                label(move || format!("{}: v0.1.0 (debug)", res::str::settings_version().format())),
+                button(res::str::settings_refresh_token())
                     .action(move || {
                         nslog::nslog("[Dev] Manual token refresh...");
                         let count_setter = log_count.setter();
@@ -430,14 +431,14 @@ fn dev_settings(state: AppState) -> impl Piece {
                         });
                     }),
 
-                button("Очистить кэш")
+                button(res::str::settings_clear_cache())
                     .action(move || {
                         crate::app::data::cache::clear();
                         nslog::nslog("[Dev] Cache cleared");
                         log_count.set(nslog::get_logs().lines().count());
                     }),
 
-                button("Перезагрузить данные")
+                button(res::str::settings_reload_data())
                     .action(move || {
                         nslog::nslog("[Dev] Reloading data...");
                         crate::pages::diary::data::load_all(state);
@@ -448,21 +449,21 @@ fn dev_settings(state: AppState) -> impl Piece {
 
         section(
             (
-                label("Логи приложения").font(Font::Headline).color(colors::INFO),
+                label(res::str::settings_app_logs()).font(Font::Headline).color(colors::INFO),
 
                 row((
-                    button("Скопировать логи")
+                    button(res::str::settings_copy_logs())
                         .action(move || {
                             let txt = nslog::get_logs();
                             let lines = txt.lines().count();
                             day_part_clipboard::set_text(&txt);
                             crate::app::preferences::haptics::tick();
-                            copy_msg.set(format!("✓ Скопировано ({lines} строк)"));
+                            copy_msg.set(format!("✓ {} ({lines})", res::str::settings_logs_copied().format()));
                         }),
-                    button("Очистить")
+                    button(res::str::settings_clear())
                         .action(move || {
                             nslog::clear_logs();
-                            copy_msg.set("Логи очищены".into());
+                            copy_msg.set(res::str::settings_logs_cleared().format());
                             log_count.set(0);
                         }),
                 )).spacing(8.0),
@@ -472,11 +473,11 @@ fn dev_settings(state: AppState) -> impl Piece {
                     move || label(move || copy_msg.get()).font(Font::Subheadline).color(colors::SUCCESS)
                 ),
 
-                label(move || format!("Записей в буфере: {}", log_count.get()))
+                label(move || format!("{}: {}", res::str::settings_log_entries().format(), log_count.get()))
                     .font(Font::Caption)
                     .color(colors::SECONDARY),
             )
-        ).title("Логи"),
+        ).title(res::str::settings_logs()),
         input_diagnostics(),
     ))
     .padding(Insets { top: 16.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
@@ -487,10 +488,10 @@ fn dev_settings(_state: AppState) -> impl Piece {
     form((
         section(
             (
-                label("О приложении").font(Font::Headline),
-                label("Версия: v0.1.0"),
+                label(res::str::settings_about()).font(Font::Headline),
+                label(move || format!("{}: v0.1.0", res::str::settings_version().format())),
             )
-        ).title("Информация"),
+        ).title(res::str::settings_information()),
         input_diagnostics(),
     ))
     .padding(Insets { top: 16.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
