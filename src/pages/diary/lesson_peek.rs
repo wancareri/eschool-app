@@ -1,5 +1,6 @@
 use crate::app::AppState;
 use crate::app::format;
+use crate::res;
 use day::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -86,7 +87,7 @@ fn attachment_row(state: AppState, att: crate::pages::diary::attachments::Lesson
                     .secondary()
                     .any()
             } else if is_link {
-                label("Внешняя ссылка")
+                label(res::str::lesson_external_link())
                     .font(Font::Caption2)
                     .secondary()
                     .any()
@@ -248,7 +249,11 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
     };
 
     let subject_title = target.subject_title.clone();
-    let lesson_num_str = format!("{} урок", target.lesson_number);
+    let lesson_num_str = if day::locale().get_untracked().starts_with("en") {
+        format!("{} {}", res::str::lesson_number().format(), target.lesson_number)
+    } else {
+        format!("{} {}", target.lesson_number, res::str::lesson_number().format())
+    };
     let date_display = target.date_str.clone();
 
     let t_teacher = target.teacher.clone();
@@ -339,7 +344,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                             vector(crate::res::vectors::substitution)
                                 .frame(12.0, 12.0)
                                 .tint(move || Color::hex(state.accent_color.get())),
-                            label("Замена урока")
+                            label(res::str::lesson_substitution())
                                 .font(Font::Caption2)
                                 .weight(FontWeight::Medium)
                                 .color(move || Color::hex(state.accent_color.get())),
@@ -426,7 +431,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
 
         column((
             column((
-                label("ТЕМА УРОКА")
+                label(res::str::lesson_topic())
                     .font(Font::Caption)
                     .weight(FontWeight::Semibold)
                     .secondary(),
@@ -435,7 +440,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                         .font(Font::Body)
                         .any()
                 } else {
-                    label("Тема не указана")
+                    label(res::str::lesson_topic_empty())
                         .font(Font::Body)
                         .secondary()
                         .italic()
@@ -446,7 +451,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
             .align(HAlign::Leading),
 
             column((
-                label("ДОМАШНЕЕ ЗАДАНИЕ")
+                label(res::str::lesson_homework())
                     .font(Font::Caption)
                     .weight(FontWeight::Semibold)
                     .color(move || Color::hex(state.accent_color.get())),
@@ -456,7 +461,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                         .weight(FontWeight::Medium)
                         .any()
                 } else {
-                    label("Задание не задано")
+                    label(res::str::lesson_homework_empty())
                         .font(Font::Body)
                         .secondary()
                         .italic()
@@ -478,14 +483,14 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                         vector(crate::res::vectors::attachment)
                             .frame(14.0, 14.0)
                             .tint(move || Color::hex(state.accent_color.get())),
-                        label("МАТЕРИАЛЫ К УРОКУ")
+                        label(res::str::lesson_materials())
                             .font(Font::Caption)
                             .weight(FontWeight::Semibold)
                             .secondary(),
                         spacer().grow(Dimension::Both),
                         when(
                             move || state.attachments_loading.with(|s| s.contains(&u_load)),
-                            move || label("загрузка...").font(Font::Caption2).secondary(),
+                            move || label(res::str::lesson_loading()).font(Font::Caption2).secondary(),
                         ),
                     ))
                     .spacing(6.0)
@@ -497,7 +502,7 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                                 && !state.attachments_loading.with(|s| s.contains(&u_check))
                         },
                         move || {
-                            label("Нет прикреплённых файлов к этому уроку")
+                            label(res::str::lesson_materials_empty())
                                 .font(Font::Caption)
                                 .secondary()
                                 .italic()
@@ -539,12 +544,12 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                         vector(crate::res::vectors::kind_note)
                             .frame(14.0, 14.0)
                             .tint(move || Color::hex(state.accent_color.get())),
-                        label("ЗАМЕТКА К УРОКУ")
+                        label(res::str::lesson_note())
                             .font(Font::Caption)
                             .weight(FontWeight::Semibold)
                             .color(move || Color::hex(state.accent_color.get())),
                         spacer().grow(Dimension::Both),
-                        label("видна только вам")
+                        label(res::str::lesson_note_private())
                             .font(Font::Caption2)
                             .secondary(),
                     ))
@@ -552,12 +557,12 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                     .align(VAlign::Center),
 
                     text_field(edit_text.clone())
-                        .placeholder("Заметка к уроку (сохраняется на устройстве)...")
+                        .placeholder(res::str::lesson_note_placeholder())
                         .on_submit(save.clone())
                         .padding(Insets { top: 6.0, leading: 0.0, bottom: 6.0, trailing: 0.0 }),
 
                     row((
-                        button("Отмена")
+                        button(res::str::lesson_cancel())
                             .action(cancel),
                         spacer().grow(Dimension::Both),
                         when(
@@ -565,11 +570,11 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                                 state.lesson_notes.with(|m| m.get(&k_del_chk).map(|s| !s.trim().is_empty()).unwrap_or(false))
                             },
                             move || {
-                                button("Удалить")
+                                button(res::str::lesson_delete())
                                     .action(del.clone())
                             },
                         ),
-                        button("Сохранить")
+                        button(res::str::lesson_save())
                             .prominent()
                             .action(save),
                     ))
@@ -592,12 +597,12 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                         vector(crate::res::vectors::kind_note)
                             .frame(14.0, 14.0)
                             .tint(move || Color::hex(state.accent_color.get())),
-                        label("ВАША ЗАМЕТКА")
+                        label(res::str::lesson_your_note())
                             .font(Font::Caption)
                             .weight(FontWeight::Semibold)
                             .secondary(),
                         spacer().grow(Dimension::Both),
-                        label("видна только вам")
+                        label(res::str::lesson_note_private())
                             .font(Font::Caption2)
                             .secondary(),
                     ))
@@ -610,9 +615,9 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                     .font(Font::Body),
 
                     row((
-                        button("Изменить")
+                        button(res::str::lesson_edit())
                             .action(start_edit),
-                        button("Удалить")
+                        button(res::str::lesson_delete())
                             .action(del),
                     ))
                     .spacing(12.0),
@@ -631,19 +636,19 @@ fn build_card(state: AppState, target: LessonDetailTarget) -> impl Piece {
                         vector(crate::res::vectors::kind_note)
                             .frame(14.0, 14.0)
                             .tint(move || Color::hex(state.accent_color.get())),
-                        label("ЗАМЕТКА К УРОКУ")
+                        label(res::str::lesson_note())
                             .font(Font::Caption)
                             .weight(FontWeight::Semibold)
                             .secondary(),
                         spacer().grow(Dimension::Both),
-                        label("видна только вам")
+                        label(res::str::lesson_note_private())
                             .font(Font::Caption2)
                             .secondary(),
                     ))
                     .spacing(6.0)
                     .align(VAlign::Center),
 
-                    button("+ Добавить заметку к уроку")
+                    button(move || format!("+ {}", res::str::lesson_add_note().format()))
                         .action(add),
                 ))
                 .spacing(6.0)
