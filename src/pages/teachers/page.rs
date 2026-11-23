@@ -8,9 +8,12 @@ use day::pullrefresh::pull_to_refresh;
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
     let refreshing = Signal::new(false);
+    let search = Signal::new(String::new());
 
     let piece = zstack((
         pull_to_refresh(refreshing, scroll(column((
+
+            crate::components::child_context::child_switcher(state),
 
             when(
                 move || !state.is_authenticated.get(),
@@ -32,7 +35,7 @@ pub fn render() -> impl Piece {
             ),
             when(
                 move || state.is_authenticated.get() && !state.teachers_loading.get(),
-                move || teachers_list(state),
+                move || teachers_list(state, search),
             ),
             spacer().frame(0.0, 16.0),
         ))
@@ -55,32 +58,67 @@ pub fn render() -> impl Piece {
     piece
 }
 
-fn teachers_list(state: AppState) -> impl Piece {
+fn teachers_list(state: AppState, search: Signal<String>) -> impl Piece {
     let items_sig = move || {
+        let query = search.get().trim().to_lowercase();
         let all = state.subjects_teachers.get();
         let mut seen = std::collections::HashSet::new();
         all.into_iter()
+            .filter(|s| {
+                query.is_empty()
+                    || s.subject_title.to_lowercase().contains(&query)
+                    || s.teacher.to_lowercase().contains(&query)
+                    || s.level_of_study.to_lowercase().contains(&query)
+                    || s.group_name
+                        .as_deref()
+                        .unwrap_or_default()
+                        .to_lowercase()
+                        .contains(&query)
+            })
             .filter(|s| seen.insert(format!("{}:{}", s.subject_title, s.teacher)))
             .collect::<Vec<_>>()
     };
 
     column((
+        text_field(search)
+            .placeholder(move || crate::res::str::teachers_search().format())
+            .padding(Insets {
+                top: 10.0,
+                leading: 16.0,
+                bottom: 10.0,
+                trailing: 16.0,
+            }),
         when(
-            move || items_sig().is_empty(),
+            move || state.subjects_teachers.get().is_empty(),
             || column((
                 spacer().height(40.0),
                 label("👨‍🏫")
                     .font(Font::System(48.0))
                     .align(TextAlign::Center),
                 spacer().height(12.0),
-                label("Список учителей пуст")
+                label(move || crate::res::str::teachers_empty().format())
                     .font(Font::Headline)
                     .align(TextAlign::Center),
-                label("Данные появятся автоматически после синхронизации с электронным журналом")
+                label(move || crate::res::str::teachers_empty_description().format())
                     .font(Font::Subheadline)
                     .secondary()
                     .align(TextAlign::Center)
                     .padding(Insets { top: 4.0, leading: 32.0, bottom: 20.0, trailing: 32.0 }),
+            ))
+            .grow(Dimension::Both),
+        ),
+        when(
+            move || !state.subjects_teachers.get().is_empty() && items_sig().is_empty(),
+            || column((
+                spacer().height(48.0),
+                label(move || crate::res::str::teachers_no_matches().format())
+                    .font(Font::Headline)
+                    .align(TextAlign::Center),
+                spacer().height(8.0),
+                label(move || crate::res::str::teachers_try_search().format())
+                    .font(Font::Subheadline)
+                    .secondary()
+                    .align(TextAlign::Center),
             ))
             .grow(Dimension::Both),
         ),
@@ -91,7 +129,11 @@ fn teachers_list(state: AppState) -> impl Piece {
                 column((
                     label(move || {
                         let count = items_sig().len();
-                        format!("Всего предметов: {}", count)
+                        format!(
+                            "{}: {}",
+                            crate::res::str::teachers_count_prefix().format(),
+                            count
+                        )
                     })
                     .font(Font::Caption)
                     .secondary()
@@ -185,7 +227,13 @@ fn teacher_card(state: AppState, key: String) -> impl Piece {
                             .iter()
                             .find(|s| format!("{}:{}", s.teacher_id, s.id) == gk)
                             .and_then(|s| s.group_name.clone())
-                            .map(|g| format!("Гр: {}", g))
+                            .map(|g| {
+                                format!(
+                                    "{}: {}",
+                                    crate::res::str::teachers_group_prefix().format(),
+                                    g
+                                )
+                            })
                             .unwrap_or_default()
                     })
                     .font(Font::Caption2)

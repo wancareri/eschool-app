@@ -66,7 +66,15 @@ pub fn render() -> impl Piece {
         column((
 
 
-            picker(current_tab, vec![(0usize, "Основные"), (1, "Вид"), (2, "Защита"), (3, "Dev")])
+            picker(
+                current_tab,
+                vec![
+                    (0usize, res::str::settings_tab_basics().format()),
+                    (1, res::str::settings_tab_appearance().format()),
+                    (2, res::str::settings_tab_security().format()),
+                    (3, res::str::settings_tab_dev().format()),
+                ],
+            )
             .segmented()
             .enabled(move || !pager_busy.get())
             .id(day::id!(settings_tabs))
@@ -149,6 +157,7 @@ fn profile_section(state: AppState) -> impl Piece {
                     move || label(move || format!("Класс: {}", state.class_label.get()))
                         .font(Font::Body).secondary().align(TextAlign::Center),
                 ),
+                crate::components::child_context::child_switcher(state),
             )
         ).title("Профиль"),
     ))

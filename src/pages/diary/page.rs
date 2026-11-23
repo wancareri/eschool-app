@@ -35,7 +35,7 @@ pub fn render() -> impl Piece {
         state,
         refreshing,
         column((
-            child_switcher(state),
+            crate::components::child_context::child_switcher(state),
             sub_tabs(state, show_summary, period_revision),
             quarter_tabs(state, show_summary, period_revision),
             when(
@@ -83,7 +83,7 @@ mod summary;
 use pager::week_view;
 #[cfg(test)]
 use pager::{pager_drag, summary_drag};
-use period::{child_switcher, quarter_tabs, sub_tabs};
+use period::{quarter_tabs, sub_tabs};
 use summary::summary_view;
 
 

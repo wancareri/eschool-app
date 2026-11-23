@@ -49,6 +49,18 @@ fn switching_identity_and_logout_reject_queued_replies_and_clear_state() {
         return;
     }
     auth::logout_keys();
+    // The production credential store intentionally has no plaintext fallback.
+    // Some CI/containers do not expose a Secret Service/keychain, so the
+    // state/session assertions cannot run there without changing production
+    // security semantics.
+    let probe_key = "eschool.session-regression.probe";
+    secure::save(probe_key, "available");
+    let keychain_available = secure::load(probe_key).is_some();
+    secure::delete(probe_key);
+    if !keychain_available {
+        eprintln!("Skipping session regression: secure credential store unavailable");
+        return;
+    }
     day::reactive::install_main_poster(|f| QUEUE.lock().unwrap().push_back(f));
     let (mock, _) = day_mock::MockToolkit::new();
     day_core::launch_with(mock, day_spec::WindowOptions::default(), || {

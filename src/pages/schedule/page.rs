@@ -19,7 +19,7 @@ pub fn render() -> impl Piece {
 
     let piece = zstack((
         pull_to_refresh(refreshing, scroll(column((
-
+                    crate::components::child_context::child_switcher(state),
 
                     when(
                         move || !state.is_authenticated.get(),

@@ -1,71 +1,8 @@
-use super::{PAD, SWIPE_GEN, SWIPE_PENDING};
+use super::{SWIPE_GEN, SWIPE_PENDING};
 use crate::app::AppState;
 use crate::app::preferences::haptics;
 use day::prelude::*;
 use std::sync::atomic::Ordering;
-
-pub(super) fn child_switcher(state: AppState) -> impl Piece {
-    when(
-        move || state.is_parent.get(),
-        move || {
-            let children = state.parent_children.get();
-            if children.len() > 1 {
-                let pills: Vec<AnyPiece> = children
-                    .into_iter()
-                    .enumerate()
-                    .map(|(this_idx, ch)| {
-                        let name = ch.full_name.clone();
-                        button(move || {
-                            if state.active_child_index.get() == this_idx {
-                                format!("● {}", name)
-                            } else {
-                                name.clone()
-                            }
-                        })
-                        .action(move || {
-                            haptics::tick();
-                            crate::pages::diary::data::switch_child(state, this_idx);
-                        })
-                        .padding(Insets {
-                            top: 4.0,
-                            leading: 10.0,
-                            bottom: 4.0,
-                            trailing: 10.0,
-                        })
-                        .any()
-                    })
-                    .collect();
-
-                row(pills)
-                    .spacing(8.0)
-                    .align(VAlign::Center)
-                    .padding(Insets {
-                        top: 2.0,
-                        leading: PAD,
-                        bottom: 6.0,
-                        trailing: PAD,
-                    })
-                    .any()
-            } else if let Some(ch) = children.first() {
-                let name = ch.full_name.clone();
-                label(move || format!("Обучающийся: {}", name))
-                    .font(Font::Subheadline)
-                    .secondary()
-                    .align(TextAlign::Center)
-                    .padding(Insets {
-                        top: 0.0,
-                        leading: PAD,
-                        bottom: 4.0,
-                        trailing: PAD,
-                    })
-                    .any()
-            } else {
-                spacer().height(0.0).any()
-            }
-        },
-    )
-}
-
 
 fn choose_quarter(state: AppState, show_summary: Signal<bool>, revision: Signal<u64>, q: usize) {
     haptics::tick();
