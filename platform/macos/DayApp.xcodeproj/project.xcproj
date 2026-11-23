@@ -4,7 +4,7 @@
     { "name": "Debug", "file": "DayApp.xcconfig" },
     { "name": "Release", "file": "DayApp.xcconfig" },
   ],
-  "localizations": { "development": "en" },
+  "localizations": { "development": "en",  "supported": ["be","ru"]},
   "packages": [
     {
       "kind": "local",

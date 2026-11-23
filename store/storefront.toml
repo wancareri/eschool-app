@@ -1,0 +1,66 @@
+# Store listing metadata for App Store Connect and Google Play.
+# The privacy URL is intentionally kept as the current placeholder until the
+# public privacy-policy page is supplied before store submission.
+
+[storefront.metadata.be]
+name = "OpenSchool"
+subtitle = "Школьны дзённік для сям'і"
+short = "Ацэнкі, урокі і расклад у адным дадатку."
+description = """
+OpenSchool — школьны дзённік для вучняў і бацькоў.
+
+У дадатку можна:
+- праглядаць урокі, адзнакі і вынікі чвэрцяў;
+- адкрываць расклад і час званкоў;
+- чытаць дамашнія заданні, нататкі і даступныя ўкладанні;
+- выбіраць патрэбнае дзіця ў бацькоўскім акаўнце;
+- наладжваць мову, выгляд і абарону акаўнта.
+
+OpenSchool паказвае даныя падключанага школьнага сэрвісу. Даступнасць інфармацыі залежыць ад
+акаўнта школы і інтэрнэт-злучэння.
+"""
+keywords = ["школа", "дзённік", "адзнакі", "расклад", "урокі", "бацькі", "вучань", "дамашняе заданне"]
+release-notes = "Палепшаны бацькоўскі рэжым, выбар дзіцяці ва ўсіх асноўных раздзелах, пошук настаўнікаў і падтрымка моў."
+
+[storefront.metadata]
+name = "OpenSchool"
+subtitle = "School diary for families"
+short = "View grades, lessons, schedules and school updates in one place."
+description = """
+OpenSchool is a family-friendly school diary for students and parents.
+
+Keep the school day in one clear place:
+- check lessons, grades and term summaries;
+- browse the weekly schedule and bell times;
+- read homework, notes and available attachments;
+- switch between children from one parent account;
+- choose your language, appearance and security settings;
+- protect the account with the device's secure storage and optional lock screen.
+
+OpenSchool displays information provided by the connected school diary service. It does not
+replace the school's official records, and availability depends on the school's account and
+network connection.
+"""
+keywords = ["school", "diary", "grades", "schedule", "lessons", "parent", "student", "homework"]
+release-notes = "Improved parent accounts with child selection, teacher search, clearer empty states and better language support."
+privacy-url = "https://example.com/privacy"
+
+[storefront.metadata.ru]
+name = "OpenSchool"
+subtitle = "Школьный дневник для семьи"
+short = "Оценки, уроки и расписание в одном приложении."
+description = """
+OpenSchool — школьный дневник для учеников и родителей.
+
+В приложении можно:
+- смотреть уроки, оценки и итоги четвертей;
+- открывать расписание и время звонков;
+- читать домашние задания, заметки и доступные вложения;
+- выбирать нужного ребёнка в родительском аккаунте;
+- настраивать язык, внешний вид и защиту аккаунта.
+
+OpenSchool показывает данные подключённого школьного сервиса. Доступность информации зависит от
+аккаунта школы и интернет-соединения.
+"""
+keywords = ["школа", "дневник", "оценки", "расписание", "уроки", "родитель", "ученик", "домашнее задание"]
+release-notes = "Улучшен родительский режим, выбор ребёнка во всех основных разделах, поиск по учителям и поддержка языков."
