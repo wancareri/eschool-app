@@ -1,6 +1,4 @@
 # Store listing metadata for App Store Connect and Google Play.
-# The privacy URL is intentionally kept as the current placeholder until the
-# public privacy-policy page is supplied before store submission.
 
 [storefront.metadata.be]
 name = "OpenSchool"
@@ -43,8 +41,6 @@ network connection.
 """
 keywords = ["school", "diary", "grades", "schedule", "lessons", "parent", "student", "homework"]
 release-notes = "Improved parent accounts with child selection, teacher search, clearer empty states and better language support."
-privacy-url = "https://example.com/privacy"
-
 [storefront.metadata.ru]
 name = "OpenSchool"
 subtitle = "Школьный дневник для семьи"

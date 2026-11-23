@@ -1,7 +1,6 @@
 pub mod data;
 pub mod format;
 pub mod preferences;
-pub mod i18n;
 pub mod log_bridge;
 pub mod state;
 pub mod window;
