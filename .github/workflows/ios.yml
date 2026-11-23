@@ -47,6 +47,15 @@ jobs:
         if: steps.cache-day.outputs.cache-hit != 'true'
         run: cargo install day-cli --version ${{ env.DAY_CLI_VERSION }} --locked
 
+      - name: Check workspace
+        run: cargo check --workspace --locked
+
+      - name: Test app
+        run: cargo test -p eschool-app --tests --locked
+
+      - name: Test API
+        run: cargo test -p eschool-api --lib --locked
+
       - name: Build and Pack iOS App
         run: day pack -t ios-uikit --profile release --no-sign --verbose
 
