@@ -1,6 +1,7 @@
 use crate::app::AppState;
 use crate::components;
 use crate::app::format;
+use crate::res;
 use day::prelude::*;
 use day::pullrefresh::pull_to_refresh;
 use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
@@ -25,7 +26,7 @@ pub fn render() -> impl Piece {
                         move || !state.is_authenticated.get(),
                         || column((
                             spacer(),
-                            label("Войдите для просмотра")
+                            label(res::str::schedule_sign_in())
                                 .font(Font::Body).secondary().align(TextAlign::Center),
                             spacer(),
                         )).grow(Dimension::Both),
@@ -35,7 +36,7 @@ pub fn render() -> impl Piece {
                         move || column((
                             spacer(),
                             components::spinner::render(state, 11.0),
-                            label("  Загрузка…").font(Font::Caption).secondary(),
+                            label(res::str::schedule_loading()).font(Font::Caption).secondary(),
                             spacer(),
                         )).align(HAlign::Center).grow(Dimension::Both),
                     ),
@@ -72,7 +73,7 @@ fn schedule_content(state: AppState) -> impl Piece {
         ),
         when(
             move || state.timetable_days.get().is_empty(),
-            || label("Расписание не найдено")
+            || label(res::str::schedule_empty())
                 .font(Font::Body)
                 .secondary()
                 .align(TextAlign::Center)
@@ -120,23 +121,35 @@ fn day_title(state: AppState) -> String {
         .find(|d| d.day_of_week == dow)
         .map(|d| d.timetable_slots.iter().filter(|ts| !ts.slots.is_empty()).count())
         .unwrap_or(0);
-    let name = format::weekday_name(dow);
+    let name = schedule_weekday_name(dow);
     if count == 0 {
         name.to_string()
     } else {
-        format!("{}  ·  {} ур.", name, count)
+        format!("{}  ·  {} {}", name, count, res::str::schedule_lesson_count().format())
+    }
+}
+
+fn schedule_weekday_name(dow: u32) -> String {
+    match dow {
+        1 => res::str::schedule_monday().format(),
+        2 => res::str::schedule_tuesday().format(),
+        3 => res::str::schedule_wednesday().format(),
+        4 => res::str::schedule_thursday().format(),
+        5 => res::str::schedule_friday().format(),
+        6 => res::str::schedule_saturday().format(),
+        _ => res::str::schedule_sunday().format(),
     }
 }
 
 fn day_header(state: AppState, page_width: Signal<f64>, drag_x: Signal<f64>) -> impl Piece {
     column((
         row((
-            day_pill(state, page_width, drag_x, 1, "Пн"),
-            day_pill(state, page_width, drag_x, 2, "Вт"),
-            day_pill(state, page_width, drag_x, 3, "Ср"),
-            day_pill(state, page_width, drag_x, 4, "Чт"),
-            day_pill(state, page_width, drag_x, 5, "Пт"),
-            day_pill(state, page_width, drag_x, 6, "Сб"),
+            day_pill(state, page_width, drag_x, 1, res::str::schedule_mon().format()),
+            day_pill(state, page_width, drag_x, 2, res::str::schedule_tue().format()),
+            day_pill(state, page_width, drag_x, 3, res::str::schedule_wed().format()),
+            day_pill(state, page_width, drag_x, 4, res::str::schedule_thu().format()),
+            day_pill(state, page_width, drag_x, 5, res::str::schedule_fri().format()),
+            day_pill(state, page_width, drag_x, 6, res::str::schedule_sat().format()),
         ))
         .spacing(6.0)
         .padding(Insets { top: 0.0, leading: 16.0, bottom: 8.0, trailing: 16.0 }),
@@ -155,7 +168,7 @@ fn day_pill(
     page_width: Signal<f64>,
     drag_x: Signal<f64>,
     dow: u32,
-    title: &'static str,
+    title: String,
 ) -> impl Piece {
     let is_sel = move || state.schedule_day.get() == dow;
     label(title)
@@ -363,15 +376,19 @@ fn day_page(state: AppState, offset: i32, w: f64) -> impl Piece {
                     .align(TextAlign::Center),
                 spacer().height(10.0),
                 label(move || {
-                    if dow_fn() >= 6 { "Выходной день" } else { "Нет уроков" }
+                    if dow_fn() >= 6 {
+                        res::str::schedule_day_off().format()
+                    } else {
+                        res::str::schedule_no_lessons().format()
+                    }
                 })
                 .font(Font::Headline)
                 .align(TextAlign::Center),
                 label(move || {
                     if dow_fn() >= 6 {
-                        "В этот день уроки не проводятся. Отличного отдыха!"
+                        res::str::schedule_day_off_hint().format()
                     } else {
-                        "В расписании на этот день уроки не назначены"
+                        res::str::schedule_no_lessons_hint().format()
                     }
                 })
                 .font(Font::Subheadline)
