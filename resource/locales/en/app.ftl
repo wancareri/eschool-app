@@ -11,37 +11,6 @@ nav_diary = Diary
 nav_schedule = Schedule
 nav_teachers = Teachers
 nav_settings = Settings
-nav_login = Account
-
-# Menus
-menu_file = File
-menu_edit = Edit
-
-# Commands (kept for model.rs compatibility)
-cmd_add = New Item
-cmd_delete = Delete
-cmd_done = Done
-cmd_show_done = Show Finished
-cmd_sidebar = Toggle Sidebar
-
-# Template items (kept for model.rs compatibility)
-item_none = Select an item
-item_kind_note = Note
-item_kind_task = Task
-item_kind_idea = Idea
-
-section_basics = Basics
-section_details = Details
-section_notes = Notes
-
-field_name = Name
-field_name_hint = Name this item…
-field_count = Count
-field_date = Date
-field_kind = Kind
-field_done = Done
-field_rating = Rating
-field_color = Color
 
 # E-schools specific
 diary_title = Diary
@@ -106,8 +75,6 @@ auth_error_credentials_message = The username or password is incorrect. You can 
 
 auth_error_generic_title = Couldn’t sign in
 auth_error_generic_message = Your details are still here. Please try again.
-
-auth_autofill = AutoFill
 
 # Shared messages and connection status
 notice_dismiss = Got it
