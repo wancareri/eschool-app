@@ -1,16 +1,16 @@
-
 use block2::{Block, RcBlock};
 use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel};
 use objc2::{ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_core_foundation::CGAffineTransform;
 use objc2_foundation::{NSObject, NSObjectProtocol};
-use objc2_quartz_core::{kCACornerCurveContinuous, CACornerMask};
+use objc2_quartz_core::{CACornerMask, kCACornerCurveContinuous};
 use objc2_ui_kit::{
-    UIColor, UIModalPresentationStyle, UIModalTransitionStyle, UITransitionContextFromViewControllerKey,
-    UITransitionContextToViewControllerKey, UIView, UIViewAnimationOptions, UIViewController,
-    UIViewControllerAnimatedTransitioning, UIViewControllerContextTransitioning,
-    UIViewControllerTransitioningDelegate,
+    UIButton, UIColor, UIGestureRecognizer, UIGestureRecognizerDelegate, UIModalPresentationStyle,
+    UIModalTransitionStyle, UIPanGestureRecognizer, UITouch,
+    UITransitionContextFromViewControllerKey, UITransitionContextToViewControllerKey, UIView,
+    UIViewAnimationOptions, UIViewController, UIViewControllerAnimatedTransitioning,
+    UIViewControllerContextTransitioning, UIViewControllerTransitioningDelegate,
 };
 
 pub(crate) const CARD_TAG: isize = 0x45534301;
@@ -19,7 +19,11 @@ const DURATION: f64 = 0.38;
 const COVER_TAG: isize = 0x45534303;
 
 type PresentViewController = unsafe extern "C-unwind" fn(
-    *mut AnyObject, Sel, &UIViewController, Bool, Option<&Block<dyn Fn()>>,
+    *mut AnyObject,
+    Sel,
+    &UIViewController,
+    Bool,
+    Option<&Block<dyn Fn()>>,
 );
 
 static ORIGINAL_PRESENT: std::sync::OnceLock<PresentViewController> = std::sync::OnceLock::new();
@@ -55,13 +59,18 @@ pub(crate) fn install_presentation_hook() {
     ORIGINAL_PRESENT.get_or_init(|| {
         let class = UIViewController::class();
         let selector = objc2::sel!(presentViewController:animated:completion:);
-        let method = class.instance_method(selector).expect("UIViewController presentation method");
+        let method = class
+            .instance_method(selector)
+            .expect("UIViewController presentation method");
         let previous = method.implementation();
         let replacement: Imp = unsafe { std::mem::transmute(present_cover as *const ()) };
         unsafe {
             let encoding = objc2::ffi::method_getTypeEncoding(method);
             objc2::ffi::class_replaceMethod(
-                class as *const AnyClass as *mut AnyClass, selector, replacement, encoding,
+                class as *const AnyClass as *mut AnyClass,
+                selector,
+                replacement,
+                encoding,
             );
         }
         unsafe { std::mem::transmute::<Imp, PresentViewController>(previous) }
@@ -73,7 +82,35 @@ thread_local! {
         let mtm = MainThreadMarker::new().expect("UIKit main thread");
         unsafe { msg_send![ModalTransitionDelegate::alloc(mtm), init] }
     };
+    static SHEET_PAN_DELEGATE: Retained<SheetPanDelegate> = {
+        let mtm = MainThreadMarker::new().expect("UIKit main thread");
+        unsafe { msg_send![SheetPanDelegate::alloc(mtm), init] }
+    };
 }
+
+// A sheet still pans from its body, but a pull which begins on a native button
+// belongs to that button. Without this delegate UIKit recognizes the parent
+// pan and makes the button and whole modal jump together.
+define_class!(
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    struct SheetPanDelegate;
+
+    unsafe impl NSObjectProtocol for SheetPanDelegate {}
+    unsafe impl UIGestureRecognizerDelegate for SheetPanDelegate {
+        #[unsafe(method(gestureRecognizer:shouldReceiveTouch:))]
+        fn should_receive_touch(&self, _recognizer: &UIGestureRecognizer, touch: &UITouch) -> Bool {
+            let mut view = touch.view();
+            while let Some(candidate) = view {
+                if candidate.downcast_ref::<UIButton>().is_some() {
+                    return Bool::NO;
+                }
+                view = candidate.superview();
+            }
+            Bool::YES
+        }
+    }
+);
 
 /// The sheet is a bottom-attached surface: only its two upper corners are
 /// visible.  Reapply once after Day's surface patch so its child cannot turn
@@ -93,9 +130,26 @@ pub(crate) fn configure_card_surface(view: &UIView, mtm: MainThreadMarker) {
     apply(view);
     let weak = dispatch2::MainThreadBound::new(Weak::new(view), mtm);
     dispatch2::DispatchQueue::main().exec_async(move || {
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        let Some(view) = weak.get(mtm).load() else { return };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Some(view) = weak.get(mtm).load() else {
+            return;
+        };
         apply(&view);
+        // Day installs its drag recognizer during realization.  This second
+        // pass sees it and only filters button-originated touches; it leaves
+        // the established whole-card drag behavior intact everywhere else.
+        SHEET_PAN_DELEGATE.with(|delegate| {
+            for recognizer in view.gestureRecognizers().into_iter().flatten() {
+                if recognizer
+                    .downcast_ref::<UIPanGestureRecognizer>()
+                    .is_some()
+                {
+                    recognizer.setDelegate(Some(ProtocolObject::from_ref(&**delegate)));
+                }
+            }
+        });
     });
 }
 
@@ -207,7 +261,14 @@ fn settle_initial_layout(view: &UIView) {
 }
 
 fn identity_transform() -> CGAffineTransform {
-    CGAffineTransform { a: 1.0, b: 0.0, c: 0.0, d: 1.0, tx: 0.0, ty: 0.0 }
+    CGAffineTransform {
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        tx: 0.0,
+        ty: 0.0,
+    }
 }
 
 fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, presenting: bool) {
@@ -252,14 +313,23 @@ fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, p
             let frame = card.convertRect_toView(card.bounds(), Some(&root));
             (root.bounds().size.height - frame.origin.y).max(0.0)
         });
-    let travel = if travel > 0.0 { travel } else { root.bounds().size.height };
+    let travel = if travel > 0.0 {
+        travel
+    } else {
+        root.bounds().size.height
+    };
 
     let surfaces: Vec<_> = views
         .into_iter()
         .map(|view| {
             let rest = identity_transform();
             let offscreen = CGAffineTransform {
-                a: 1.0, b: 0.0, c: 0.0, d: 1.0, tx: 0.0, ty: travel,
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                tx: 0.0,
+                ty: travel,
             };
             (view, rest, offscreen)
         })
@@ -269,15 +339,18 @@ fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, p
     let clear = UIColor::clearColor();
 
     if presenting {
-        UIView::performWithoutAnimation(&RcBlock::new(|| {
-            root.setTransform(identity_transform());
-            root.setOpaque(false);
-            root.setBackgroundColor(Some(&clear));
-            root.setAlpha(1.0);
-            for (view, _, offscreen) in &surfaces {
-                view.setTransform(*offscreen);
-            }
-        }), root_mtm);
+        UIView::performWithoutAnimation(
+            &RcBlock::new(|| {
+                root.setTransform(identity_transform());
+                root.setOpaque(false);
+                root.setBackgroundColor(Some(&clear));
+                root.setAlpha(1.0);
+                for (view, _, offscreen) in &surfaces {
+                    view.setTransform(*offscreen);
+                }
+            }),
+            root_mtm,
+        );
     }
 
     let animation_root = root.clone();
@@ -285,7 +358,11 @@ fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, p
     let animation_dim = dim.clone();
     let animation_clear = clear.clone();
     let animations = RcBlock::new(move || {
-        animation_root.setBackgroundColor(Some(if presenting { &animation_dim } else { &animation_clear }));
+        animation_root.setBackgroundColor(Some(if presenting {
+            &animation_dim
+        } else {
+            &animation_clear
+        }));
         for (view, rest, offscreen) in &animation_surfaces {
             view.setTransform(if presenting { *rest } else { *offscreen });
         }
@@ -301,17 +378,20 @@ fn animate(context: &ProtocolObject<dyn UIViewControllerContextTransitioning>, p
     let completion = RcBlock::new(move |_finished: objc2::runtime::Bool| {
         let completed = !context.transitionWasCancelled();
         let visible = presenting == completed;
-        UIView::performWithoutAnimation(&RcBlock::new(|| {
-            if !visible {
-                root.removeFromSuperview();
-            }
-            for (view, rest, _) in &surfaces {
-                view.setTransform(*rest);
-            }
-            root.setTransform(identity_transform());
-            root.setAlpha(1.0);
-            root.setBackgroundColor(Some(if visible { &dim } else { &clear }));
-        }), root_mtm);
+        UIView::performWithoutAnimation(
+            &RcBlock::new(|| {
+                if !visible {
+                    root.removeFromSuperview();
+                }
+                for (view, rest, _) in &surfaces {
+                    view.setTransform(*rest);
+                }
+                root.setTransform(identity_transform());
+                root.setAlpha(1.0);
+                root.setBackgroundColor(Some(if visible { &dim } else { &clear }));
+            }),
+            root_mtm,
+        );
         context.completeTransition(completed);
     });
 

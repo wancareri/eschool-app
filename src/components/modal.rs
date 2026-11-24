@@ -3,7 +3,7 @@ use day::prelude::*;
 const MAX_UP: f64 = 70.0;
 // Keep an ample sheet-colored surface behind the card while it rubber-bands upward.
 // A short strip exposed the transparent cover near the bottom on tall iPhones.
-const FILLER_H: f64 = 320.0;
+const FILLER_H: f64 = 900.0;
 #[allow(dead_code)]
 const RESIZE_MS: u32 = 380;
 pub(crate) const DIM_ALPHA: f64 = 0.50;
@@ -13,6 +13,7 @@ pub(crate) fn native_glass_button(node: day::RNode, prominent: bool) {
     use objc2::rc::Weak;
     use objc2_ui_kit::{
         NSDirectionalEdgeInsets, UIButton, UIButtonConfiguration, UIButtonConfigurationCornerStyle,
+        UIFont,
     };
 
     fn apply(button: &UIButton, prominent: bool, mtm: objc2::MainThreadMarker) {
@@ -46,6 +47,12 @@ pub(crate) fn native_glass_button(node: day::RNode, prominent: bool) {
             trailing: 24.0,
         });
         button.setConfiguration(Some(&configuration));
+        if let Some(title_label) = button.titleLabel() {
+            let size = title_label
+                .font()
+                .map_or(17.0, |font| unsafe { font.pointSize() });
+            unsafe { title_label.setFont(Some(&UIFont::boldSystemFontOfSize(size))) };
+        }
         button.layer().setMasksToBounds(false);
         button.setClipsToBounds(false);
         // Day places a control inside a few layout-only UIView wrappers.  A
