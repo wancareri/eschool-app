@@ -3,7 +3,7 @@ use day::prelude::*;
 const MAX_UP: f64 = 70.0;
 // Keep an ample sheet-colored surface behind the card while it rubber-bands upward.
 // A short strip exposed the transparent cover near the bottom on tall iPhones.
-const FILLER_H: f64 = 900.0;
+const FILLER_H: f64 = 320.0;
 #[allow(dead_code)]
 const RESIZE_MS: u32 = 380;
 pub(crate) const DIM_ALPHA: f64 = 0.50;
@@ -17,10 +17,16 @@ pub(crate) fn native_glass_button(node: day::RNode, prominent: bool) {
     };
 
     fn apply(button: &UIButton, prominent: bool, mtm: objc2::MainThreadMarker) {
+        // Keep the declarative title as the source of truth. UIKit can leave a
+        // transient configuration title behind while a layout/drag update is
+        // in flight, which previously produced a clipped-looking `Coninu`.
         let title = button
-            .configuration()
-            .and_then(|configuration| configuration.title())
-            .or_else(|| button.titleForState(objc2_ui_kit::UIControlState::Normal))
+            .titleForState(objc2_ui_kit::UIControlState::Normal)
+            .or_else(|| {
+                button
+                    .configuration()
+                    .and_then(|configuration| configuration.title())
+            })
             .unwrap_or_default();
         let class = objc2::class!(UIButtonConfiguration);
         let glass = if prominent {
@@ -123,7 +129,7 @@ fn gap_filler(drag_y: Signal<f64>, kb_h: Signal<f64>) -> AnyPiece {
         })
         .any()
         .frame(crate::ios::viewport::get_screen_width(), FILLER_H)
-        .translation(0.0, move || drag_y.get() - kb_h.get())
+        .translation(0.0, move || MAX_UP + drag_y.get() - kb_h.get())
         .any()
         .uikit(|view, _, _| view.setUserInteractionEnabled(false))
         .any()
@@ -134,7 +140,7 @@ fn gap_filler(drag_y: Signal<f64>, kb_h: Signal<f64>) -> AnyPiece {
     column(())
         .background(card_bg())
         .frame(crate::ios::viewport::get_screen_width(), FILLER_H)
-        .translation(0.0, move || drag_y.get() - kb_h.get())
+        .translation(0.0, move || MAX_UP + drag_y.get() - kb_h.get())
         .any()
 }
 
@@ -217,8 +223,7 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 .corner_radius(2.0),
             spacer().grow(Dimension::Both),
         ))
-        .grow(Dimension::Width)
-        .height(24.0)
+        .grow(Dimension::Both)
         .padding(Insets {
             top: 0.0,
             leading: 0.0,
