@@ -123,7 +123,7 @@ fn gap_filler(drag_y: Signal<f64>, kb_h: Signal<f64>) -> AnyPiece {
         })
         .any()
         .frame(crate::ios::viewport::get_screen_width(), FILLER_H)
-        .translation(0.0, move || MAX_UP + drag_y.get() - kb_h.get())
+        .translation(0.0, move || drag_y.get() - kb_h.get())
         .any()
         .uikit(|view, _, _| view.setUserInteractionEnabled(false))
         .any()
@@ -134,7 +134,7 @@ fn gap_filler(drag_y: Signal<f64>, kb_h: Signal<f64>) -> AnyPiece {
     column(())
         .background(card_bg())
         .frame(crate::ios::viewport::get_screen_width(), FILLER_H)
-        .translation(0.0, move || MAX_UP + drag_y.get() - kb_h.get())
+        .translation(0.0, move || drag_y.get() - kb_h.get())
         .any()
 }
 
@@ -217,7 +217,8 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 .corner_radius(2.0),
             spacer().grow(Dimension::Both),
         ))
-        .grow(Dimension::Both)
+        .grow(Dimension::Width)
+        .height(24.0)
         .padding(Insets {
             top: 0.0,
             leading: 0.0,

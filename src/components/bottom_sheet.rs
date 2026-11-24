@@ -86,6 +86,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                     button(res::str::notice_retry())
                         .prominent()
                         .tweak(|node| crate::components::modal::native_glass_button(node, true))
+                        .grow(Dimension::Width)
                         .action(move || {
                             let st = s_retry;
                             close_sheet(st, "retry");
@@ -103,7 +104,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                 },
             ),))
             .align(HAlign::Center)
-            .grow(Dimension::Both)
+            .grow(Dimension::Width)
             .padding(Insets {
                 top: 8.0,
                 leading: 2.0,
