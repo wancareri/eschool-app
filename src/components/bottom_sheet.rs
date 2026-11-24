@@ -9,11 +9,15 @@ fn close_sheet(state: AppState, reason: &str) {
 
 pub fn network_error_sheet(state: AppState) -> impl Piece {
     let s_retry = state;
-    let s_ok = state;
 
-    crate::components::modal::modal_window(state.show_network_modal, 360.0, move |_| {
+    crate::components::modal::modal_window(state.show_network_modal, 0.0, move |_| {
         let status_icon = when(
-            move || matches!(state.conn_status.get(), ConnStatus::Offline | ConnStatus::Error),
+            move || {
+                matches!(
+                    state.conn_status.get(),
+                    ConnStatus::Offline | ConnStatus::Error
+                )
+            },
             move || {
                 if state.conn_status.get() == ConnStatus::Offline {
                     vector(res::vectors::status_offline)
@@ -44,8 +48,8 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
         let icon_and_title = row((
             status_icon,
             label(move || super::connection_status::title(state.conn_status.get()))
-            .font(Font::Headline)
-            .grow(Dimension::Both),
+                .font(Font::Headline)
+                .grow(Dimension::Both),
         ))
         .spacing(10.0)
         .grow(Dimension::Both)
@@ -57,28 +61,28 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
         });
 
         let body = label(move || super::connection_status::message(state.conn_status.get()))
-        .font(Font::Subheadline)
-        .secondary()
-        .grow(Dimension::Both)
-        .padding(Insets {
-            top: 0.0,
-            leading: 10.0,
-            bottom: 14.0,
-            trailing: 10.0,
-        });
+            .font(Font::Subheadline)
+            .secondary()
+            .grow(Dimension::Both)
+            .padding(Insets {
+                top: 0.0,
+                leading: 10.0,
+                bottom: 14.0,
+                trailing: 10.0,
+            });
 
         column((
             icon_and_title,
             body,
-            spacer().grow(Dimension::Height),
-
-            column((
-                when(
-                    move || matches!(
+            column((when(
+                move || {
+                    matches!(
                         state.conn_status.get(),
                         ConnStatus::Offline | ConnStatus::Error
-                    ),
-                    move || button(res::str::notice_retry())
+                    )
+                },
+                move || {
+                    button(res::str::notice_retry())
                         .prominent()
                         .tweak(|node| crate::components::modal::native_glass_button(node, true))
                         .action(move || {
@@ -88,28 +92,25 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                                 crate::pages::diary::data::load_all(st);
                             }
                         })
-                        .padding(Insets { top: 4.0, leading: 16.0, bottom: 4.0, trailing: 16.0 })
-                        .any(),
-                ),
-
-                button(res::str::notice_dismiss())
-                    .bordered()
-                    .tweak(|node| crate::components::modal::native_glass_button(node, false))
-                    .action(move || close_sheet(s_ok, "ok-button"))
-                    .padding(Insets { top: 4.0, leading: 16.0, bottom: 4.0, trailing: 16.0 }),
-            ))
-            .spacing(8.0)
+                        .padding(Insets {
+                            top: 4.0,
+                            leading: 16.0,
+                            bottom: 4.0,
+                            trailing: 16.0,
+                        })
+                        .any()
+                },
+            ),))
             .align(HAlign::Center)
             .grow(Dimension::Both)
             .padding(Insets {
-                top: 0.0,
+                top: 8.0,
                 leading: 2.0,
-                bottom: 18.0,
+                bottom: 14.0,
                 trailing: 2.0,
             }),
         ))
         .spacing(10.0)
-        .height(360.0)
         .grow(Dimension::Both)
     })
 }
