@@ -14,8 +14,10 @@ pub fn set_accent(hex: u32) {
     ACCENT_HEX.store(hex, Ordering::Relaxed);
 }
 
+/// Applies the saved accent through the active platform's native controls.
+/// Shared UI calls this without knowing which toolkit is active.
 #[cfg(feature = "uikit")]
-pub fn apply_ios_tint(hex: u32) {
+pub fn apply_platform_tint(hex: u32) {
     let Some(mtm) = objc2::MainThreadMarker::new() else {
         return;
     };
@@ -180,7 +182,7 @@ unsafe fn retint_existing(
 }
 
 #[cfg(not(feature = "uikit"))]
-pub fn apply_ios_tint(_hex: u32) {}
+pub fn apply_platform_tint(_hex: u32) {}
 
 pub fn accent_hex() -> u32 {
     ACCENT_HEX.load(Ordering::Relaxed)

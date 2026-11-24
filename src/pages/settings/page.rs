@@ -116,8 +116,7 @@ fn appearance_section(state: AppState) -> impl Piece {
 fn accent_apply(state: AppState, hex: u32) {
     colors::set_accent(hex);
     state.accent_color.set(hex);
-    #[cfg(feature = "uikit")]
-    colors::apply_ios_tint(hex);
+    colors::apply_platform_tint(hex);
 }
 
 fn accent_commit(state: AppState, hex: u32) {

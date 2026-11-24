@@ -31,8 +31,9 @@ pub fn root() -> impl Piece {
     }
     crate::pages::settings::apply_startup();
     crate::app::preferences::colors::init_accent();
-    #[cfg(feature = "uikit")]
-    crate::app::preferences::colors::apply_ios_tint(crate::app::preferences::colors::accent_hex());
+    crate::app::preferences::colors::apply_platform_tint(
+        crate::app::preferences::colors::accent_hex(),
+    );
     #[cfg(feature = "uikit")]
     crate::ios::ios_nav::ios_impl::install_auth_menu_icons();
     #[cfg(feature = "uikit")]
@@ -129,8 +130,7 @@ fn window_shell(primary: bool) -> impl Piece {
                 move |tag, old| {
                     if old.is_some() && old != Some(tag) {
                         haptics::tick();
-                        #[cfg(feature = "uikit")]
-                        crate::app::preferences::colors::apply_ios_tint(
+                        crate::app::preferences::colors::apply_platform_tint(
                             crate::app::preferences::colors::accent_hex(),
                         );
                     }
@@ -176,10 +176,10 @@ fn window_shell(primary: bool) -> impl Piece {
         #[cfg(feature = "uikit")]
         {
             day::reactive::on_main_delayed(200, move || {
-                crate::app::preferences::colors::apply_ios_tint(crate::app::preferences::colors::accent_hex());
+                crate::app::preferences::colors::apply_platform_tint(crate::app::preferences::colors::accent_hex());
             });
             day::reactive::on_main_delayed(800, move || {
-                crate::app::preferences::colors::apply_ios_tint(crate::app::preferences::colors::accent_hex());
+                crate::app::preferences::colors::apply_platform_tint(crate::app::preferences::colors::accent_hex());
             });
 
         }
@@ -254,8 +254,7 @@ fn settings_tab() -> impl Piece {
 
 fn render_nav_content(state: AppState, primary: bool) -> impl Piece {
     let section = state.current_section;
-    #[cfg(feature = "uikit")]
-    crate::app::preferences::colors::apply_ios_tint(state.accent_color.get());
+    crate::app::preferences::colors::apply_platform_tint(state.accent_color.get());
 
     let sel = nav(section)
         .style(day::prelude::NavStyle::Tabs)
