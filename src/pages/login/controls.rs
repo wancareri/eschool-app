@@ -38,7 +38,13 @@ pub(super) fn auth_action_button<M>(
     // after the glass configuration during initial realization.
     let piece = button(title)
         .enabled(enabled)
-        .action(action)
+        .action(action);
+    // Native callbacks must attach to the button itself, before Day's
+    // sizing/padding wrappers. Otherwise no UIKit button is reached.
+    #[cfg(feature = "uikit")]
+    let piece = piece.tweak(native_glass_auth_button);
+
+    piece
         .id(day::id!(login_btn))
         .height(52.0)
         .grow(Dimension::Width)
@@ -52,12 +58,7 @@ pub(super) fn auth_action_button<M>(
             bottom: 8.0,
             trailing: 20.0,
         })
-        .animation(AnimSpec::ease_out(200));
-
-    #[cfg(feature = "uikit")]
-    let piece = piece.tweak(native_glass_auth_button);
-
-    piece
+        .animation(AnimSpec::ease_out(200))
 }
 
 #[cfg(feature = "uikit")]

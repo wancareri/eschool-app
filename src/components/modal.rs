@@ -11,13 +11,13 @@ pub(crate) const DIM_ALPHA: f64 = 0.50;
 
 #[cfg(feature = "uikit")]
 pub(crate) fn native_glass_button(node: day::RNode, prominent: bool) {
+    use objc2::rc::Weak;
     use objc2_ui_kit::{
         NSDirectionalEdgeInsets, UIButton, UIButtonConfiguration,
         UIButtonConfigurationCornerStyle,
     };
 
-    let _ = day_uikit::with_native(node, move |view, _, mtm| {
-        let Some(button) = view.downcast_ref::<UIButton>() else { return };
+    fn apply(button: &UIButton, prominent: bool, mtm: objc2::MainThreadMarker) {
         let title = button
             .configuration()
             .and_then(|configuration| configuration.title())
@@ -46,6 +46,20 @@ pub(crate) fn native_glass_button(node: day::RNode, prominent: bool) {
         button.setConfiguration(Some(&configuration));
         button.layer().setMasksToBounds(false);
         button.setClipsToBounds(false);
+    }
+
+    let _ = day_uikit::with_native(node, move |view, _, mtm| {
+        let Some(button) = view.downcast_ref::<UIButton>() else { return };
+        // A button's title/style patch is performed by Day in the same mount
+        // pass.  Set it now and once again on the next main-queue turn, after
+        // that managed patch has finished, so UIKit keeps the glass surface.
+        apply(button, prominent, mtm);
+        let weak = dispatch2::MainThreadBound::new(Weak::new(button), mtm);
+        dispatch2::DispatchQueue::main().exec_async(move || {
+            let Some(mtm) = objc2::MainThreadMarker::new() else { return };
+            let Some(button) = weak.get(mtm).load() else { return };
+            apply(&button, prominent, mtm);
+        });
     });
 }
 
@@ -76,12 +90,12 @@ fn gap_filler(drag_y: Signal<f64>, kb_h: Signal<f64>) -> AnyPiece {
     use objc2_ui_kit::UIColor;
     column(())
         .background(card_bg())
-        .any()
         .uikit(|view, _class, _mtm| {
             view.setBackgroundColor(Some(&UIColor::secondarySystemGroupedBackgroundColor()));
             view.setUserInteractionEnabled(false);
             view.setTag(crate::ios::modal::FILLER_TAG);
         })
+        .any()
         .frame(crate::ios::viewport::get_screen_width(), FILLER_H)
         .translation(0.0, move || MAX_UP + drag_y.get() - kb_h.get())
         .any()
@@ -108,7 +122,6 @@ fn card_surface<P: Piece + 'static>(p: P) -> AnyPiece {
     column((p,))
         .background(card_bg())
         .corner_radius(20.0)
-        .any()
         .uikit(|view, _class, _mtm| {
             view.setBackgroundColor(Some(&UIColor::secondarySystemGroupedBackgroundColor()));
             crate::ios::modal::configure_card_surface(view, _mtm);

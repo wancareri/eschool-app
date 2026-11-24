@@ -44,31 +44,29 @@ pub fn render() -> impl Piece {
     }
 
     scroll(
-        column((
-            when(move || state.is_authenticated.get(), move || profile_section(state)),
-            system_settings().padding(Insets {
-                top: 0.0,
-                leading: 0.0,
-                bottom: 16.0,
-                trailing: 0.0,
-            }),
-            appearance_section(state),
-            haptics_section(state),
-            pin_section(state, pin_enabled),
-            biometric_section(state, pin_enabled),
-            dev_settings(state),
-            when(move || state.is_authenticated.get(), move || logout_section(state)),
-            spacer().frame(0.0, 16.0),
+        // One form owns the whole page, matching the Showcase/iOS inset-grouped
+        // rhythm: attached rows inside every group and only the system gap
+        // between distinct groups.  Separate nested forms created a card and
+        // a second painted background around almost every individual setting.
+        form((
+            when(move || state.is_authenticated.get(), move || profile_section(state).any()),
+            system_settings().any(),
+            appearance_section(state).any(),
+            haptics_section(state).any(),
+            pin_section(state, pin_enabled).any(),
+            biometric_section(state, pin_enabled).any(),
+            dev_settings(state).any(),
+            when(move || state.is_authenticated.get(), move || logout_section(state).any()),
+            spacer().frame(0.0, 16.0).any(),
         ))
-        .spacing(0.0)
+        .padding(Insets { top: 10.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
         .grow(Dimension::Both)
     )
     .grow(Dimension::Both)
 }
 
 fn profile_section(state: AppState) -> impl Piece {
-    form((
-        section(
+    section(
             (
                 label(move || state.full_name.get())
                     .font(Font::Title3).align(TextAlign::Center),
@@ -81,11 +79,8 @@ fn profile_section(state: AppState) -> impl Piece {
                 ),
                 crate::components::child_context::child_switcher(state),
             )
-        ),
-    ))
-    .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
+        )
 }
-
 fn appearance_section(state: AppState) -> impl Piece {
     let accent = Signal::new(state.accent_color.get());
     day::reactive::watch(
@@ -96,7 +91,7 @@ fn appearance_section(state: AppState) -> impl Piece {
             }
         },
     );
-    form((section((labeled(
+    section((labeled(
         res::str::settings_accent_color(),
         picker(
             accent,
@@ -108,8 +103,7 @@ fn appearance_section(state: AppState) -> impl Piece {
                 (colors::RED, res::str::settings_color_red().format()),
             ],
         ),
-    ),)),))
-    .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
+    ),))
 }
 
 fn accent_apply(state: AppState, hex: u32) {
@@ -135,8 +129,7 @@ fn haptics_section(_state: AppState) -> impl Piece {
         },
     );
 
-    form((
-        section(
+    section(
             (
                 row((
                     label(res::str::settings_haptics())
@@ -149,9 +142,7 @@ fn haptics_section(_state: AppState) -> impl Piece {
                     .font(Font::Caption)
                     .secondary(),
             )
-        ),
-    ))
-    .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
+        )
 }
 
 pub fn apply_startup() {
@@ -197,20 +188,17 @@ fn system_settings() -> impl Piece {
         options.extend(res::locales::ALL.iter().map(|(tag, name)| (tag.to_string(), name.to_string())));
         options
     };
-    form((
-        section((picker(theme, move || vec![
+    section((picker(theme, move || vec![
             (0usize, res::str::auth_theme_system().format()),
             (1, res::str::auth_theme_light().format()),
             (2, res::str::auth_theme_dark().format()),
-        ]).segmented(),)),
-        section((picker(language, languages),)),
+        ]).segmented(),
+        picker(language, languages),
     ))
 }
 
 fn pin_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
-    column((
-        form((
-            section(
+    section(
                 (
                     row((
                         label(res::str::settings_pin_login())
@@ -235,10 +223,7 @@ fn pin_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
                         )),
                     ),
                 )
-            ),
-        )),
-    ))
-    .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
+            )
 }
 
 fn biometric_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
@@ -274,8 +259,7 @@ fn biometric_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
         },
     );
 
-    form((
-        section(
+    section(
             (
                 when(
                     move || available,
@@ -305,19 +289,14 @@ fn biometric_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
 
 
             )
-        ),
-    ))
-    .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
+        )
 }
 
 fn logout_section(state: AppState) -> impl Piece {
-    form((
-        section(
+    section(
             (button(res::str::settings_logout())
                 .action(move || crate::pages::login::auth::logout(state)),)
-        ),
-    ))
-    .padding(Insets { top: 16.0, leading: 0.0, bottom: 20.0, trailing: 0.0 })
+        )
 }
 
 pub fn settings_body() -> impl Piece {
@@ -396,7 +375,6 @@ fn dev_settings(state: AppState) -> impl Piece {
                     .color(colors::SECONDARY),
             )
         ).title(res::str::settings_logs()),
-        input_diagnostics(),
     ))
     .padding(Insets { top: 16.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
@@ -410,27 +388,9 @@ fn dev_settings(_state: AppState) -> impl Piece {
                 label(move || format!("{}: v0.1.0", res::str::settings_version().format())),
             )
         ).title(res::str::settings_information()),
-        input_diagnostics(),
     ))
     .padding(Insets { top: 16.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
-fn input_diagnostics() -> impl Piece {
-    let result = Signal::new(String::new());
-    section((
-        label(res::str::autofill_diagnostics_hint()).font(Font::Subheadline).secondary(),
-        button(res::str::autofill_diagnostics_copy()).action(move || {
-            let diagnostics = nslog::autofill_diagnostics();
-            if diagnostics.is_empty() {
-                result.set(res::str::autofill_diagnostics_empty().format());
-            } else {
-                day_part_clipboard::set_text(&diagnostics);
-                result.set(res::str::autofill_diagnostics_copied().format());
-                crate::app::preferences::haptics::tick();
-            }
-        }),
-        when(move || !result.get().is_empty(), move || {
-            label(move || result.get()).font(Font::Caption).secondary().any()
-        }),
-    )).title(res::str::autofill_diagnostics_title())
-}
+// Input diagnostics deliberately do not appear in user-facing settings.
+// They remain a development-only log bridge, not a product feature.

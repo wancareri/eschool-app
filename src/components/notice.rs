@@ -73,7 +73,7 @@ pub fn bind_error(
 }
 
 pub fn modal(state: AppState) -> impl Piece {
-    super::modal::modal_window(state.notice_route, 0.0, move |_| {
+    super::modal::modal_window(state.notice_route, 360.0, move |_| {
         let initial = state.notice.get_untracked();
         let fallback_kind = initial.as_ref().map(|n| n.kind).unwrap_or(NoticeKind::Info);
         let fallback_title = initial
@@ -129,6 +129,7 @@ pub fn modal(state: AppState) -> impl Piece {
             .font(Font::Subheadline)
             .secondary()
             .grow(Dimension::Width),
+            spacer().grow(Dimension::Height),
             button(res::str::notice_dismiss())
                 .prominent()
                 .tweak(|node| super::modal::native_glass_button(node, true))
@@ -136,6 +137,7 @@ pub fn modal(state: AppState) -> impl Piece {
                 .action(move || state.notice_route.set(None)),
         ))
         .spacing(14.0)
+        .height(360.0)
         .padding(Insets {
             top: 4.0,
             leading: 12.0,
