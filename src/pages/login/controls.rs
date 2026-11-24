@@ -33,19 +33,17 @@ pub(super) fn auth_action_button<M>(
     enabled: impl Fn() -> bool + 'static,
     action: impl Fn() + 'static,
 ) -> impl Piece {
+    // Keep this a plain UIKit button until the final native tweak.  Calling
+    // `.prominent()` here makes Day install its normal filled configuration
+    // after the glass configuration during initial realization.
     let piece = button(title)
-        .prominent()
         .enabled(enabled)
         .action(action)
-        .animation(AnimSpec::ease_out(200));
-
-    #[cfg(feature = "uikit")]
-    let piece = piece.tweak(native_glass_auth_button);
-
-    piece
         .id(day::id!(login_btn))
         .height(52.0)
         .grow(Dimension::Width)
+        // Keep the declarative capsule for non-UIKit toolkits.  On UIKit the
+        // final glass tweak releases the layer clip for the native effect.
         .corner_radius(26.0)
         .log_pos("Auth:ActionButton")
         .padding(Insets {
@@ -54,26 +52,19 @@ pub(super) fn auth_action_button<M>(
             bottom: 8.0,
             trailing: 20.0,
         })
+        .animation(AnimSpec::ease_out(200));
+
+    #[cfg(feature = "uikit")]
+    let piece = piece.tweak(native_glass_auth_button);
+
+    piece
 }
 
 #[cfg(feature = "uikit")]
 fn native_glass_auth_button(node: day::RNode) {
-    // Login uses the exact same UIKit glass configuration as modal actions. The
-    // only auth-specific behavior is the activity indicator while signing in.
+    // This runs after every Day sizing/decorating operation, so it is the
+    // configuration UIKit actually displays rather than a style Day replaces.
     crate::components::modal::native_glass_button(node, true);
-    let _ = day_uikit::with_native(node, |view, _, _| {
-        let Some(button) = view.downcast_ref::<objc2_ui_kit::UIButton>() else { return };
-        let update = block2::RcBlock::new(move |button: std::ptr::NonNull<objc2_ui_kit::UIButton>| {
-            let button = unsafe { button.as_ref() };
-            let Some(configuration) = button.configuration() else { return };
-            let loading = crate::app::AppState::get_main()
-                .map(|state| state.loading.get())
-                .unwrap_or(false);
-            configuration.setShowsActivityIndicator(loading);
-            button.setConfiguration(Some(&configuration));
-        });
-        unsafe { button.setConfigurationUpdateHandler(block2::RcBlock::as_ptr(&update)); }
-    });
 }
 
 pub fn auth_toolbar() -> Vec<ToolbarEntry> {

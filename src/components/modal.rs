@@ -102,21 +102,23 @@ fn gap_filler(drag_y: Signal<f64>, kb_h: Signal<f64>) -> AnyPiece {
 fn card_surface<P: Piece + 'static>(p: P) -> AnyPiece {
     use day_uikit::UiKitExt;
     use objc2_ui_kit::UIColor;
-    p.background(card_bg())
+    // Give the sheet its own native container.  Applying a radius directly to
+    // the content section lets a child background paint square into the top
+    // edge on UIKit; this container is the single clipped sheet surface.
+    column((p,))
+        .background(card_bg())
         .corner_radius(20.0)
         .any()
         .uikit(|view, _class, _mtm| {
             view.setBackgroundColor(Some(&UIColor::secondarySystemGroupedBackgroundColor()));
-            view.setTag(crate::ios::modal::CARD_TAG);
-            view.layer().setCornerRadius(20.0);
-            view.layer().setMasksToBounds(true);
+            crate::ios::modal::configure_card_surface(view, _mtm);
         })
         .any()
 }
 
 #[cfg(not(feature = "uikit"))]
 fn card_surface<P: Piece + 'static>(p: P) -> AnyPiece {
-    p.background(card_bg()).corner_radius(20.0).any()
+    column((p,)).background(card_bg()).corner_radius(20.0).any()
 }
 
 pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
@@ -193,12 +195,6 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
             },
         )))
         .on_drag(sheet_drag);
-        #[cfg(feature = "uikit")]
-        let card = card.tweak(|node| {
-            day_uikit::with_native(node, |view, _, mtm| {
-                crate::ios::modal::configure_sheet_drag(view, mtm);
-            });
-        });
         let card = card.translation(0.0, move || drag_y.get() - kb_h.get());
 
         #[cfg(feature = "uikit")]

@@ -1,13 +1,13 @@
 
 use block2::{Block, RcBlock};
-use objc2::rc::Retained;
+use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel};
 use objc2::{ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_core_foundation::CGAffineTransform;
 use objc2_foundation::{NSObject, NSObjectProtocol};
+use objc2_quartz_core::{kCACornerCurveContinuous, CACornerMask};
 use objc2_ui_kit::{
-    UIColor, UIControl, UIGestureRecognizer, UIGestureRecognizerDelegate, UIPanGestureRecognizer,
-    UITouch, UIModalPresentationStyle, UIModalTransitionStyle, UITransitionContextFromViewControllerKey,
+    UIColor, UIModalPresentationStyle, UIModalTransitionStyle, UITransitionContextFromViewControllerKey,
     UITransitionContextToViewControllerKey, UIView, UIViewAnimationOptions, UIViewController,
     UIViewControllerAnimatedTransitioning, UIViewControllerContextTransitioning,
     UIViewControllerTransitioningDelegate,
@@ -75,47 +75,28 @@ thread_local! {
     };
 }
 
-thread_local! {
-    static SHEET_DRAG_DELEGATE: Retained<SheetDragDelegate> = unsafe {
-        msg_send![SheetDragDelegate::alloc(MainThreadMarker::new().unwrap()), init]
-    };
-}
-
-define_class!(
-    #[unsafe(super(NSObject))]
-    #[thread_kind = MainThreadOnly]
-    struct SheetDragDelegate;
-
-    unsafe impl NSObjectProtocol for SheetDragDelegate {}
-    unsafe impl UIGestureRecognizerDelegate for SheetDragDelegate {
-        #[unsafe(method(gestureRecognizer:shouldReceiveTouch:))]
-        fn should_receive_touch(
-            &self,
-            _gesture: &UIGestureRecognizer,
-            touch: &UITouch,
-        ) -> bool {
-            let mut view = touch.view();
-            while let Some(current) = view {
-                if current.downcast_ref::<UIControl>().is_some() {
-                    return false.into();
-                }
-                view = current.superview();
-            }
-            true.into()
-        }
+/// The sheet is a bottom-attached surface: only its two upper corners are
+/// visible.  Reapply once after Day's surface patch so its child cannot turn
+/// the edge square during the first UIKit layout pass.
+pub(crate) fn configure_card_surface(view: &UIView, mtm: MainThreadMarker) {
+    fn apply(view: &UIView) {
+        view.setTag(CARD_TAG);
+        let layer = view.layer();
+        layer.setCornerRadius(26.0);
+        unsafe { layer.setCornerCurve(kCACornerCurveContinuous) };
+        layer.setMaskedCorners(
+            CACornerMask::LayerMinXMinYCorner | CACornerMask::LayerMaxXMinYCorner,
+        );
+        layer.setMasksToBounds(true);
     }
-);
 
-/// Keep the sheet drag on the sheet surface, but let native controls own their
-/// touches. This prevents dragging a glass button from moving the whole cover.
-pub(crate) fn configure_sheet_drag(view: &UIView, _mtm: MainThreadMarker) {
-    for recognizer in view.gestureRecognizers().into_iter().flatten() {
-        if recognizer.downcast_ref::<UIPanGestureRecognizer>().is_some() {
-            SHEET_DRAG_DELEGATE.with(|delegate| {
-                recognizer.setDelegate(Some(ProtocolObject::from_ref(&**delegate)));
-            });
-        }
-    }
+    apply(view);
+    let weak = dispatch2::MainThreadBound::new(Weak::new(view), mtm);
+    dispatch2::DispatchQueue::main().exec_async(move || {
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(view) = weak.get(mtm).load() else { return };
+        apply(&view);
+    });
 }
 
 pub(crate) fn configure_cover(view: &UIView, _mtm: MainThreadMarker) {
