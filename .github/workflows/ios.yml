@@ -33,8 +33,6 @@ jobs:
       # has been saved by actions/cache (post steps run in reverse order).
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
-        with:
-          targets: aarch64-apple-ios
 
       - name: Cache day-cli binary
         uses: actions/cache@v4
