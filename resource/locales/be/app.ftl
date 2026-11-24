@@ -8,6 +8,9 @@ nav_teachers = Настаўнікі
 nav_settings = Налады
 
 diary_title = Дзённік
+diary_year = Год
+diary_weeks = Тыдні
+diary_summary = Вынікі
 schedule_title = Расклад
 schedule_sign_in = Увайдзіце, каб паглядзець расклад
 schedule_loading = Загрузка раскладу…

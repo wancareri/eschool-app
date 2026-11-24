@@ -8,6 +8,9 @@ nav_teachers = Учителя
 nav_settings = Настройки
 
 diary_title = Дневник
+diary_year = Год
+diary_weeks = Недели
+diary_summary = Итоги
 schedule_title = Расписание
 schedule_sign_in = Войдите для просмотра расписания
 schedule_loading = Загрузка расписания…

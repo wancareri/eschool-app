@@ -14,6 +14,9 @@ nav_settings = Settings
 
 # E-schools specific
 diary_title = Diary
+diary_year = Year
+diary_weeks = Weeks
+diary_summary = Summary
 schedule_title = Schedule
 schedule_sign_in = Sign in to view the schedule
 schedule_loading = Loading schedule…

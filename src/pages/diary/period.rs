@@ -60,9 +60,9 @@ fn quarter_btn(
 fn year_btn(state: AppState, show_summary: Signal<bool>, revision: Signal<u64>) -> impl Piece {
     button(move || {
         if state.current_quarter.get() == 4 && !state.marks_loading.get() {
-            "[Год]"
+            format!("[{}]", crate::res::str::diary_year().format())
         } else {
-            "Год"
+            crate::res::str::diary_year().format()
         }
     })
     .action(move || choose_quarter(state, show_summary, revision, 4))
@@ -122,9 +122,9 @@ pub(super) fn sub_tabs(
     row((
         button(move || {
             if !show_summary.get() {
-                "● Недели"
+                format!("● {}", crate::res::str::diary_weeks().format())
             } else {
-                "○ Недели"
+                format!("○ {}", crate::res::str::diary_weeks().format())
             }
         })
         .action(move || {
@@ -143,9 +143,9 @@ pub(super) fn sub_tabs(
         .id(day::id!(sub_weeks)),
         button(move || {
             if show_summary.get() {
-                "● Итоги"
+                format!("● {}", crate::res::str::diary_summary().format())
             } else {
-                "○ Итоги"
+                format!("○ {}", crate::res::str::diary_summary().format())
             }
         })
         .action(move || {

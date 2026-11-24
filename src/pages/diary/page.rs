@@ -211,7 +211,7 @@ mod header_tests {
                 .values()
                 .any(|w| w.text == "week 1")
         );
-        click("Год");
+        click(&crate::res::str::diary_year().format());
         day::reactive::flush_sync();
         assert!(show_summary.get(), "year selection must open totals");
         assert_eq!(state.current_quarter.get(), 4);
