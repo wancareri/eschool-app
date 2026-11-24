@@ -226,12 +226,10 @@ pub(super) fn choose_auth_language(locale: &'static str) {
     if day::locale().get_untracked().starts_with(locale) {
         return;
     }
-    #[cfg(feature = "uikit")]
-    crate::ios::autofill::ios::sync_values();
+    crate::ios::autofill::sync_values();
     day::prefs::set(crate::LOCALE_KEY, locale);
     set_locale(locale);
-    #[cfg(feature = "uikit")]
-    crate::ios::autofill::ios::refresh_active();
+    crate::ios::autofill::refresh_active();
     crate::app::preferences::haptics::tick();
 }
 

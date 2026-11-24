@@ -632,6 +632,19 @@ pub fn password(node: day::RNode, value: day::reactive::Signal<String>) {
     let _ = (node, value);
 }
 
+/// Pulls any native AutoFill value into its reactive field before the form
+/// changes locale or submits. Other toolkits keep their values in Day already.
+pub fn sync_values() {
+    #[cfg(feature = "uikit")]
+    ios::sync_values();
+}
+
+/// Reapplies the active native field's traits after a locale change.
+pub fn refresh_active() {
+    #[cfg(feature = "uikit")]
+    ios::refresh_active();
+}
+
 pub fn new_password(node: day::RNode) {
     #[cfg(feature = "uikit")]
     let _ = day_uikit::with_native(node, |view, _, _| {
