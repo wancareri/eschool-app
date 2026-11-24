@@ -23,14 +23,9 @@ pub(super) fn username_step_view(
         .log_pos("Auth:UsernameField")
         .on_submit(on_sub);
 
-    #[cfg(feature = "uikit")]
     let input_field = native_auth_input(input_field, move |node| {
-        let _ = day_uikit::with_native(node, move |view, _, _| {
-            crate::ios::autofill::ios::username(view, username);
-        });
+        crate::ios::autofill::username(node, username);
     });
-    #[cfg(not(feature = "uikit"))]
-    let input_field = input_field.grow(Dimension::Width);
 
     let input_card = row((
         vector(res::vectors::tab_login)
@@ -216,15 +211,9 @@ pub(super) fn password_step_view(
         .log_pos("Auth:PasswordField")
         .on_submit(on_submit.clone());
 
-    #[cfg(feature = "uikit")]
     let pw_field = native_auth_input(pw_field, move |node| {
-        let _ = day_uikit::with_native(node, move |view, _, _| {
-            crate::ios::autofill::ios::password(view, password);
-        });
+        crate::ios::autofill::password(node, password);
     });
-
-    #[cfg(not(feature = "uikit"))]
-    let pw_field = pw_field.grow(Dimension::Width);
 
     let input_card = row((
         vector(res::vectors::lock)

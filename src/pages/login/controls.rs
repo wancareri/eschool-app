@@ -314,7 +314,6 @@ pub(super) fn intro_view(on_start: impl Fn() + 'static) -> impl Piece {
     piece
 }
 
-#[cfg(any(feature = "uikit", test))]
 pub(super) fn native_auth_input(
     field: impl Decorate,
     configure: impl FnOnce(day::RNode) + 'static,

@@ -611,6 +611,27 @@ pub mod ios {
     }
 }
 
+pub fn username(node: day::RNode, value: day::reactive::Signal<String>) {
+    #[cfg(feature = "uikit")]
+    let _ = day_uikit::with_native(node, move |view, _, _| ios::username(view, value));
+    #[cfg(not(feature = "uikit"))]
+    let _ = (node, value);
+}
+
+pub fn capture_password(node: day::RNode, value: day::reactive::Signal<String>) {
+    #[cfg(feature = "uikit")]
+    let _ = day_uikit::with_native(node, move |view, _, _| ios::capture_password(view, value));
+    #[cfg(not(feature = "uikit"))]
+    let _ = (node, value);
+}
+
+pub fn password(node: day::RNode, value: day::reactive::Signal<String>) {
+    #[cfg(feature = "uikit")]
+    let _ = day_uikit::with_native(node, move |view, _, _| ios::password(view, value));
+    #[cfg(not(feature = "uikit"))]
+    let _ = (node, value);
+}
+
 pub fn new_password(node: day::RNode) {
     #[cfg(feature = "uikit")]
     let _ = day_uikit::with_native(node, |view, _, _| {
