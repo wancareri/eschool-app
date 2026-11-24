@@ -10,7 +10,7 @@ fn close_sheet(state: AppState, reason: &str) {
 pub fn network_error_sheet(state: AppState) -> impl Piece {
     let s_retry = state;
 
-    crate::components::modal::modal_window(state.show_network_modal, 360.0, move |_| {
+    crate::components::modal::modal_window(state.show_network_modal, 300.0, move |_| {
         let status_icon = when(
             move || {
                 matches!(
@@ -113,7 +113,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
             }),
         ))
         .spacing(10.0)
-        .height(360.0)
-        .grow(Dimension::Both)
+        .height(300.0)
+        .grow(Dimension::Width)
     })
 }

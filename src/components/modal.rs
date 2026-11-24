@@ -53,6 +53,10 @@ pub(crate) fn native_glass_button(node: day::RNode, prominent: bool) {
             trailing: 24.0,
         });
         button.setConfiguration(Some(&configuration));
+        // UIKit otherwise rebuilds the configuration for highlighted/drag
+        // states and restores its regular title font. Keep the glass title
+        // attributes stable while the surrounding sheet is moving.
+        button.setAutomaticallyUpdatesConfiguration(false);
         if let Some(title_label) = button.titleLabel() {
             let size = title_label
                 .font()
@@ -223,7 +227,8 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 .corner_radius(2.0),
             spacer().grow(Dimension::Both),
         ))
-        .grow(Dimension::Both)
+        .grow(Dimension::Width)
+        .height(24.0)
         .padding(Insets {
             top: 0.0,
             leading: 0.0,
