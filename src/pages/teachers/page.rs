@@ -19,7 +19,7 @@ pub fn render() -> impl Piece {
                 move || !state.is_authenticated.get(),
                 || column((
                     spacer(),
-                    label("Войдите для просмотра списка учителей")
+                    label(move || crate::res::str::teachers_sign_in_required().format())
                         .font(Font::Body).secondary().align(TextAlign::Center),
                     spacer(),
                 )).grow(Dimension::Both),
@@ -29,7 +29,9 @@ pub fn render() -> impl Piece {
                 move || column((
                     spacer(),
                     components::spinner::render(state, 11.0),
-                    label("  Загрузка…").font(Font::Caption).secondary(),
+                    label(move || crate::res::str::teachers_loading().format())
+                        .font(Font::Caption)
+                        .secondary(),
                     spacer(),
                 )).grow(Dimension::Both),
             ),
