@@ -92,3 +92,40 @@ pub(super) fn final_mark_text(mark: Option<String>) -> String {
         None => "—".into(),
     }
 }
+
+/// The overall quarter result is based on marks already assigned by the
+/// teacher, not on every individual lesson mark.  This is the number a parent
+/// expects to see beneath the subject list.
+pub(super) fn rounded_quarter_final_average(state: AppState, q: usize) -> Option<i32> {
+    if q > 3 {
+        return None;
+    }
+    let period = quarter_period(q);
+    state.final_marks.with(|marks| {
+        rounded_grade_average(
+            marks
+            .values()
+            .filter_map(|periods| periods.get(period))
+            .filter_map(|mark| mark.parse::<f64>().ok()),
+        )
+    })
+}
+
+fn rounded_grade_average(grades: impl IntoIterator<Item = f64>) -> Option<i32> {
+    let (sum, count) = grades
+        .into_iter()
+        .fold((0.0, 0usize), |(sum, count), grade| (sum + grade, count + 1));
+    (count > 0).then(|| (sum / count as f64).round() as i32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rounded_grade_average;
+
+    #[test]
+    fn quarter_average_uses_only_assigned_grades_and_rounds_to_a_whole_mark() {
+        assert_eq!(rounded_grade_average([6.0, 7.0, 8.0]), Some(7));
+        assert_eq!(rounded_grade_average([7.0, 8.0]), Some(8));
+        assert_eq!(rounded_grade_average(std::iter::empty()), None);
+    }
+}

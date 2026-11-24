@@ -71,73 +71,10 @@ fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
             bottom: 2.0,
             trailing: PAD,
         }),
-        {
-            let s = state;
-            label(move || {
-                let q = (s.current_quarter.get() as i32 + offset).clamp(0, 4) as usize;
-                if q == 4 {
-                    let mut year_sum = 0.0;
-                    let mut year_count = 0;
-                    s.final_marks.with(|fm| {
-                        for periods in fm.values() {
-                            if let Some(m) = periods.get("YEAR").and_then(|v| v.parse::<f64>().ok())
-                            {
-                                year_sum += m;
-                                year_count += 1;
-                            }
-                        }
-                    });
-                    if year_count > 0 {
-                        format!("Средний балл за год: {:.2}", year_sum / year_count as f64)
-                    } else {
-                        let mut q_sum = 0.0;
-                        let mut q_count = 0;
-                        s.final_marks.with(|fm| {
-                            for periods in fm.values() {
-                                for q_idx in 0..4 {
-                                    if let Some(m) = periods
-                                        .get(quarter_period(q_idx))
-                                        .and_then(|v| v.parse::<f64>().ok())
-                                    {
-                                        q_sum += m;
-                                        q_count += 1;
-                                    }
-                                }
-                            }
-                        });
-                        if q_count > 0 {
-                            format!("Средний балл за год: {:.2}", q_sum / q_count as f64)
-                        } else {
-                            "Средний балл за год: —".to_string()
-                        }
-                    }
-                } else {
-                    let marks = get_quarter_marks_map(s, q);
-                    let mut sum = 0.0;
-                    let mut count = 0;
-                    for vals in marks.values() {
-                        for &v in vals {
-                            sum += v;
-                            count += 1;
-                        }
-                    }
-                    if count > 0 {
-                        format!("Средний балл: {:.2}", sum / count as f64)
-                    } else {
-                        "Средний балл: —".to_string()
-                    }
-                }
-            })
-            .font(Font::Subheadline)
-            .secondary()
-            .align(TextAlign::Center)
-            .padding(Insets {
-                top: 0.0,
-                leading: PAD,
-                bottom: 10.0,
-                trailing: PAD,
-            })
-        },
+        when(
+            move || (title_state.current_quarter.get() as i32 + offset).clamp(0, 4) == 4,
+            move || year_summary_average(state),
+        ),
         when(
             move || (header_state.current_quarter.get() as i32 + offset).clamp(0, 4) != 4,
             move || quarter_summary_header(),
@@ -157,12 +94,72 @@ fn summary_page(state: AppState, offset: i32, w: f64) -> impl Piece {
             move || quarter_summary_at(qs_state, offset),
         ),
         when(
+            move || (title_state.current_quarter.get() as i32 + offset).clamp(0, 4) != 4,
+            move || quarter_summary_footer(state, offset),
+        ),
+        when(
             move || (title_state.current_quarter.get() as i32 + offset).clamp(0, 4) == 4,
             move || year_summary_at(ys_state),
         ),
     ))
     .spacing(0.0)
     .width(w)
+}
+
+fn year_summary_average(state: AppState) -> impl Piece {
+    label(move || {
+        let (sum, count) = state.final_marks.with(|marks| {
+            marks
+                .values()
+                .filter_map(|periods| periods.get("YEAR"))
+                .filter_map(|mark| mark.parse::<f64>().ok())
+                .fold((0.0, 0usize), |(sum, count), mark| (sum + mark, count + 1))
+        });
+        if count > 0 {
+            format!("Средний балл за год: {:.2}", sum / count as f64)
+        } else {
+            "Средний балл за год: —".to_string()
+        }
+    })
+    .font(Font::Subheadline)
+    .secondary()
+    .align(TextAlign::Center)
+    .padding(Insets {
+        top: 0.0,
+        leading: PAD,
+        bottom: 10.0,
+        trailing: PAD,
+    })
+}
+
+fn quarter_summary_footer(state: AppState, offset: i32) -> impl Piece {
+    let footer_state = state;
+    column((
+        divider().padding(Insets {
+            top: 0.0,
+            leading: PAD,
+            bottom: 0.0,
+            trailing: PAD,
+        }),
+        label(move || {
+            let q = (footer_state.current_quarter.get() as i32 + offset).clamp(0, 3) as usize;
+            match rounded_quarter_final_average(footer_state, q) {
+                Some(avg) => format!("Средний балл: {avg}"),
+                None => "Средний балл: —".to_string(),
+            }
+        })
+        .font(Font::Headline)
+        .grow(Dimension::Width)
+        .align(TextAlign::Trailing)
+        .padding(Insets {
+            top: 12.0,
+            leading: PAD,
+            bottom: 16.0,
+            trailing: PAD + 68.0,
+        }),
+    ))
+    .spacing(0.0)
+    .width(crate::ios::viewport::get_screen_width())
 }
 
 fn quarter_summary_header() -> impl Piece {
