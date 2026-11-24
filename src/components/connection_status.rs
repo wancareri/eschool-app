@@ -37,7 +37,7 @@ pub fn toolbar(state: AppState) -> Vec<ToolbarEntry> {
     let button = match status {
         ConnStatus::Connecting => button.icon(Symbol::Refresh),
         ConnStatus::Offline | ConnStatus::Error => button.icon(Symbol::Warning),
-        ConnStatus::Connected | ConnStatus::Idle => button.image(res::vectors::wifi),
+        ConnStatus::Connected | ConnStatus::Idle => button.icon(Symbol::Check),
     };
     vec![
         button

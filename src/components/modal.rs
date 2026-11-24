@@ -2,10 +2,55 @@ use day::prelude::*;
 
 
 const MAX_UP: f64 = 70.0;
-const FILLER_H: f64 = MAX_UP + 14.0;
+// Keep an ample sheet-colored surface behind the card while it rubber-bands upward.
+// A short strip exposed the transparent cover near the bottom on tall iPhones.
+const FILLER_H: f64 = 320.0;
 #[allow(dead_code)]
 const RESIZE_MS: u32 = 380;
 pub(crate) const DIM_ALPHA: f64 = 0.50;
+
+#[cfg(feature = "uikit")]
+pub(crate) fn native_glass_button(node: day::RNode, prominent: bool) {
+    use objc2_ui_kit::{
+        NSDirectionalEdgeInsets, UIButton, UIButtonConfiguration,
+        UIButtonConfigurationCornerStyle,
+    };
+
+    let _ = day_uikit::with_native(node, move |view, _, mtm| {
+        let Some(button) = view.downcast_ref::<UIButton>() else { return };
+        let title = button
+            .configuration()
+            .and_then(|configuration| configuration.title())
+            .or_else(|| button.titleForState(objc2_ui_kit::UIControlState::Normal))
+            .unwrap_or_default();
+        let class = objc2::class!(UIButtonConfiguration);
+        let glass = if prominent {
+            class.class_method(objc2::sel!(prominentGlassButtonConfiguration)).is_some()
+        } else {
+            class.class_method(objc2::sel!(clearGlassButtonConfiguration)).is_some()
+        };
+        let configuration = match (prominent, glass) {
+            (true, true) => UIButtonConfiguration::prominentGlassButtonConfiguration(mtm),
+            (false, true) => UIButtonConfiguration::clearGlassButtonConfiguration(mtm),
+            (true, false) => UIButtonConfiguration::borderedProminentButtonConfiguration(mtm),
+            (false, false) => UIButtonConfiguration::borderedButtonConfiguration(mtm),
+        };
+        configuration.setTitle(Some(&title));
+        configuration.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
+        configuration.setContentInsets(NSDirectionalEdgeInsets {
+            top: 12.0,
+            leading: 24.0,
+            bottom: 12.0,
+            trailing: 24.0,
+        });
+        button.setConfiguration(Some(&configuration));
+        button.layer().setMasksToBounds(false);
+        button.setClipsToBounds(false);
+    });
+}
+
+#[cfg(not(feature = "uikit"))]
+pub(crate) fn native_glass_button(_node: day::RNode, _prominent: bool) {}
 
 fn close_modal<R: Route, S: Binding<Option<R>>>(open: &S, reason: &str) {
     crate::ios::nslog::nslog(&format!("[cover] close_sheet: {reason}"));

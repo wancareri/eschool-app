@@ -79,6 +79,7 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                     ),
                     move || button(res::str::notice_retry())
                         .prominent()
+                        .tweak(|node| crate::components::modal::native_glass_button(node, true))
                         .action(move || {
                             let st = s_retry;
                             close_sheet(st, "retry");
@@ -91,6 +92,8 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
                 ),
 
                 button(res::str::notice_dismiss())
+                    .bordered()
+                    .tweak(|node| crate::components::modal::native_glass_button(node, false))
                     .action(move || close_sheet(s_ok, "ok-button"))
                     .padding(Insets { top: 4.0, leading: 16.0, bottom: 4.0, trailing: 16.0 }),
             ))

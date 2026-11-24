@@ -112,18 +112,14 @@ unsafe fn retint_existing(
             let tab_appearance_class = objc2::class!(UITabBarAppearance);
             let tab_app: objc2::rc::Retained<objc2::runtime::AnyObject> =
                 objc2::msg_send![tab_appearance_class, new];
-            let blur_class = objc2::class!(UIBlurEffect);
-            let blur: objc2::rc::Retained<objc2::runtime::AnyObject> =
-                objc2::msg_send![blur_class, effectWithStyle: 6isize];
             let _: () = objc2::msg_send![&*tab_app, configureWithTransparentBackground];
-            let _: () = objc2::msg_send![&*tab_app, setBackgroundEffect: Some(&*blur)];
+            let _: () = objc2::msg_send![&*tab_app, setBackgroundEffect: None::<&objc2::runtime::AnyObject>];
             let _: () = objc2::msg_send![&*tab_app, setBackgroundColor: &*clear];
             let _: () = objc2::msg_send![&*tab_app, setShadowColor: &*clear];
 
             let _: () = objc2::msg_send![bar, setStandardAppearance: &*tab_app];
             let _: () = objc2::msg_send![bar, setScrollEdgeAppearance: &*tab_app];
         };
-        crate::ios::nav_scroll_edge::install_tab_bar_glass(bar, mtm);
     } else if let Some(bar) = obj.downcast_ref::<objc2_ui_kit::UINavigationBar>() {
         unsafe {
             let diary_title = crate::res::str::diary_title().format();

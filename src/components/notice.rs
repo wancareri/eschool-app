@@ -131,6 +131,7 @@ pub fn modal(state: AppState) -> impl Piece {
             .grow(Dimension::Width),
             button(res::str::notice_dismiss())
                 .prominent()
+                .tweak(|node| super::modal::native_glass_button(node, true))
                 .grow(Dimension::Width)
                 .action(move || state.notice_route.set(None)),
         ))

@@ -235,10 +235,6 @@ fn nav_body(state: AppState, primary: bool) -> impl Piece {
 fn diary_tab() -> impl Piece {
     let path = Signal::new(Vec::<String>::new());
     crate::components::header::page(res::str::diary_title(), path, crate::pages::diary::render())
-        .toolbar(vec![
-            toolbar_label(day::id!(diary_glass_title), res::str::diary_title())
-                .placement(day::prelude::ToolbarPlacement::Principal),
-        ])
 }
 
 fn schedule_tab() -> impl Piece {

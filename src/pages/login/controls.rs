@@ -88,19 +88,31 @@ pub(super) fn native_auth_action_button(node: day::RNode) {
         };
     }
 
+    fn supports_glass() -> bool {
+        objc2::class!(UIButtonConfiguration)
+            .class_method(objc2::sel!(prominentGlassButtonConfiguration))
+            .is_some()
+    }
+
+    fn make_configuration(mtm: objc2::MainThreadMarker) -> Retained<UIButtonConfiguration> {
+        if supports_glass() {
+            UIButtonConfiguration::prominentGlassButtonConfiguration(mtm)
+        } else {
+            UIButtonConfiguration::borderedProminentButtonConfiguration(mtm)
+        }
+    }
+
     fn apply_style(button: &UIButton, config: &UIButtonConfiguration) {
         config.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
-        let bg = config.background();
-        bg.setCornerRadius(26.0);
-        config.setBackground(&bg);
         config.setBaseForegroundColor(Some(&UIColor::whiteColor()));
         TITLE_ATTRIBUTES.with(|transformer| unsafe {
             config.setTitleTextAttributesTransformer(block2::RcBlock::as_ptr(transformer));
         });
         button.setConfiguration(Some(config));
-        button.layer().setCornerRadius(26.0);
-        button.layer().setMasksToBounds(true);
-        button.setClipsToBounds(true);
+        // UIKit's glass configuration owns its elastic capsule geometry. Clipping the
+        // UIButton's layer suppresses the native press/stretch effect.
+        button.layer().setMasksToBounds(false);
+        button.setClipsToBounds(false);
         if let Some(label) = button.titleLabel() {
             unsafe { label.setFont(Some(&UIFont::boldSystemFontOfSize(17.0))) };
         }
@@ -114,7 +126,7 @@ pub(super) fn native_auth_action_button(node: day::RNode) {
             .configuration()
             .and_then(|config| config.title())
             .unwrap_or_default();
-        let config = UIButtonConfiguration::borderedProminentButtonConfiguration(mtm);
+        let config = make_configuration(mtm);
         config.setTitle(Some(&title));
         apply_style(button, &config);
 
@@ -124,9 +136,7 @@ pub(super) fn native_auth_action_button(node: day::RNode) {
                 return;
             }
             let button = unsafe { button.as_ref() };
-            let config = button.configuration().unwrap_or_else(|| {
-                UIButtonConfiguration::borderedProminentButtonConfiguration(button.mtm())
-            });
+            let config = button.configuration().unwrap_or_else(|| make_configuration(button.mtm()));
             let is_loading = crate::app::AppState::get_main()
                 .map(|state| state.loading.get())
                 .unwrap_or(false);

@@ -21,7 +21,8 @@ pub fn build_client(token: &str) -> reqwest::blocking::Client {
     use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    if let Ok(v) = HeaderValue::from_str(token) {
+    let authorization = authorization_value(token);
+    if let Ok(v) = HeaderValue::from_str(&authorization) {
         headers.insert(AUTHORIZATION, v);
     }
     reqwest::blocking::Client::builder()
@@ -29,6 +30,27 @@ pub fn build_client(token: &str) -> reqwest::blocking::Client {
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .unwrap_or_else(|_| reqwest::blocking::Client::new())
+}
+
+fn authorization_value(token: &str) -> String {
+    let token = token.trim();
+    if token.split_once(char::is_whitespace).is_some() || token.is_empty() {
+        token.to_string()
+    } else {
+        format!("Bearer {token}")
+    }
+}
+
+#[cfg(test)]
+mod auth_header_tests {
+    use super::authorization_value;
+
+    #[test]
+    fn bare_access_tokens_use_bearer_without_double_prefixing_existing_schemes() {
+        assert_eq!(authorization_value("abc.def.ghi"), "Bearer abc.def.ghi");
+        assert_eq!(authorization_value("Bearer abc.def.ghi"), "Bearer abc.def.ghi");
+        assert_eq!(authorization_value("Token opaque"), "Token opaque");
+    }
 }
 
 pub fn api_get<T: serde::de::DeserializeOwned>(

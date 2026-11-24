@@ -9,25 +9,6 @@ use day::prelude::*;
 
 pub fn render() -> impl Piece {
     let state = AppState::ambient();
-    let current_tab = state.settings_tab;
-    let pager_state = Signal::new(day::pager::PagerState {
-        order: vec![0, 1, 2, 3],
-        selected: current_tab.get().min(3),
-        epoch: 1,
-    });
-    let pager_busy = Signal::new(false);
-    day::reactive::watch(
-        move || (current_tab.get(), pager_busy.get()),
-        move |&(selected, busy), _| {
-            if !busy && pager_state.get().selected != selected {
-                pager_state.update(|s| {
-                    s.selected = selected.min(3);
-                    s.epoch += 1;
-                });
-            }
-        },
-    );
-
     let pin_enabled = Signal::new(crate::pages::pin::security::is_enabled());
 
     {
@@ -62,86 +43,27 @@ pub fn render() -> impl Piece {
         );
     }
 
-    let piece = zstack((
+    scroll(
         column((
-
-
-            picker(
-                current_tab,
-                vec![
-                    (0usize, res::str::settings_tab_basics().format()),
-                    (1, res::str::settings_tab_appearance().format()),
-                    (2, res::str::settings_tab_security().format()),
-                    (3, res::str::settings_tab_dev().format()),
-                ],
-            )
-            .segmented()
-            .enabled(move || !pager_busy.get())
-            .id(day::id!(settings_tabs))
-            .padding(Insets {
-                top: 4.0,
-                leading: 20.0,
-                bottom: 14.0,
-                trailing: 20.0,
-            }),
-
-            day::pager(
-                pager_state,
-                pager_busy,
-                (0..4).map(|tab| scroll(tab_body(state, tab, pin_enabled)).any()).collect(),
-                move |selected| {
-                    if current_tab.get() != selected {
-                        haptics::tick();
-                        current_tab.set(selected);
-                    }
-                    pager_state.update(|s| s.selected = selected);
-                },
-            ).id(day::id!(settings_pager)).grow(Dimension::Both),
-        ))
-        .grow(Dimension::Both),
-    ))
-    .align(Alignment::TopLeading)
-    .grow(Dimension::Both);
-
-
-    piece
-}
-
-fn tab_body(state: AppState, tab: usize, pin_enabled: Signal<bool>) -> impl Piece {
-    match tab {
-        0 => column((
             when(move || state.is_authenticated.get(), move || profile_section(state)),
+            system_settings().padding(Insets {
+                top: 0.0,
+                leading: 0.0,
+                bottom: 16.0,
+                trailing: 0.0,
+            }),
+            appearance_section(state),
+            haptics_section(state),
+            pin_section(state, pin_enabled),
+            biometric_section(state, pin_enabled),
+            dev_settings(state),
             when(move || state.is_authenticated.get(), move || logout_section(state)),
             spacer().frame(0.0, 16.0),
         ))
         .spacing(0.0)
         .grow(Dimension::Both)
-        .any(),
-        1 => column((
-            appearance_section(state),
-            haptics_section(state),
-            system_settings(),
-            spacer().frame(0.0, 16.0),
-        ))
-        .spacing(0.0)
-        .grow(Dimension::Both)
-        .any(),
-        2 => column((
-            pin_section(state, pin_enabled),
-            biometric_section(state, pin_enabled),
-            spacer().frame(0.0, 16.0),
-        ))
-        .spacing(0.0)
-        .grow(Dimension::Both)
-        .any(),
-        _ => column((
-            dev_settings(state),
-            spacer().frame(0.0, 16.0),
-        ))
-        .spacing(0.0)
-        .grow(Dimension::Both)
-        .any(),
-    }
+    )
+    .grow(Dimension::Both)
 }
 
 fn profile_section(state: AppState) -> impl Piece {
@@ -165,21 +87,29 @@ fn profile_section(state: AppState) -> impl Piece {
 }
 
 fn appearance_section(state: AppState) -> impl Piece {
-    column((
-        form((
-            section(
-                (
-                    label(res::str::settings_accent_color()).font(Font::Headline),
-                    accent_option(state, move || res::str::settings_color_blue().format(), colors::BLUE),
-                    accent_option(state, move || res::str::settings_color_green().format(), colors::GREEN),
-                    accent_option(state, move || res::str::settings_color_purple().format(), colors::PURPLE),
-                    accent_option(state, move || res::str::settings_color_orange().format(), colors::ORANGE),
-                    accent_option(state, move || res::str::settings_color_red().format(), colors::RED),
-                )
-            ).title(res::str::settings_colors()),
-        )),
-    ))
-    .spacing(0.0)
+    let accent = Signal::new(state.accent_color.get());
+    day::reactive::watch(
+        move || accent.get(),
+        move |value, old| {
+            if old.is_some() && old != Some(value) {
+                accent_commit(state, *value);
+            }
+        },
+    );
+    form((section((labeled(
+        res::str::settings_accent_color(),
+        picker(
+            accent,
+            vec![
+                (colors::BLUE, res::str::settings_color_blue().format()),
+                (colors::GREEN, res::str::settings_color_green().format()),
+                (colors::PURPLE, res::str::settings_color_purple().format()),
+                (colors::ORANGE, res::str::settings_color_orange().format()),
+                (colors::RED, res::str::settings_color_red().format()),
+            ],
+        ),
+    ),))
+    .title(res::str::settings_colors()),))
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
@@ -277,16 +207,6 @@ fn system_settings() -> impl Piece {
         ]).segmented(),)).title(res::str::auth_appearance()),
         section((picker(language, languages),)).title(res::str::auth_language()),
     ))
-}
-
-fn accent_option(state: AppState, lbl: impl Fn() -> String + Clone + Send + 'static, hex: u32) -> impl Piece {
-    let s = state;
-    button(move || {
-        let lbl = lbl();
-        if s.accent_color.get() == hex { format!("\u{2713} \u{25CF} {lbl}") } else { format!("\u{25CF} {lbl}") }
-    })
-    .id(day::id!(accent, hex))
-    .action(move || accent_commit(state, hex))
 }
 
 fn pin_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
@@ -515,48 +435,4 @@ fn input_diagnostics() -> impl Piece {
             label(move || result.get()).font(Font::Caption).secondary().any()
         }),
     )).title(res::str::autofill_diagnostics_title())
-}
-
-#[cfg(all(test, feature = "mock"))]
-mod pager_tests {
-    use super::*;
-    use day_spec::Event;
-
-    fn check_swipe_settle(landed: usize) {
-        day_core::uninstall_tree();
-        let (mock, probe) = day_mock::MockToolkit::new();
-        day_core::launch_with(mock, day_spec::WindowOptions::default(), || {
-            AppState::scoped(|state| {
-                state.settings_tab.set(0);
-                render()
-            }).any()
-        });
-        let find = |id: &str| {
-            probe.state.borrow().widgets.iter()
-                .find(|(_, widget)| day_core::id_of(day_spec::NodeId(widget.node)).as_deref() == Some(id))
-                .map(|(handle, widget)| (day_mock::MockHandle(*handle), day_spec::NodeId(widget.node)))
-                .unwrap_or_else(|| panic!("missing {id}"))
-        };
-        let (picker, picker_node) = find("settings_tabs");
-        let (_, pager_node) = find("settings_pager");
-        let state = AppState::get_main().unwrap();
-        assert!(probe.widget(picker).enabled);
-        probe.emit(pager_node, Event::Custom { tag: "", num: 0.0, text: "begin 1".into() });
-        assert!(!probe.widget(picker).enabled, "native picker must reject segment taps throughout a swipe");
-        assert_eq!(state.settings_tab.get(), 0);
-        probe.emit(pager_node, Event::Custom { tag: "", num: 0.0, text: format!("settle 1 {landed}") });
-        assert_eq!(state.settings_tab.get(), landed, "completed and cancelled swipes must report their landed slot");
-        assert!(probe.widget(picker).enabled, "picker must become usable again after settling");
-        probe.emit(picker_node, Event::SelectionChanged(3));
-        assert_eq!(state.settings_tab.get(), 3, "the next segment selection must be accepted");
-        probe.emit(pager_node, Event::Custom { tag: "", num: 0.0, text: format!("settle 1 {landed}") });
-        assert_eq!(state.settings_tab.get(), 3);
-        day_core::uninstall_tree();
-    }
-
-    #[test]
-    fn settings_picker_reenabled_after_completed_swipe() { check_swipe_settle(1); }
-
-    #[test]
-    fn settings_picker_reenabled_after_cancelled_swipe() { check_swipe_settle(0); }
 }

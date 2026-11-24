@@ -333,7 +333,15 @@ pub fn refresh_access_token(refresh_token: &str) -> Result<(String, String), Str
         .json()
         .map_err(|e| format!("Failed to parse refresh response: {e}"))?;
 
-    Ok((data.auth_token, data.refresh_token))
+    if data.auth_token.trim().is_empty() {
+        return Err("Refresh response did not contain an access token".into());
+    }
+    let next_refresh = if data.refresh_token.trim().is_empty() {
+        refresh_token.to_string()
+    } else {
+        data.refresh_token
+    };
+    Ok((data.auth_token, next_refresh))
 }
 
 pub fn relogin(
