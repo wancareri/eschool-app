@@ -108,6 +108,8 @@ fn card_surface<P: Piece + 'static>(p: P) -> AnyPiece {
         .uikit(|view, _class, _mtm| {
             view.setBackgroundColor(Some(&UIColor::secondarySystemGroupedBackgroundColor()));
             view.setTag(crate::ios::modal::CARD_TAG);
+            view.layer().setCornerRadius(20.0);
+            view.layer().setMasksToBounds(true);
         })
         .any()
 }
@@ -190,8 +192,14 @@ pub fn modal_window<R: Route, S: Binding<Option<R>>, C: Piece + 'static>(
                 content(route).any()
             },
         )))
-        .on_drag(sheet_drag)
-        .translation(0.0, move || drag_y.get() - kb_h.get());
+        .on_drag(sheet_drag);
+        #[cfg(feature = "uikit")]
+        let card = card.tweak(|node| {
+            day_uikit::with_native(node, |view, _, mtm| {
+                crate::ios::modal::configure_sheet_drag(view, mtm);
+            });
+        });
+        let card = card.translation(0.0, move || drag_y.get() - kb_h.get());
 
         #[cfg(feature = "uikit")]
         let (filler, card) = (gap_filler(drag_y, kb_h).any(), card.any());

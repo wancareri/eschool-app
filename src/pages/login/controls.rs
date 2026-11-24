@@ -40,7 +40,7 @@ pub(super) fn auth_action_button<M>(
         .animation(AnimSpec::ease_out(200));
 
     #[cfg(feature = "uikit")]
-    let piece = piece.tweak(native_auth_action_button);
+    let piece = piece.tweak(native_glass_auth_button);
 
     piece
         .id(day::id!(login_btn))
@@ -57,113 +57,22 @@ pub(super) fn auth_action_button<M>(
 }
 
 #[cfg(feature = "uikit")]
-pub(super) fn native_auth_action_button(node: day::RNode) {
-    use objc2::{
-        MainThreadOnly,
-        rc::Retained,
-        runtime::{AnyObject, ProtocolObject},
-    };
-    use objc2_foundation::{NSDictionary, NSMutableCopying, NSString};
-    use objc2_ui_kit::{
-        NSFontAttributeName, NSForegroundColorAttributeName, UIButton, UIButtonConfiguration,
-        UIButtonConfigurationCornerStyle, UIColor, UIFont,
-    };
-    use std::ptr::NonNull;
-
-    thread_local! {
-        static TITLE_ATTRIBUTES: block2::RcBlock<dyn Fn(
-            NonNull<NSDictionary<NSString, AnyObject>>,
-        ) -> NonNull<NSDictionary<NSString, AnyObject>>> = {
-            let font = UIFont::boldSystemFontOfSize(17.0);
-            block2::RcBlock::new(move |incoming: NonNull<NSDictionary<NSString, AnyObject>>| {
-                let attributes = unsafe { incoming.as_ref() }.mutableCopy();
-                unsafe {
-                    attributes.setObject_forKey(font.as_ref(), ProtocolObject::from_ref(NSFontAttributeName));
-                    attributes.setObject_forKey(UIColor::whiteColor().as_ref(),
-                        ProtocolObject::from_ref(NSForegroundColorAttributeName));
-                }
-                let attributes: Retained<NSDictionary<NSString, AnyObject>> = attributes.into_super();
-                NonNull::new(Retained::autorelease_ptr(attributes)).expect("retained title attributes")
-            })
-        };
-    }
-
-    fn supports_glass() -> bool {
-        objc2::class!(UIButtonConfiguration)
-            .class_method(objc2::sel!(prominentGlassButtonConfiguration))
-            .is_some()
-    }
-
-    fn make_configuration(mtm: objc2::MainThreadMarker) -> Retained<UIButtonConfiguration> {
-        if supports_glass() {
-            UIButtonConfiguration::prominentGlassButtonConfiguration(mtm)
-        } else {
-            UIButtonConfiguration::borderedProminentButtonConfiguration(mtm)
-        }
-    }
-
-    fn apply_style(button: &UIButton, config: &UIButtonConfiguration) {
-        config.setCornerStyle(UIButtonConfigurationCornerStyle::Capsule);
-        config.setBaseForegroundColor(Some(&UIColor::whiteColor()));
-        TITLE_ATTRIBUTES.with(|transformer| unsafe {
-            config.setTitleTextAttributesTransformer(block2::RcBlock::as_ptr(transformer));
-        });
-        button.setConfiguration(Some(config));
-        // UIKit's glass configuration owns its elastic capsule geometry. Clipping the
-        // UIButton's layer suppresses the native press/stretch effect.
-        button.layer().setMasksToBounds(false);
-        button.setClipsToBounds(false);
-        if let Some(label) = button.titleLabel() {
-            unsafe { label.setFont(Some(&UIFont::boldSystemFontOfSize(17.0))) };
-        }
-    }
-
-    let _ = day_uikit::with_native(node, |view, _, mtm| {
-        let Some(button) = view.downcast_ref::<UIButton>() else {
-            return;
-        };
-        let title = button
-            .configuration()
-            .and_then(|config| config.title())
-            .unwrap_or_default();
-        let config = make_configuration(mtm);
-        config.setTitle(Some(&title));
-        apply_style(button, &config);
-
-        let updating = std::cell::Cell::new(false);
-        let update = block2::RcBlock::new(move |button: NonNull<UIButton>| {
-            if updating.replace(true) {
-                return;
-            }
+fn native_glass_auth_button(node: day::RNode) {
+    // Login uses the exact same UIKit glass configuration as modal actions. The
+    // only auth-specific behavior is the activity indicator while signing in.
+    crate::components::modal::native_glass_button(node, true);
+    let _ = day_uikit::with_native(node, |view, _, _| {
+        let Some(button) = view.downcast_ref::<objc2_ui_kit::UIButton>() else { return };
+        let update = block2::RcBlock::new(move |button: std::ptr::NonNull<objc2_ui_kit::UIButton>| {
             let button = unsafe { button.as_ref() };
-            let config = button.configuration().unwrap_or_else(|| make_configuration(button.mtm()));
-            let is_loading = crate::app::AppState::get_main()
+            let Some(configuration) = button.configuration() else { return };
+            let loading = crate::app::AppState::get_main()
                 .map(|state| state.loading.get())
                 .unwrap_or(false);
-            config.setShowsActivityIndicator(is_loading);
-            apply_style(button, &config);
-            updating.set(false);
-            if day::testing::fast_animations() {
-                return;
-            }
-            use objc2_quartz_core::{
-                CAMediaTiming, CAMediaTimingFunction, CATransition, kCAMediaTimingFunctionEaseOut,
-            };
-            if button.window().is_none() {
-                return;
-            }
-            let fade = CATransition::new();
-            fade.setDuration(0.2);
-            unsafe {
-                fade.setTimingFunction(Some(&CAMediaTimingFunction::functionWithName(
-                    kCAMediaTimingFunctionEaseOut,
-                )));
-            }
-            button
-                .layer()
-                .addAnimation_forKey(&fade, Some(&NSString::from_str("eschool.auth-action")));
+            configuration.setShowsActivityIndicator(loading);
+            button.setConfiguration(Some(&configuration));
         });
-        unsafe { button.setConfigurationUpdateHandler(block2::RcBlock::as_ptr(&update)) };
+        unsafe { button.setConfigurationUpdateHandler(block2::RcBlock::as_ptr(&update)); }
     });
 }
 

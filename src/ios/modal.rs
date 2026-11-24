@@ -6,7 +6,8 @@ use objc2::{ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_cl
 use objc2_core_foundation::CGAffineTransform;
 use objc2_foundation::{NSObject, NSObjectProtocol};
 use objc2_ui_kit::{
-    UIColor, UIModalPresentationStyle, UIModalTransitionStyle, UITransitionContextFromViewControllerKey,
+    UIColor, UIControl, UIGestureRecognizer, UIGestureRecognizerDelegate, UIPanGestureRecognizer,
+    UITouch, UIModalPresentationStyle, UIModalTransitionStyle, UITransitionContextFromViewControllerKey,
     UITransitionContextToViewControllerKey, UIView, UIViewAnimationOptions, UIViewController,
     UIViewControllerAnimatedTransitioning, UIViewControllerContextTransitioning,
     UIViewControllerTransitioningDelegate,
@@ -72,6 +73,49 @@ thread_local! {
         let mtm = MainThreadMarker::new().expect("UIKit main thread");
         unsafe { msg_send![ModalTransitionDelegate::alloc(mtm), init] }
     };
+}
+
+thread_local! {
+    static SHEET_DRAG_DELEGATE: Retained<SheetDragDelegate> = unsafe {
+        msg_send![SheetDragDelegate::alloc(MainThreadMarker::new().unwrap()), init]
+    };
+}
+
+define_class!(
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    struct SheetDragDelegate;
+
+    unsafe impl NSObjectProtocol for SheetDragDelegate {}
+    unsafe impl UIGestureRecognizerDelegate for SheetDragDelegate {
+        #[unsafe(method(gestureRecognizer:shouldReceiveTouch:))]
+        fn should_receive_touch(
+            &self,
+            _gesture: &UIGestureRecognizer,
+            touch: &UITouch,
+        ) -> bool {
+            let mut view = touch.view();
+            while let Some(current) = view {
+                if current.downcast_ref::<UIControl>().is_some() {
+                    return false.into();
+                }
+                view = current.superview();
+            }
+            true.into()
+        }
+    }
+);
+
+/// Keep the sheet drag on the sheet surface, but let native controls own their
+/// touches. This prevents dragging a glass button from moving the whole cover.
+pub(crate) fn configure_sheet_drag(view: &UIView, _mtm: MainThreadMarker) {
+    for recognizer in view.gestureRecognizers().into_iter().flatten() {
+        if recognizer.downcast_ref::<UIPanGestureRecognizer>().is_some() {
+            SHEET_DRAG_DELEGATE.with(|delegate| {
+                recognizer.setDelegate(Some(ProtocolObject::from_ref(&**delegate)));
+            });
+        }
+    }
 }
 
 pub(crate) fn configure_cover(view: &UIView, _mtm: MainThreadMarker) {

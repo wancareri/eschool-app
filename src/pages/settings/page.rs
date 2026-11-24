@@ -81,7 +81,7 @@ fn profile_section(state: AppState) -> impl Piece {
                 ),
                 crate::components::child_context::child_switcher(state),
             )
-        ).title(res::str::settings_profile()),
+        ),
     ))
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
@@ -108,8 +108,7 @@ fn appearance_section(state: AppState) -> impl Piece {
                 (colors::RED, res::str::settings_color_red().format()),
             ],
         ),
-    ),))
-    .title(res::str::settings_colors()),))
+    ),)),))
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
 
@@ -150,7 +149,7 @@ fn haptics_section(_state: AppState) -> impl Piece {
                     .font(Font::Caption)
                     .secondary(),
             )
-        ).title(res::str::settings_feedback()),
+        ),
     ))
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
@@ -203,8 +202,8 @@ fn system_settings() -> impl Piece {
             (0usize, res::str::auth_theme_system().format()),
             (1, res::str::auth_theme_light().format()),
             (2, res::str::auth_theme_dark().format()),
-        ]).segmented(),)).title(res::str::auth_appearance()),
-        section((picker(language, languages),)).title(res::str::auth_language()),
+        ]).segmented(),)),
+        section((picker(language, languages),)),
     ))
 }
 
@@ -236,7 +235,7 @@ fn pin_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
                         )),
                     ),
                 )
-            ).title(res::str::settings_lock()),
+            ),
         )),
     ))
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
@@ -306,7 +305,7 @@ fn biometric_section(state: AppState, pin_enabled: Signal<bool>) -> impl Piece {
 
 
             )
-        ).title(res::str::settings_security()),
+        ),
     ))
     .padding(Insets { top: 0.0, leading: 0.0, bottom: 16.0, trailing: 0.0 })
 }
@@ -316,7 +315,7 @@ fn logout_section(state: AppState) -> impl Piece {
         section(
             (button(res::str::settings_logout())
                 .action(move || crate::pages::login::auth::logout(state)),)
-        ).title(res::str::settings_account()),
+        ),
     ))
     .padding(Insets { top: 16.0, leading: 0.0, bottom: 20.0, trailing: 0.0 })
 }
