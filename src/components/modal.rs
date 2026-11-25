@@ -53,10 +53,6 @@ pub(crate) fn native_glass_button(node: day::RNode, prominent: bool) {
             trailing: 24.0,
         });
         button.setConfiguration(Some(&configuration));
-        // UIKit otherwise rebuilds the configuration for highlighted/drag
-        // states and restores its regular title font. Keep the glass title
-        // attributes stable while the surrounding sheet is moving.
-        button.setAutomaticallyUpdatesConfiguration(false);
         if let Some(title_label) = button.titleLabel() {
             let size = title_label
                 .font()
