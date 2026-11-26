@@ -129,7 +129,6 @@ pub fn modal(state: AppState) -> impl Piece {
             .font(Font::Subheadline)
             .secondary()
             .grow(Dimension::Width),
-            spacer().grow(Dimension::Height),
             button(res::str::notice_dismiss())
                 .prominent()
                 .tweak(|node| super::modal::native_glass_button(node, true))

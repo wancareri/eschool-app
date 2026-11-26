@@ -53,6 +53,10 @@ pub(crate) fn native_glass_button(node: day::RNode, prominent: bool) {
             trailing: 24.0,
         });
         button.setConfiguration(Some(&configuration));
+        // Keep the legacy title populated during the first navigation layout;
+        // UIKit can otherwise measure the configuration title one frame late
+        // and clip its final glyph.
+        button.setTitle_forState(Some(&title), objc2_ui_kit::UIControlState::Normal);
         if let Some(title_label) = button.titleLabel() {
             let size = title_label
                 .font()
