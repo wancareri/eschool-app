@@ -82,43 +82,47 @@ pub fn modal(state: AppState) -> impl Piece {
             .unwrap_or_default();
         let fallback_message = initial.map(|n| n.message).unwrap_or_default();
         let kind = move || state.notice.get().map(|n| n.kind).unwrap_or(fallback_kind);
-        column((
+        let status_icon = when(
+            move || kind() == NoticeKind::Error,
+            || {
+                vector(res::vectors::status_error)
+                    .frame(28.0, 28.0)
+                    .tint(crate::app::preferences::colors::ERROR)
+                    .any()
+            },
+        )
+        .otherwise(move || {
             when(
-                move || kind() == NoticeKind::Error,
+                move || kind() == NoticeKind::Success,
                 || {
-                    vector(res::vectors::status_error)
+                    vector(res::vectors::check)
                         .frame(28.0, 28.0)
-                        .tint(crate::app::preferences::colors::ERROR)
+                        .tint(Color::hex(0x34C759))
                         .any()
                 },
             )
             .otherwise(move || {
-                when(
-                    move || kind() == NoticeKind::Success,
-                    || {
-                        vector(res::vectors::check)
-                            .frame(28.0, 28.0)
-                            .tint(Color::hex(0x34C759))
-                            .any()
-                    },
-                )
-                .otherwise(move || {
-                    vector(res::vectors::lock)
-                        .frame(28.0, 28.0)
-                        .tint(move || Color::hex(state.accent_color.get()))
-                        .any()
-                })
-                .any()
-            }),
-            label(move || {
-                state
-                    .notice
-                    .get()
-                    .map(|n| n.title)
-                    .unwrap_or_else(|| fallback_title.clone())
+                vector(res::vectors::lock)
+                    .frame(28.0, 28.0)
+                    .tint(move || Color::hex(state.accent_color.get()))
+                    .any()
             })
-            .font(Font::Headline)
-            .grow(Dimension::Width),
+            .any()
+        });
+        let title = label(move || {
+            state
+                .notice
+                .get()
+                .map(|n| n.title)
+                .unwrap_or_else(|| fallback_title.clone())
+        })
+        .font(Font::Headline)
+        .grow(Dimension::Width);
+        column((
+            row((status_icon, title))
+                .spacing(10.0)
+                .align(VAlign::Center)
+                .grow(Dimension::Width),
             label(move || {
                 state
                     .notice

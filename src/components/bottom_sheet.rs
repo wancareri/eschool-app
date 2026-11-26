@@ -49,9 +49,10 @@ pub fn network_error_sheet(state: AppState) -> impl Piece {
             status_icon,
             label(move || super::connection_status::title(state.conn_status.get()))
                 .font(Font::Headline)
-                .grow(Dimension::Both),
+                .grow(Dimension::Width),
         ))
         .spacing(10.0)
+        .align(VAlign::Center)
         .grow(Dimension::Width)
         .padding(Insets {
             top: 0.0,
