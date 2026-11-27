@@ -33,12 +33,7 @@ pub fn build_client(token: &str) -> reqwest::blocking::Client {
 }
 
 fn authorization_value(token: &str) -> String {
-    let token = token.trim();
-    if token.split_once(char::is_whitespace).is_some() || token.is_empty() {
-        token.to_string()
-    } else {
-        format!("Bearer {token}")
-    }
+    token.trim().to_string()
 }
 
 #[cfg(test)]
@@ -46,8 +41,8 @@ mod auth_header_tests {
     use super::authorization_value;
 
     #[test]
-    fn bare_access_tokens_use_bearer_without_double_prefixing_existing_schemes() {
-        assert_eq!(authorization_value("abc.def.ghi"), "Bearer abc.def.ghi");
+    fn access_tokens_are_sent_in_the_format_returned_by_the_api() {
+        assert_eq!(authorization_value("abc.def.ghi"), "abc.def.ghi");
         assert_eq!(authorization_value("Bearer abc.def.ghi"), "Bearer abc.def.ghi");
         assert_eq!(authorization_value("Token opaque"), "Token opaque");
     }
